@@ -95,7 +95,9 @@ dns:
   fake-ip-filter:
     - "RULE-SET:CN_域"
     - "RULE-SET:Private_域"
+    {{if .Modules.GoogleFCM}}
     - "RULE-SET:GoogleFCM_域"
+    {{end}}
     - "+.3gppnetwork.org"
     - "+.xtracloud.net"
   direct-nameserver:
@@ -105,7 +107,7 @@ dns:
     - https://doh.pub/dns-query#🇨🇳 大陆&h3=false
     - https://dns.alidns.com/dns-query#🇨🇳 大陆&h3=true
   nameserver-policy:
-    "RULE-SET:CN_域,Microsoft_域,Apple_域":
+    "RULE-SET:CN_域{{if .Modules.Microsoft}},Microsoft_域{{end}}{{if .Modules.Apple}},Apple_域{{end}}":
        - https://doh.pub/dns-query#🇨🇳 大陆&h3=false
        - https://dns.alidns.com/dns-query#🇨🇳 大陆&h3=true
   nameserver:
@@ -502,6 +504,8 @@ rules:
   # ------ 核心基础 Rules 保留 ------
   - RULE-SET,我的直连规则,🇨🇳 大陆
   - RULE-SET,自定义出站,自定义出站
+  - RULE-SET,No-ads-all_域,⛔️ 拒绝连接
+  - RULE-SET,WebRTC_端/域,⛔️ 拒绝连接
   - DST-PORT,53,🌐 DNS_Hijack
   - DST-PORT,853,DNS连接
 
@@ -550,6 +554,8 @@ rules:
 
 {{if .Modules.GoogleFCM}}
   - DOMAIN-KEYWORD,mtalk.google,GoogleFCM
+  - RULE-SET,GoogleFCM_域,GoogleFCM
+  - RULE-SET,GoogleFCM_IP,GoogleFCM
 {{end}}
 
 {{if .Modules.Google}}
