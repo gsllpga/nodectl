@@ -120,9 +120,6 @@ func RenderInstallScript() (string, error) {
 		"ReportURL":   reportURL,
 	}
 
-	// ==========================================
-	// [核心修改] 模板加载逻辑：内嵌优先 vs 外部覆盖
-	// ==========================================
 	tplContent := SingboxScriptTpl // 默认使用打包在二进制里的 embed 模板
 
 	// 定义外部调试模板的路径 (data/debug/singbox.tpl)
