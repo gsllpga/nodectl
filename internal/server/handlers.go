@@ -11,6 +11,7 @@ import (
 	"nodectl/internal/database"
 	"nodectl/internal/logger"
 	"nodectl/internal/service"
+	"nodectl/internal/version"
 
 	"github.com/golang-jwt/jwt/v5"
 	"golang.org/x/crypto/bcrypt"
@@ -97,6 +98,7 @@ func indexHandler(w http.ResponseWriter, r *http.Request) {
 	data := map[string]interface{}{
 		"Title":     "Nodectl 总览",
 		"Protocols": database.SupportedProtocols,
+		"Version":   version.Version, // [新增] 将版本号传递给前端模板
 	}
 	tmpl.ExecuteTemplate(w, "index.html", data)
 }
