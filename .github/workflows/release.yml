@@ -33,7 +33,7 @@ jobs:
         uses: actions/setup-go@v5
         with:
           go-version: '1.21'
-          cache: false # [核心修复 1] 关闭缓存，彻底解决 tar 解压失败导致报错退出的 bug
+          cache: false # 关闭缓存，彻底解决 tar 解压失败导致报错退出的 bug
 
       - name: Build Binary
         env:
@@ -79,7 +79,7 @@ jobs:
   # ==========================================
   docker:
     name: Build and Push Docker Image
-    needs: build
+    needs: release # [核心修改] 将依赖从 build 改为了 release，实现串行执行
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Code
@@ -103,7 +103,7 @@ jobs:
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }} # 依然使用自带的 TOKEN，无需任何其他配置
+          password: ${{ secrets.GITHUB_TOKEN }} # 使用自带的 TOKEN，免配置
 
       - name: Convert Repository Name to Lowercase
         run: |
@@ -119,6 +119,6 @@ jobs:
           tags: |
             ghcr.io/${{ env.REPO_LC }}:latest
             ghcr.io/${{ env.REPO_LC }}:${{ github.event.inputs.version }}
-          # [核心修复 2] 添加 OCI 标签，向 GHCR 声明此镜像与本仓库绑定，从而放行 GITHUB_TOKEN 写入权限
+          # 添加 OCI 标签，向 GHCR 声明此镜像与本仓库绑定，从而放行 GITHUB_TOKEN 写入权限
           labels: |
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
