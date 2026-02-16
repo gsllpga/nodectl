@@ -5,6 +5,7 @@ import (
 	_ "embed"
 	"fmt"
 	"nodectl/internal/database"
+	"regexp"
 	"strings"
 	"text/template"
 )
@@ -88,5 +89,10 @@ func RenderClashConfig(relayURL, exitURL string) (string, error) {
 		return "", fmt.Errorf("渲染 Clash 模板失败: %v", err)
 	}
 
-	return buf.String(), nil
+	// [修改这里] 清洗模板产生的大量多余空行
+	// 原理：将 3 个或以上连续的换行符（中间可能夹带空格制表符），强制压缩为 2 个换行符 (保留一个正常空行)
+	re := regexp.MustCompile(`(\r?\n[ \t]*){3,}`)
+	cleanYAML := re.ReplaceAllString(buf.String(), "\n\n")
+
+	return cleanYAML, nil
 }

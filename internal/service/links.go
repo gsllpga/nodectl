@@ -10,26 +10,64 @@ import (
 )
 
 // ---------------------------------------------------------
-// 1. 基础工具函数
+// 1. 结构体定义 (严格保证 YAML 字段的输出顺序)
 // ---------------------------------------------------------
 
-// getEmojiFlag 根据地区代码获取 Emoji 国旗
+// ClashNode 统一节点结构体，利用字段声明顺序强制规范 YAML 节点的按序输出
+type ClashNode struct {
+	Name                 string                 `yaml:"name"`
+	Type                 string                 `yaml:"type"`
+	Server               string                 `yaml:"server"`
+	Port                 int                    `yaml:"port"`
+	Password             string                 `yaml:"password,omitempty"`
+	UUID                 string                 `yaml:"uuid,omitempty"`
+	Cipher               string                 `yaml:"cipher,omitempty"`
+	AlterId              int                    `yaml:"alterId,omitempty"`
+	Network              string                 `yaml:"network,omitempty"`
+	UDP                  bool                   `yaml:"udp,omitempty"`
+	TLS                  bool                   `yaml:"tls,omitempty"`
+	SkipCertVerify       bool                   `yaml:"skip-cert-verify,omitempty"`
+	ServerName           string                 `yaml:"servername,omitempty"`
+	SNI                  string                 `yaml:"sni,omitempty"`
+	ALPN                 []string               `yaml:"alpn,omitempty"`
+	Flow                 string                 `yaml:"flow,omitempty"`
+	PacketEncoding       string                 `yaml:"packet-encoding,omitempty"`
+	RealityOpts          map[string]interface{} `yaml:"reality-opts,omitempty"`
+	ClientFingerprint    string                 `yaml:"client-fingerprint,omitempty"`
+	WSOpts               map[string]interface{} `yaml:"ws-opts,omitempty"`
+	GRPCOpts             map[string]interface{} `yaml:"grpc-opts,omitempty"`
+	H2Opts               map[string]interface{} `yaml:"h2-opts,omitempty"`
+	HTTPOpts             map[string]interface{} `yaml:"http-opts,omitempty"`
+	Obfs                 string                 `yaml:"obfs,omitempty"`
+	ObfsPassword         string                 `yaml:"obfs-password,omitempty"`
+	Ports                string                 `yaml:"ports,omitempty"`
+	Up                   int                    `yaml:"up,omitempty"`
+	Down                 int                    `yaml:"down,omitempty"`
+	DisableSNI           bool                   `yaml:"disable-sni,omitempty"`
+	CongestionController string                 `yaml:"congestion-controller,omitempty"`
+	UDPRelayMode         string                 `yaml:"udp-relay-mode,omitempty"`
+	ReduceRTT            bool                   `yaml:"reduce-rtt,omitempty"`
+	ZeroRTT              bool                   `yaml:"zero-rtt,omitempty"`
+	TFO                  bool                   `yaml:"tfo,omitempty"`
+	Username             string                 `yaml:"username,omitempty"`
+}
+
+// ---------------------------------------------------------
+// 2. 基础工具函数
+// ---------------------------------------------------------
+
 func getEmojiFlag(region string) string {
 	if region == "" {
 		return "🌐"
 	}
 	region = strings.ToUpper(strings.TrimSpace(region))
 	if len(region) == 2 {
-		// A 的 ASCII 码是 65，对应区域指示符 🇦 的 Unicode 是 127462
-		// 偏移量 = 127462 - 65 = 127397
 		const offset = 127397
-		// 【修改这里】先将 byte 转为 rune，再相加
 		return string(rune(region[0])+offset) + string(rune(region[1])+offset)
 	}
 	return region
 }
 
-// safeBase64Decode 安全的 Base64 解码，自动补齐 "=" 和处理 URL Safe 字符
 func safeBase64Decode(s string) string {
 	s = strings.TrimSpace(s)
 	s = strings.ReplaceAll(s, "-", "+")
@@ -44,7 +82,6 @@ func safeBase64Decode(s string) string {
 	return string(decoded)
 }
 
-// getBool 解析 URL Query 中的布尔值参数
 func getBool(query url.Values, keys ...string) bool {
 	for _, k := range keys {
 		val := strings.ToLower(query.Get(k))
@@ -55,7 +92,6 @@ func getBool(query url.Values, keys ...string) bool {
 	return false
 }
 
-// getString 从 map[string]interface{} 安全获取字符串
 func getString(m map[string]interface{}, key string) string {
 	if val, ok := m[key]; ok && val != nil {
 		switch v := val.(type) {
@@ -68,7 +104,6 @@ func getString(m map[string]interface{}, key string) string {
 	return ""
 }
 
-// getInt 从 map[string]interface{} 安全获取整数
 func getInt(m map[string]interface{}, key string) int {
 	if val, ok := m[key]; ok && val != nil {
 		switch v := val.(type) {
@@ -84,33 +119,27 @@ func getInt(m map[string]interface{}, key string) int {
 }
 
 // ---------------------------------------------------------
-// 2. 协议转换统一入口
+// 3. 协议转换统一入口
 // ---------------------------------------------------------
 
-// ParseProxyLink 解析原始链接转换为 Clash 配置字典
-func ParseProxyLink(link, baseName, region string, useFlag bool) map[string]interface{} {
+func ParseProxyLink(link, baseName, region string, useFlag bool) *ClashNode {
 	link = strings.TrimSpace(link)
 	if link == "" {
 		return nil
 	}
 
-	// 处理国旗前缀偏好
 	finalName := baseName
 	if useFlag && region != "" {
 		flag := getEmojiFlag(region)
-		finalName = fmt.Sprintf("%s %s", flag, strings.ReplaceAll(baseName, flag, "")) // 防止重复添加
+		finalName = fmt.Sprintf("%s %s", flag, strings.ReplaceAll(baseName, flag, ""))
 	}
 	finalName = strings.TrimSpace(finalName)
 
 	lowerLink := strings.ToLower(link)
 
-	// VMess 特殊处理 (Base64 JSON 格式)
 	if strings.HasPrefix(lowerLink, "vmess://") {
 		return parseVmess(link, finalName)
-	}
-
-	// 其他标准 URL 格式协议
-	if strings.HasPrefix(lowerLink, "vless://") {
+	} else if strings.HasPrefix(lowerLink, "vless://") {
 		return parseVless(link, finalName)
 	} else if strings.HasPrefix(lowerLink, "trojan://") {
 		return parseTrojan(link, finalName)
@@ -123,178 +152,157 @@ func ParseProxyLink(link, baseName, region string, useFlag bool) map[string]inte
 	} else if strings.HasPrefix(lowerLink, "socks5://") {
 		return parseSocks5(link, finalName)
 	}
-
 	return nil
 }
 
 // ---------------------------------------------------------
-// 3. 各协议独立解析逻辑
+// 4. 各协议独立解析逻辑
 // ---------------------------------------------------------
 
-func parseVless(link, proxyName string) map[string]interface{} {
+func parseVless(link, proxyName string) *ClashNode {
 	parsed, err := url.Parse(link)
 	if err != nil {
 		return nil
 	}
 
-	uuid := parsed.User.Username()
-	server := parsed.Hostname()
-	port := parsed.Port()
+	portInt, _ := strconv.Atoi(parsed.Port())
 	query := parsed.Query()
-
 	network := query.Get("type")
 	if network == "" {
 		network = "tcp"
 	}
 
-	proxy := map[string]interface{}{
-		"name":             proxyName,
-		"type":             "vless",
-		"server":           server,
-		"port":             port,
-		"uuid":             uuid,
-		"network":          network,
-		"udp":              true,
-		"tfo":              getBool(query, "fast-open"),
-		"skip-cert-verify": getBool(query, "insecure", "skip-cert-verify", "allowInsecure"),
+	node := &ClashNode{
+		Name:           proxyName,
+		Type:           "vless",
+		Server:         parsed.Hostname(),
+		Port:           portInt,
+		UUID:           parsed.User.Username(),
+		Network:        network,
+		UDP:            true,
+		TFO:            getBool(query, "fast-open"),
+		SkipCertVerify: getBool(query, "insecure", "skip-cert-verify", "allowInsecure"),
+		ServerName:     query.Get("sni"),
+		Flow:           query.Get("flow"),
 	}
 
-	if sni := query.Get("sni"); sni != "" {
-		proxy["servername"] = sni
-	}
-	if flow := query.Get("flow"); flow != "" {
-		proxy["flow"] = flow
-	}
 	if alpn := query.Get("alpn"); alpn != "" {
-		proxy["alpn"] = strings.Split(alpn, ",")
+		node.ALPN = strings.Split(alpn, ",")
 	}
 
-	// Security (Reality / TLS)
 	security := query.Get("security")
 	if security == "reality" {
-		proxy["tls"] = true
-		proxy["reality-opts"] = map[string]interface{}{
+		node.TLS = true
+		node.RealityOpts = map[string]interface{}{
 			"public-key": query.Get("pbk"),
 			"short-id":   query.Get("sid"),
 		}
 		if fp := query.Get("fp"); fp != "" {
-			proxy["client-fingerprint"] = fp
+			node.ClientFingerprint = fp
 		} else {
-			proxy["client-fingerprint"] = "chrome"
+			node.ClientFingerprint = "chrome"
 		}
 	} else if security == "tls" || getBool(query, "tls") {
-		proxy["tls"] = true
+		node.TLS = true
 		if fp := query.Get("fp"); fp != "" {
-			proxy["client-fingerprint"] = fp
+			node.ClientFingerprint = fp
 		}
 	}
 
-	// Transport Options
-	applyTransportOpts(proxy, network, query)
-	return proxy
+	applyTransportOpts(node, network, query)
+	return node
 }
 
-func parseTrojan(link, proxyName string) map[string]interface{} {
+func parseTrojan(link, proxyName string) *ClashNode {
 	parsed, err := url.Parse(link)
 	if err != nil {
 		return nil
 	}
 
-	password := parsed.User.Username()
-	server := parsed.Hostname()
-	port := parsed.Port()
+	portInt, _ := strconv.Atoi(parsed.Port())
 	query := parsed.Query()
-
 	network := query.Get("type")
 	if network == "" {
 		network = "tcp"
 	}
 
-	proxy := map[string]interface{}{
-		"name":             proxyName,
-		"type":             "trojan",
-		"server":           server,
-		"port":             port,
-		"password":         password,
-		"network":          network,
-		"udp":              true,
-		"tfo":              getBool(query, "fast-open"),
-		"skip-cert-verify": getBool(query, "insecure", "skip-cert-verify"),
+	node := &ClashNode{
+		Name:           proxyName,
+		Type:           "trojan",
+		Server:         parsed.Hostname(),
+		Port:           portInt,
+		Password:       parsed.User.Username(),
+		Network:        network,
+		UDP:            true,
+		TFO:            getBool(query, "fast-open"),
+		SkipCertVerify: getBool(query, "insecure", "skip-cert-verify"),
+		SNI:            query.Get("sni"),
 	}
 
-	if sni := query.Get("sni"); sni != "" {
-		proxy["sni"] = sni
-	}
 	if alpn := query.Get("alpn"); alpn != "" {
-		proxy["alpn"] = strings.Split(alpn, ",")
+		node.ALPN = strings.Split(alpn, ",")
 	}
 	if fp := query.Get("fp"); fp != "" {
-		proxy["client-fingerprint"] = fp
+		node.ClientFingerprint = fp
 	}
 
-	// Security Reality
 	if query.Get("security") == "reality" {
-		proxy["reality-opts"] = map[string]interface{}{
+		node.RealityOpts = map[string]interface{}{
 			"public-key": query.Get("pbk"),
 			"short-id":   query.Get("sid"),
 		}
 	}
 
-	applyTransportOpts(proxy, network, query)
-	return proxy
+	applyTransportOpts(node, network, query)
+	return node
 }
 
-func parseHysteria2(link, proxyName string) map[string]interface{} {
+func parseHysteria2(link, proxyName string) *ClashNode {
 	parsed, err := url.Parse(link)
 	if err != nil {
 		return nil
 	}
 
-	password := parsed.User.Username()
-	server := parsed.Hostname()
-	port := parsed.Port()
+	portInt, _ := strconv.Atoi(parsed.Port())
 	query := parsed.Query()
-
+	password := parsed.User.Username()
 	if password == "" {
-		password = query.Get("auth") // 兼容备用参数
+		password = query.Get("auth")
 	}
 
-	proxy := map[string]interface{}{
-		"name":             proxyName,
-		"type":             "hysteria2",
-		"server":           server,
-		"port":             port,
-		"password":         password,
-		"udp":              true,
-		"skip-cert-verify": getBool(query, "insecure", "skip-cert-verify", "allowInsecure"),
+	node := &ClashNode{
+		Name:           proxyName,
+		Type:           "hysteria2",
+		Server:         parsed.Hostname(),
+		Port:           portInt,
+		Password:       password,
+		UDP:            true,
+		SkipCertVerify: getBool(query, "insecure", "skip-cert-verify", "allowInsecure"),
 	}
 
 	sni := query.Get("sni")
 	if sni == "" {
 		sni = query.Get("peer")
 	}
-	if sni != "" {
-		proxy["sni"] = sni
-	}
+	node.SNI = sni
 
 	if alpn := query.Get("alpn"); alpn != "" {
-		proxy["alpn"] = strings.Split(alpn, ",")
+		node.ALPN = strings.Split(alpn, ",")
 	}
 	if obfs := query.Get("obfs"); obfs != "" {
-		proxy["obfs"] = obfs
-		proxy["obfs-password"] = query.Get("obfs-password")
+		node.Obfs = obfs
+		node.ObfsPassword = query.Get("obfs-password")
 	}
 	if ports := query.Get("ports"); ports != "" {
-		proxy["ports"] = ports
+		node.Ports = ports
 	}
 
-	// 带宽参数
 	up := query.Get("up")
 	if up == "" {
 		up = query.Get("upmbps")
 	}
 	if upInt, _ := strconv.Atoi(up); upInt > 0 {
-		proxy["up"] = upInt
+		node.Up = upInt
 	}
 
 	down := query.Get("down")
@@ -302,64 +310,61 @@ func parseHysteria2(link, proxyName string) map[string]interface{} {
 		down = query.Get("downmbps")
 	}
 	if downInt, _ := strconv.Atoi(down); downInt > 0 {
-		proxy["down"] = downInt
+		node.Down = downInt
 	}
 
-	return proxy
+	return node
 }
 
-func parseTuic(link, proxyName string) map[string]interface{} {
+func parseTuic(link, proxyName string) *ClashNode {
 	parsed, err := url.Parse(link)
 	if err != nil {
 		return nil
 	}
 
-	uuidStr := parsed.User.Username()
-	password, _ := parsed.User.Password()
-	server := parsed.Hostname()
-	port := parsed.Port()
+	portInt, _ := strconv.Atoi(parsed.Port())
 	query := parsed.Query()
+	password, _ := parsed.User.Password()
 
-	proxy := map[string]interface{}{
-		"name":                  proxyName,
-		"type":                  "tuic",
-		"server":                server,
-		"port":                  port,
-		"uuid":                  uuidStr,
-		"password":              password,
-		"tls":                   true,
-		"udp":                   true,
-		"disable-sni":           getBool(query, "disable-sni"),
-		"skip-cert-verify":      getBool(query, "insecure", "skip-cert-verify", "allowInsecure") || true, // TUIC 默认跳过
-		"congestion-controller": query.Get("congestion_controller"),
-		"udp-relay-mode":        query.Get("udp-relay-mode"),
-		"reduce-rtt":            getBool(query, "reduce-rtt"),
-		"zero-rtt":              getBool(query, "zero-rtt"),
+	node := &ClashNode{
+		Name:                 proxyName,
+		Type:                 "tuic",
+		Server:               parsed.Hostname(),
+		Port:                 portInt,
+		UUID:                 parsed.User.Username(),
+		Password:             password,
+		TLS:                  true,
+		UDP:                  true,
+		DisableSNI:           getBool(query, "disable-sni"),
+		SkipCertVerify:       getBool(query, "insecure", "skip-cert-verify", "allowInsecure") || true,
+		CongestionController: query.Get("congestion_controller"),
+		UDPRelayMode:         query.Get("udp-relay-mode"),
+		ReduceRTT:            getBool(query, "reduce-rtt"),
+		ZeroRTT:              getBool(query, "zero-rtt"),
 	}
 
-	if proxy["congestion-controller"] == "" {
-		proxy["congestion-controller"] = "bbr"
+	if node.CongestionController == "" {
+		node.CongestionController = "bbr"
 	}
-	if proxy["udp-relay-mode"] == "" {
-		proxy["udp-relay-mode"] = "native"
+	if node.UDPRelayMode == "" {
+		node.UDPRelayMode = "native"
 	}
 
 	if alpn := query.Get("alpn"); alpn != "" {
-		proxy["alpn"] = strings.Split(alpn, ",")
+		node.ALPN = strings.Split(alpn, ",")
 	} else {
-		proxy["alpn"] = []string{"h3"}
+		node.ALPN = []string{"h3"}
 	}
 
 	if sni := query.Get("sni"); sni != "" {
-		proxy["sni"] = sni
-		proxy["servername"] = sni
+		node.SNI = sni
+		node.ServerName = sni
 	}
 
-	return proxy
+	return node
 }
 
-func parseVmess(link, proxyName string) map[string]interface{} {
-	// 截取 vmess:// 后的 base64
+func parseVmess(link, proxyName string) *ClashNode {
 	b64Part := link[8:]
 	if idx := strings.Index(b64Part, "#"); idx != -1 {
 		b64Part = b64Part[:idx]
@@ -377,40 +382,35 @@ func parseVmess(link, proxyName string) map[string]interface{} {
 
 	serverAddr := getString(v, "add")
 	if strings.Contains(serverAddr, ":") && !strings.HasPrefix(serverAddr, "[") {
-		serverAddr = "[" + serverAddr + "]" // IPv6 包裹
+		serverAddr = "[" + serverAddr + "]"
 	}
 
-	proxy := map[string]interface{}{
-		"name":             proxyName,
-		"type":             "vmess",
-		"server":           serverAddr,
-		"port":             getInt(v, "port"),
-		"uuid":             getString(v, "id"),
-		"alterId":          getInt(v, "aid"),
-		"cipher":           getString(v, "scy"),
-		"udp":              true,
-		"skip-cert-verify": false,
-		"tls":              false,
+	node := &ClashNode{
+		Name:    proxyName,
+		Type:    "vmess",
+		Server:  serverAddr,
+		Port:    getInt(v, "port"),
+		UUID:    getString(v, "id"),
+		AlterId: getInt(v, "aid"),
+		Cipher:  getString(v, "scy"),
+		UDP:     true,
 	}
 
-	if proxy["cipher"] == "" {
-		proxy["cipher"] = "auto"
+	if node.Cipher == "" {
+		node.Cipher = "auto"
 	}
 
-	// TLS 设置
 	tlsVal := getString(v, "tls")
 	if tlsVal != "" && strings.ToLower(tlsVal) != "none" {
-		proxy["tls"] = true
+		node.TLS = true
 		if sni := getString(v, "sni"); sni != "" {
-			proxy["servername"] = sni
+			node.ServerName = sni
 		}
-		// 兼容各种拼写的跳过证书验证
 		if v["skip-cert-verify"] == true || v["insecure"] == true || getString(v, "insecure") == "1" {
-			proxy["skip-cert-verify"] = true
+			node.SkipCertVerify = true
 		}
 	}
 
-	// Network 提取
 	net := getString(v, "net")
 	if net == "" {
 		net = "tcp"
@@ -420,7 +420,6 @@ func parseVmess(link, proxyName string) map[string]interface{} {
 		typeField = net
 	}
 
-	// 转换为 query 形式供复用工具处理
 	query := url.Values{}
 	if path := getString(v, "path"); path != "" {
 		query.Set("path", path)
@@ -435,14 +434,14 @@ func parseVmess(link, proxyName string) map[string]interface{} {
 		net = "http"
 	}
 
-	proxy["network"] = net
-	applyTransportOpts(proxy, net, query)
+	node.Network = net
+	applyTransportOpts(node, net, query)
 
-	return proxy
+	return node
 }
 
-func parseSS(link, proxyName string) map[string]interface{} {
-	body := link[5:] // 去除 ss://
+func parseSS(link, proxyName string) *ClashNode {
+	body := link[5:]
 	if idx := strings.Index(body, "#"); idx != -1 {
 		body = body[:idx]
 	}
@@ -450,7 +449,6 @@ func parseSS(link, proxyName string) map[string]interface{} {
 		body = body[:idx]
 	}
 
-	// 如果没有 @，说明整体进行了 Base64 编码 (ss://base64(method:password@host:port))
 	if !strings.Contains(body, "@") {
 		if decoded := safeBase64Decode(body); decoded != "" {
 			body = decoded
@@ -462,7 +460,6 @@ func parseSS(link, proxyName string) map[string]interface{} {
 		userInfo := parts[0]
 		hostPart := parts[1]
 
-		// 解析 userinfo (如果内部不含冒号，说明是被 Base64 编码的 method:password)
 		if !strings.Contains(userInfo, ":") {
 			if decodedUser := safeBase64Decode(userInfo); decodedUser != "" {
 				userInfo = decodedUser
@@ -477,20 +474,20 @@ func parseSS(link, proxyName string) map[string]interface{} {
 			lastColon := strings.LastIndex(hostPart, ":")
 			if lastColon != -1 {
 				server := hostPart[:lastColon]
-				port := hostPart[lastColon+1:]
+				portInt, _ := strconv.Atoi(hostPart[lastColon+1:])
 
 				if strings.Contains(server, ":") && !strings.HasPrefix(server, "[") {
-					server = "[" + server + "]" // IPv6 包装
+					server = "[" + server + "]"
 				}
 
-				return map[string]interface{}{
-					"name":     proxyName,
-					"type":     "ss",
-					"server":   server,
-					"port":     port,
-					"cipher":   method,
-					"password": password,
-					"udp":      true,
+				return &ClashNode{
+					Name:     proxyName,
+					Type:     "ss",
+					Server:   server,
+					Port:     portInt,
+					Cipher:   method,
+					Password: password,
+					UDP:      true,
 				}
 			}
 		}
@@ -498,96 +495,85 @@ func parseSS(link, proxyName string) map[string]interface{} {
 	return nil
 }
 
-func parseSocks5(link, proxyName string) map[string]interface{} {
+func parseSocks5(link, proxyName string) *ClashNode {
 	parsed, err := url.Parse(link)
 	if err != nil {
 		return nil
 	}
 
-	username := parsed.User.Username()
-	password, _ := parsed.User.Password()
-	server := parsed.Hostname()
-	port := parsed.Port()
-	if port == "" {
-		port = "1080"
+	portInt, _ := strconv.Atoi(parsed.Port())
+	if portInt == 0 {
+		portInt = 1080
 	}
 	query := parsed.Query()
+	password, _ := parsed.User.Password()
 
-	proxy := map[string]interface{}{
-		"name":             proxyName,
-		"type":             "socks5",
-		"server":           server,
-		"port":             port,
-		"udp":              true,
-		"skip-cert-verify": getBool(query, "insecure", "skip-cert-verify"),
-	}
-
-	if username != "" {
-		proxy["username"] = username
-	}
-	if password != "" {
-		proxy["password"] = password
+	node := &ClashNode{
+		Name:           proxyName,
+		Type:           "socks5",
+		Server:         parsed.Hostname(),
+		Port:           portInt,
+		Username:       parsed.User.Username(),
+		Password:       password,
+		UDP:            true,
+		SkipCertVerify: getBool(query, "insecure", "skip-cert-verify"),
 	}
 
 	if getBool(query, "tls") {
-		proxy["tls"] = true
+		node.TLS = true
 		if sni := query.Get("sni"); sni != "" {
-			proxy["servername"] = sni
+			node.ServerName = sni
 		}
 	}
 
-	return proxy
+	return node
 }
 
 // ---------------------------------------------------------
-// 4. 通用传输层 (Transport) 参数挂载
+// 5. 通用传输层 (Transport) 参数挂载
 // ---------------------------------------------------------
-func applyTransportOpts(proxy map[string]interface{}, network string, query url.Values) {
+func applyTransportOpts(node *ClashNode, network string, query url.Values) {
 	if network == "ws" {
-		wsOpts := map[string]interface{}{
+		node.WSOpts = map[string]interface{}{
 			"path":    "/",
 			"headers": map[string]string{},
 		}
 		if p := query.Get("path"); p != "" {
-			wsOpts["path"] = p
+			node.WSOpts["path"] = p
 		}
 		if h := query.Get("host"); h != "" {
-			wsOpts["headers"].(map[string]string)["Host"] = h
+			node.WSOpts["headers"].(map[string]string)["Host"] = h
 		}
-		proxy["ws-opts"] = wsOpts
 	} else if network == "grpc" {
-		grpcOpts := map[string]interface{}{
+		node.GRPCOpts = map[string]interface{}{
 			"grpc-service-name": "",
 		}
 		if s := query.Get("serviceName"); s != "" {
-			grpcOpts["grpc-service-name"] = s
+			node.GRPCOpts["grpc-service-name"] = s
 		}
-		proxy["grpc-opts"] = grpcOpts
 	} else if network == "h2" {
-		h2Opts := map[string]interface{}{}
+		node.H2Opts = map[string]interface{}{}
 		if p := query.Get("path"); p != "" {
-			h2Opts["path"] = strings.Split(p, ",")
+			node.H2Opts["path"] = strings.Split(p, ",")
 		} else {
-			h2Opts["path"] = []string{"/"}
+			node.H2Opts["path"] = []string{"/"}
 		}
 		if h := query.Get("host"); h != "" {
-			h2Opts["host"] = strings.Split(h, ",")
+			node.H2Opts["host"] = strings.Split(h, ",")
 		}
-		proxy["h2-opts"] = h2Opts
 	} else if network == "http" {
-		httpOpts := map[string]interface{}{
+		node.HTTPOpts = map[string]interface{}{
 			"method": "GET",
 		}
 		if p := query.Get("path"); p != "" {
-			httpOpts["path"] = strings.Split(p, ",")
+			node.HTTPOpts["path"] = strings.Split(p, ",")
 		} else {
-			httpOpts["path"] = []string{"/"}
+			node.HTTPOpts["path"] = []string{"/"}
 		}
 		if h := query.Get("host"); h != "" {
-			httpOpts["headers"] = map[string]interface{}{
+			node.HTTPOpts["headers"] = map[string]interface{}{
 				"Host": strings.Split(h, ","),
 			}
 		}
-		proxy["http-opts"] = httpOpts
 	}
 }
