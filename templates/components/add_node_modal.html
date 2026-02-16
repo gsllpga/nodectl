@@ -1,0 +1,184 @@
+{{define "add_node_modal.html"}}
+<style>
+    /* 1. 容器与遮罩层 (独立命名，防止冲突) */
+    .add-modal-overlay {
+        display: none; 
+        position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+        background: rgba(0, 0, 0, 0.4); 
+        backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px);
+        z-index: 2000; 
+        align-items: center; justify-content: center;
+        opacity: 0; transition: opacity 0.3s ease;
+    }
+    .add-modal-overlay.active { display: flex; opacity: 1; }
+    
+    .add-modal-card {
+        background: #ffffff; 
+        width: 100%; max-width: 400px; 
+        padding: 28px;
+        border-radius: 20px; 
+        box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+        transform: scale(0.95); transition: transform 0.3s cubic-bezier(0.2, 0.8, 0.2, 1);
+        text-align: left; 
+    }
+    .add-modal-overlay.active .add-modal-card { transform: scale(1); }
+
+    /* 2. 内部通用样式 (补全丢失的部分) */
+    .add-modal-header { margin-bottom: 20px; }
+    .add-modal-header h3 { font-size: 20px; font-weight: 700; color: #1d1d1f; margin: 0; }
+
+    .add-input-group { margin-bottom: 16px; }
+    .add-input-group label { display: block; font-size: 13px; font-weight: 600; margin-bottom: 8px; color: #666; }
+    
+    .add-input-group input {
+        width: 100%; padding: 12px 14px;
+        font-size: 15px; border: 1px solid #d1d1d6;
+        border-radius: 10px; outline: none; transition: border 0.2s;
+        box-sizing: border-box; /* 重要：防止宽度溢出 */
+    }
+    .add-input-group input:focus { border-color: #007aff; box-shadow: 0 0 0 3px rgba(0,122,255,0.1); }
+
+    /* 3. 分组选择器样式 */
+    .group-selector { display: flex; gap: 12px; }
+    .group-btn {
+        flex: 1; padding: 12px; border: 1px solid #e5e5ea; border-radius: 12px;
+        background: #f9f9fc; cursor: pointer; text-align: center;
+        font-size: 14px; font-weight: 600; color: #555; transition: all 0.2s;
+    }
+    .group-btn:hover { background: #f0f0f5; }
+    .group-btn.active.type-direct { background: rgba(52, 199, 89, 0.1); border-color: #34c759; color: #34c759; }
+    .group-btn.active.type-land { background: rgba(245, 166, 35, 0.1); border-color: #f5a623; color: #f5a623; }
+
+    /* 4. 底部按钮区 */
+    .add-modal-actions { display: flex; justify-content: flex-end; gap: 12px; margin-top: 24px; }
+    
+    .btn-cancel-modal {
+        background: #f5f5f7; color: #1d1d1f; border: none;
+        padding: 10px 20px; border-radius: 8px;
+        font-size: 14px; font-weight: 500; cursor: pointer;
+    }
+    .btn-cancel-modal:hover { background: #e5e5ea; }
+
+    .btn-submit-modal {
+        background: #007aff; color: white; border: none;
+        padding: 10px 20px; border-radius: 8px;
+        font-size: 14px; font-weight: 500; cursor: pointer;
+    }
+    .btn-submit-modal:hover { background: #0062cc; }
+    .btn-submit-modal:disabled { background: #ccc; cursor: not-allowed; }
+
+    /* 消息提示框 */
+    .add-msg-box { padding: 12px; border-radius: 10px; font-size: 13px; margin-bottom: 16px; display: none; }
+</style>
+
+<div class="add-modal-overlay" id="addNodeModal">
+    <div class="add-modal-card">
+        <div class="add-modal-header">
+            <h3>添加新节点</h3>
+        </div>
+        
+        <div id="addNodeMsg" class="add-msg-box"></div>
+        
+        <form id="addNodeForm" onsubmit="submitAddNode(event)">
+            <div class="add-input-group">
+                <label>选择节点分组</label>
+                <div class="group-selector">
+                    <div class="group-btn type-direct active" onclick="selectGroup(1, this)">🎯 直连节点</div>
+                    <div class="group-btn type-land" onclick="selectGroup(2, this)">🛬 落地节点</div>
+                </div>
+                <input type="hidden" id="nodeGroupVal" value="1">
+            </div>
+
+            <div class="add-input-group">
+                <label>自定义名称 (可选)</label>
+                <input type="text" id="nodeNameInput" placeholder="不填则自动生成，如: node-a1b2">
+            </div>
+
+            <div class="add-modal-actions">
+                <button type="button" class="btn-cancel-modal" onclick="closeAddNodeModal()">取消</button>
+                <button type="submit" class="btn-submit-modal" id="addNodeSubmitBtn">确认添加</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<script>
+    const addNodeModalEl = document.getElementById('addNodeModal');
+    
+    // 点击遮罩层关闭
+    addNodeModalEl.addEventListener('click', function(e) {
+        if (e.target === addNodeModalEl) closeAddNodeModal();
+    });
+
+    function openAddNodeModal() {
+        addNodeModalEl.classList.add('active');
+        document.getElementById('addNodeMsg').style.display = 'none';
+        document.getElementById('addNodeForm').reset();
+        
+        // 重置分组选择
+        document.querySelectorAll('.group-btn').forEach(b => b.classList.remove('active'));
+        document.querySelector('.type-direct').classList.add('active');
+        document.getElementById('nodeGroupVal').value = '1';
+
+        const btn = document.getElementById('addNodeSubmitBtn');
+        btn.disabled = false;
+        btn.innerText = '确认添加';
+    }
+
+    function closeAddNodeModal() {
+        addNodeModalEl.classList.remove('active');
+    }
+
+    function selectGroup(val, el) {
+        document.querySelectorAll('.group-btn').forEach(b => b.classList.remove('active'));
+        el.classList.add('active');
+        document.getElementById('nodeGroupVal').value = val;
+    }
+
+    async function submitAddNode(e) {
+        e.preventDefault();
+        const btn = document.getElementById('addNodeSubmitBtn');
+        const nodeName = document.getElementById('nodeNameInput').value.trim();
+        const routingType = parseInt(document.getElementById('nodeGroupVal').value);
+
+        btn.disabled = true;
+        btn.innerText = '添加中...';
+
+        try {
+            const response = await fetch('/api/add-node', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name: nodeName, routing_type: routingType })
+            });
+            const data = await response.json();
+            
+            if (data.status === 'success') {
+                showAddNodeMsg('success', data.message);
+                setTimeout(() => { 
+                    closeAddNodeModal(); 
+                    loadNodesList();     
+                }, 800);
+            } else {
+                showAddNodeMsg('error', data.message);
+                btn.disabled = false;
+                btn.innerText = '确认添加';
+            }
+        } catch (err) {
+            showAddNodeMsg('error', '网络请求失败');
+            btn.disabled = false;
+            btn.innerText = '确认添加';
+        }
+    }
+
+    function showAddNodeMsg(type, text) {
+        const msgBox = document.getElementById('addNodeMsg');
+        msgBox.style.display = 'block';
+        msgBox.innerText = text;
+        if (type === 'error') {
+            msgBox.style.background = '#fff0f0'; msgBox.style.color = '#e30000';
+        } else {
+            msgBox.style.background = '#e8f5e9'; msgBox.style.color = '#34c759';
+        }
+    }
+</script>
+{{end}}

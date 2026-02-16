@@ -20,17 +20,18 @@ var DB *gorm.DB
 
 // NodePool 节点池表
 type NodePool struct {
-	UUID      string            `gorm:"primaryKey;column:uuid;type:varchar(36)" json:"uuid"`
-	InstallID string            `gorm:"column:install_id;type:varchar(16);uniqueIndex" json:"install_id"`
-	Name      string            `gorm:"column:name" json:"name"`
-	Links     map[string]string `gorm:"column:links;serializer:json" json:"links"`
-	IPV4      string            `gorm:"column:ipv4;type:varchar(15)" json:"ipv4"`
-	IPV6      string            `gorm:"column:ipv6;type:varchar(45)" json:"ipv6"`
-	Region    string            `gorm:"column:region" json:"region"`
-	SortIndex int               `gorm:"column:sort_index;default:0" json:"sort_index"`
-	Remark    string            `gorm:"column:remark" json:"remark"`
-	CreatedAt time.Time         `gorm:"column:created_at" json:"created_at"`
-	UpdatedAt time.Time         `gorm:"column:updated_at" json:"updated_at"`
+	UUID        string            `gorm:"primaryKey;column:uuid;type:varchar(36)" json:"uuid"`
+	InstallID   string            `gorm:"column:install_id;type:varchar(16);uniqueIndex" json:"install_id"`
+	Name        string            `gorm:"column:name" json:"name"`
+	RoutingType int               `gorm:"column:routing_type;default:1" json:"routing_type"` //路由类型
+	Links       map[string]string `gorm:"column:links;serializer:json" json:"links"`
+	IPV4        string            `gorm:"column:ipv4;type:varchar(15)" json:"ipv4"`
+	IPV6        string            `gorm:"column:ipv6;type:varchar(45)" json:"ipv6"`
+	Region      string            `gorm:"column:region" json:"region"`                   //存储国家信息
+	SortIndex   int               `gorm:"column:sort_index;default:0" json:"sort_index"` //排序
+	Remark      string            `gorm:"column:remark" json:"remark"`                   //备注
+	CreatedAt   time.Time         `gorm:"column:created_at" json:"created_at"`
+	UpdatedAt   time.Time         `gorm:"column:updated_at" json:"updated_at"`
 }
 
 func (NodePool) TableName() string {
