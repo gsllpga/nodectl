@@ -363,34 +363,69 @@ func apiCallbackReport(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 定义上报的数据结构
+	// 1. 完整定义接收前端脚本上报的数据结构
 	var report struct {
 		InstallID string `json:"install_id"`
-		// 你可以根据脚本上报的内容增加字段，比如 IPv4, Version 等
-		// IPV4 string `json:"ipv4"`
+		Protocol  string `json:"protocol"`
+		Link      string `json:"link"`
+		IPv4      string `json:"ipv4"`
+		IPv6      string `json:"ipv6"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&report); err != nil {
-		sendJSON(w, "error", "数据格式错误")
+		sendJSON(w, "error", "JSON 解析失败")
 		return
 	}
 
 	if report.InstallID == "" {
-		sendJSON(w, "error", "缺少 InstallID")
+		sendJSON(w, "error", "缺少 install_id")
 		return
 	}
 
-	// 验证 InstallID 是否存在
+	// 2. 校验并查找对应的节点
 	var node database.NodePool
 	if err := database.DB.Where("install_id = ?", report.InstallID).First(&node).Error; err != nil {
-		sendJSON(w, "error", "无效的 InstallID")
+		logger.Log.Warn("收到未知节点的上报", "install_id", report.InstallID)
+		sendJSON(w, "error", "节点不存在")
 		return
 	}
 
-	// 更新逻辑 (示例：更新最后在线时间，或者 IP)
-	// database.DB.Model(&node).Update("updated_at", time.Now())
+	changed := false
 
-	sendJSON(w, "success", "上报成功")
+	// 3. 处理协议和链接的上报
+	if report.Protocol != "" && report.Link != "" {
+		if node.Links == nil {
+			node.Links = make(map[string]string)
+		}
+		// 将对应的协议链接存入 map 中
+		node.Links[report.Protocol] = report.Link
+		changed = true
+		logger.Log.Info("节点协议已上报", "节点", node.Name, "协议", report.Protocol)
+	}
+
+	// 4. 处理双栈 IP 地址的上报
+	if report.IPv4 != "" || report.IPv6 != "" {
+		if report.IPv4 != "" {
+			node.IPV4 = report.IPv4
+		}
+		if report.IPv6 != "" {
+			node.IPV6 = report.IPv6
+		}
+		changed = true
+		logger.Log.Info("节点 IP 已更新", "节点", node.Name, "IPv4", report.IPv4, "IPv6", report.IPv6)
+	}
+
+	// 5. 保存回数据库
+	if changed {
+		// 使用 Save 会全量更新，能确保 JSON(Links map) 字段正确被序列化保存
+		if err := database.DB.Save(&node).Error; err != nil {
+			logger.Log.Error("保存节点上报数据失败", "err", err.Error())
+			sendJSON(w, "error", "数据库保存失败")
+			return
+		}
+	}
+
+	sendJSON(w, "success", "上报接收成功")
 }
 
 // [新增] apiGetSettings 获取全局节点代理设置
