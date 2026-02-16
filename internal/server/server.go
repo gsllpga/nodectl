@@ -7,6 +7,7 @@ import (
 
 	"nodectl/internal/logger"
 	"nodectl/internal/middleware"
+	"nodectl/internal/service"
 )
 
 // tmpl 设为包级全局变量，供同包下的 handlers.go 使用
@@ -14,6 +15,7 @@ var tmpl *template.Template
 
 // Start 启动 HTTP 服务器
 func Start(tmplFS embed.FS) {
+	service.InitGeoIP()
 	// 1. 预编译解析模板
 	tmpl = template.Must(template.ParseFS(tmplFS, "templates/*.html", "templates/components/*.html"))
 
@@ -38,6 +40,10 @@ func Start(tmplFS embed.FS) {
 	// [新增] 公开路由 (不需要 middleware.Auth)
 	mux.HandleFunc("/api/public/install-script", apiPublicScript) // 获取脚本
 	mux.HandleFunc("/api/callback/report", apiCallbackReport)     // 脚本上报
+
+	// [新增] GeoIP 更新接口
+	mux.HandleFunc("/api/update-geoip", middleware.Auth(apiUpdateGeoIP))
+	mux.HandleFunc("/api/get-geo-status", middleware.Auth(apiGetGeoStatus))
 
 	// 3. 启动服务
 	port := "8080"

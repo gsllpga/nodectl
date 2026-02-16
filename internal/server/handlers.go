@@ -109,15 +109,19 @@ func apiUpdateNode(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// 定义请求结构体
 	var req struct {
 		UUID          string            `json:"uuid"`
 		Name          string            `json:"name"`
 		RoutingType   int               `json:"routing_type"`
 		IsBlocked     bool              `json:"is_blocked"`
 		Links         map[string]string `json:"links"`
-		DisabledLinks []string          `json:"disabled_links"` // [新增] 接收前端传来的禁用列表
+		DisabledLinks []string          `json:"disabled_links"`
+		IPV4          string            `json:"ipv4"` // [新增] 接收 IPv4
+		IPV6          string            `json:"ipv6"` // [新增] 接收 IPv6
 	}
 
+	// 解析 JSON
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		sendJSON(w, "error", "请求格式错误")
 		return
@@ -128,8 +132,8 @@ func apiUpdateNode(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// [修改] 调用 Service 时传入 req.DisabledLinks
-	err := service.UpdateNode(req.UUID, req.Name, req.RoutingType, req.Links, req.IsBlocked, req.DisabledLinks)
+	// [修改] 调用 Service 时传入 req.IPV4 和 req.IPV6
+	err := service.UpdateNode(req.UUID, req.Name, req.RoutingType, req.Links, req.IsBlocked, req.DisabledLinks, req.IPV4, req.IPV6)
 	if err != nil {
 		logger.Log.Error("更新节点失败", "err", err.Error())
 		sendJSON(w, "error", "数据库更新失败")
@@ -411,6 +415,23 @@ func apiCallbackReport(w http.ResponseWriter, r *http.Request) {
 		if report.IPv6 != "" {
 			node.IPV6 = report.IPv6
 		}
+
+		// [新增] 自动解析 Region
+		// 优先使用 IPv4 解析，如果没有则尝试 IPv6
+		newRegion := ""
+		if node.IPV4 != "" {
+			newRegion = service.GlobalGeoIP.GetCountryIsoCode(node.IPV4)
+		}
+		if newRegion == "" && node.IPV6 != "" {
+			newRegion = service.GlobalGeoIP.GetCountryIsoCode(node.IPV6)
+		}
+
+		if newRegion != "" && newRegion != node.Region {
+			node.Region = newRegion
+			changed = true
+			logger.Log.Info("节点地区已更新", "节点", node.Name, "地区", newRegion)
+		}
+
 		changed = true
 		logger.Log.Info("节点 IP 已更新", "节点", node.Name, "IPv4", report.IPv4, "IPv6", report.IPv6)
 	}
@@ -479,4 +500,69 @@ func apiUpdateSettings(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	sendJSON(w, "success", "设置已保存")
+}
+
+// [新增] apiUpdateGeoIP 处理 GeoIP 数据库更新请求
+func apiUpdateGeoIP(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	go func() {
+		logger.Log.Info("后台开始更新 GeoIP 数据库...")
+		if err := service.GlobalGeoIP.ForceUpdate(); err != nil {
+			logger.Log.Error("GeoIP 数据库更新失败", "err", err.Error())
+		} else {
+			logger.Log.Info("GeoIP 数据库更新成功")
+		}
+	}()
+
+	sendJSON(w, "success", "更新任务已在后台启动，请留意日志或稍后刷新")
+}
+
+// 在 internal/server/handlers.go 中添加：
+
+// [新增] apiGetGeoStatus 获取 GeoIP 数据库状态
+func apiGetGeoStatus(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	localTime, errLocal := service.GlobalGeoIP.GetLocalDBTime()
+	remoteTime, errRemote := service.GlobalGeoIP.CheckRemoteDBTime()
+
+	status := "unknown"
+	msg := ""
+
+	// 简单的状态判断逻辑
+	if errLocal != nil {
+		status = "not_found" // 本地无文件
+	} else if errRemote == nil && remoteTime.After(localTime.Add(24*time.Hour)) {
+		// 远程时间比本地时间晚 24 小时以上，认为有更新
+		status = "update_available"
+	} else if errRemote == nil {
+		status = "latest"
+	} else {
+		status = "check_failed" // 远程检查失败
+	}
+
+	resp := map[string]interface{}{
+		"status": "success",
+		"data": map[string]interface{}{
+			"local_time":  localTime.Format("2006-01-02"),
+			"remote_time": remoteTime.Format("2006-01-02"),
+			"state":       status, // latest, update_available, not_found, check_failed
+			"error":       msg,
+		},
+	}
+
+	// 如果获取远程时间失败，把错误带上，但如果本地有文件，不影响使用
+	if errRemote != nil {
+		resp["data"].(map[string]interface{})["remote_error"] = errRemote.Error()
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(resp)
 }

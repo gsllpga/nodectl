@@ -1,6 +1,6 @@
 {{define "system_settings_modal.html"}}
 <style>
-    /* 遮罩层 */
+    /* ================= 基础弹窗框架 ================= */
     .sys-modal-overlay {
         display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%;
         background: rgba(0, 0, 0, 0.4); 
@@ -10,10 +10,10 @@
     }
     .sys-modal-overlay.active { display: flex; opacity: 1; }
     
-    /* 卡片容器 */
     .sys-modal-card {
         background: #ffffff; 
-        width: 100%; max-width: 420px; 
+        width: 100%; max-width: 500px; 
+        height: 500px; 
         border-radius: 16px; 
         box-shadow: 0 20px 40px rgba(0,0,0,0.15);
         transform: scale(0.95); transition: all 0.3s cubic-bezier(0.2, 0.8, 0.2, 1);
@@ -21,21 +21,63 @@
     }
     .sys-modal-overlay.active .sys-modal-card { transform: scale(1); }
 
-    .sys-header { padding: 20px 25px 15px; background: #ffffff; }
-    .sys-title { font-size: 18px; color: #1d1d1f; font-weight: 700; }
+    /* ================= 顶部 Tab 导航 (左对齐) ================= */
+    .sys-header { 
+        padding: 0; 
+        background: #f5f5f7; 
+        border-bottom: 1px solid #e5e5ea;
+        display: flex;
+        justify-content: flex-start; /* 左对齐 */
+        padding-top: 15px;
+        padding-left: 25px;
+    }
 
-    .sys-body { padding: 0 25px 20px; }
+    .sys-tab-menu {
+        display: flex;
+        gap: 24px;
+    }
 
-    .sys-field { margin-bottom: 20px; }
+    .sys-tab-btn {
+        background: transparent; border: none;
+        font-size: 14px; font-weight: 600; color: #86868b;
+        padding: 10px 0; cursor: pointer;
+        position: relative;
+        transition: color 0.2s;
+    }
+    .sys-tab-btn:hover { color: #555; }
+    .sys-tab-btn.active { color: #1d1d1f; }
+    
+    .sys-tab-btn.active::after {
+        content: ''; position: absolute; bottom: -1px; left: 0; right: 0;
+        height: 2px; background: #007aff; border-radius: 2px;
+    }
+
+    /* ================= 内容区域 ================= */
+    .sys-body { 
+        flex: 1; position: relative; overflow: hidden; background: #fff;
+    }
+
+    .sys-tab-content {
+        position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+        padding: 25px; overflow-y: auto; display: none; 
+        animation: fadeIn 0.2s ease;
+    }
+    .sys-tab-content.active { display: block; }
+
+    @keyframes fadeIn { 
+        from { opacity: 0; transform: translateY(5px); } 
+        to { opacity: 1; transform: translateY(0); } 
+    }
+
+    /* ================= 表单组件 ================= */
+    .sys-field { margin-bottom: 24px; }
     .sys-field:last-child { margin-bottom: 0; }
     
     .sys-label { 
         display: block; font-size: 12px; font-weight: 600; 
         color: #86868b; margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.5px;
     }
-    .sys-desc {
-        font-size: 11px; color: #999; margin-top: 6px; line-height: 1.4;
-    }
+    .sys-desc { font-size: 12px; color: #999; margin-top: 6px; line-height: 1.4; }
 
     .sys-input {
         width: 100%; padding: 10px 12px; border: 1px solid #d1d1d6; border-radius: 8px;
@@ -54,7 +96,63 @@
     }
     .btn-sys-regen:hover { background: #e0efff; border-color: #b3d7ff; }
 
-    /* 底部按钮区 */
+    /* ================= Geo 信息与按钮优化 ================= */
+    .geo-info-card {
+        background: #f9f9fc; border: 1px solid #eee; border-radius: 12px; padding: 20px;
+        display: flex; flex-direction: column; gap: 12px;
+        margin-bottom: 20px;
+    }
+    .geo-row {
+        display: flex; justify-content: space-between; align-items: center; font-size: 13px;
+    }
+    .geo-key { color: #666; font-weight: 500; }
+    .geo-value { color: #333; font-weight: 600; font-family: monospace; }
+    
+    /* 统一的 Geo 按钮容器 */
+    .btn-geo-wrapper {
+        width: 100%;
+        position: relative;
+    }
+
+    /* 按钮基础样式 */
+    .btn-geo-action {
+        width: 100%; padding: 14px; border-radius: 10px; 
+        font-size: 14px; font-weight: 600; cursor: pointer;
+        display: flex; align-items: center; justify-content: center; gap: 8px; 
+        transition: all 0.2s ease;
+        border: none; outline: none;
+    }
+
+    /* 状态 1: 检查中 / 更新中 */
+    .btn-geo-loading {
+        background: #f5f5f7; color: #86868b; cursor: default;
+    }
+
+    /* 状态 2: 有可用更新 / 未下载 */
+    .btn-geo-update {
+        background: #007aff; color: white;
+        box-shadow: 0 4px 12px rgba(0, 122, 255, 0.2);
+    }
+    .btn-geo-update:hover { background: #0062cc; transform: translateY(-1px); }
+    .btn-geo-update:active { transform: translateY(0); }
+
+    /* 状态 3: 已是最新 */
+    .btn-geo-latest {
+        background: #eafff1; color: #34c759; border: 1px solid #bbf7d0;
+        cursor: default;
+    }
+    
+    /* 状态 4: 错误/重试 */
+    .btn-geo-error {
+        background: #fff5f5; color: #d74242; border: 1px solid #fed7d7;
+    }
+    .btn-geo-error:hover { background: #fee2e2; }
+
+    /* 旋转动画 */
+    @keyframes spin { 100% { transform: rotate(360deg); } }
+    .spin { animation: spin 1s linear infinite; }
+
+    /* ================= 底部按钮区 ================= */
     .sys-footer { 
         padding: 15px 25px 20px 25px; border-top: 1px solid #eee; background: #fff;
         display: flex; justify-content: flex-end; gap: 12px;
@@ -65,48 +163,119 @@
     }
     .btn-sys-cancel:hover { background: #e5e5ea; color: #333; }
     .btn-sys-save {
-        background: #6c5ce7; border: none; color: white;
+        background: #007aff; border: none; color: white;
         padding: 9px 22px; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; transition: 0.2s;
     }
-    .btn-sys-save:hover { background: #5a4bcf; }
+    .btn-sys-save:hover { background: #0062cc; }
 </style>
 
 <div class="sys-modal-overlay" id="systemSettingsModal">
     <div class="sys-modal-card">
         <div class="sys-header">
-            <div class="sys-title">⚙️ 系统设置</div>
+            <div class="sys-tab-menu">
+                <button class="sys-tab-btn active" onclick="switchSysTab('basic')">基本设置</button>
+                <button class="sys-tab-btn" onclick="switchSysTab('pref')">偏好设置</button>
+                <button class="sys-tab-btn" onclick="switchSysTab('geo')">Geo 管理</button>
+            </div>
         </div>
         
         <div class="sys-body">
-            
-            <div class="sys-field">
-                <label class="sys-label">面板外部访问地址 (Panel URL)</label>
-                <input type="text" id="sys_panel_url" class="sys-input" placeholder="例如: https://www.yourdomain.com:8092">
-                <div class="sys-desc">用于脚本一键部署时的回调状态上报，以及订阅链接的生成基地址。</div>
-            </div>
-
-            <div class="sys-field">
-                <label class="sys-label">订阅安全凭证 (Sub Token)</label>
-                <div class="sys-input-group">
-                    <input type="text" id="sys_sub_token" class="sys-input" placeholder="用于拉取订阅的安全校验码">
-                    <button type="button" class="btn-sys-regen" onclick="generateNewSubToken()">重新生成</button>
+            <div id="tab-basic" class="sys-tab-content active">
+                <div class="sys-field">
+                    <label class="sys-label">面板外部访问地址 (Panel URL)</label>
+                    <input type="text" id="sys_panel_url" class="sys-input" placeholder="例如: https://www.yourdomain.com:8092">
+                    <div class="sys-desc">用于脚本一键部署时的回调状态上报，以及订阅链接的生成基地址。</div>
                 </div>
-                <div class="sys-desc">这是您的核心订阅鉴权标识。如遭泄露，请点击重新生成并保存，旧链接将立即失效。</div>
+
+                <div class="sys-field">
+                    <label class="sys-label">订阅安全凭证 (Sub Token)</label>
+                    <div class="sys-input-group">
+                        <input type="text" id="sys_sub_token" class="sys-input" placeholder="用于拉取订阅的安全校验码">
+                        <button type="button" class="btn-sys-regen" onclick="generateNewSubToken()">重新生成</button>
+                    </div>
+                    <div class="sys-desc">这是您的核心订阅鉴权标识。如遭泄露，请点击重新生成并保存，旧链接将立即失效。</div>
+                </div>
             </div>
 
+            <div id="tab-pref" class="sys-tab-content">
+                <div style="text-align: center; color: #999; padding-top: 50px;">
+                    <svg style="width: 48px; height: 48px; opacity: 0.2;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                        <circle cx="12" cy="12" r="3"></circle>
+                        <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+                    </svg>
+                    <p style="margin-top: 10px; font-size: 13px;">更多个性化设置即将推出...</p>
+                </div>
+            </div>
+
+            <div id="tab-geo" class="sys-tab-content">
+                <div class="sys-field">
+                    <label class="sys-label">数据库版本信息</label>
+                    <div class="geo-info-card">
+                        <div class="geo-row">
+                            <span class="geo-key">本地版本</span>
+                            <span class="geo-value" id="geoLocalTime">--</span>
+                        </div>
+                        <div class="geo-row">
+                            <span class="geo-key">最新版本</span>
+                            <span class="geo-value" id="geoRemoteTime">--</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="sys-field">
+                    <label class="sys-label">状态与操作</label>
+                    
+                    <div class="btn-geo-wrapper">
+                        <button type="button" id="btnGeoUpdate" class="btn-geo-action btn-geo-loading" onclick="handleGeoBtnClick()">
+                            <svg class="spin" style="width:16px;height:16px;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/></svg>
+                            正在检查更新...
+                        </button>
+                    </div>
+                    
+                    <div class="sys-desc" id="geoActionDesc">连接 GitHub API 获取版本信息中...</div>
+                </div>
+            </div>
         </div>
 
         <div class="sys-footer">
-            <button class="btn-sys-cancel" onclick="closeSystemSettingsModal()">取消</button>
-            <button class="btn-sys-save" onclick="saveSystemSettings()" id="btnSaveSys">保存设置</button>
+            <button class="btn-sys-cancel" onclick="closeSystemSettingsModal()">关闭</button>
+            <button class="btn-sys-save" onclick="saveSystemSettings()" id="btnSaveSys">保存基本设置</button>
         </div>
     </div>
 </div>
 
 <script>
     const sysModal = document.getElementById('systemSettingsModal');
+    let hasCheckedGeo = false; 
+    let geoState = 'checking'; // current state: checking, latest, update, error
 
-    // 随机生成 Token 逻辑
+    // Tab 切换逻辑
+    function switchSysTab(tabName) {
+        const btns = document.querySelectorAll('.sys-tab-btn');
+        btns.forEach(btn => btn.classList.remove('active'));
+        
+        if(tabName === 'basic') btns[0].classList.add('active');
+        if(tabName === 'pref') btns[1].classList.add('active');
+        if(tabName === 'geo') {
+            btns[2].classList.add('active');
+            if(!hasCheckedGeo) {
+                checkGeoStatus();
+            }
+        }
+
+        const contents = document.querySelectorAll('.sys-tab-content');
+        contents.forEach(c => c.classList.remove('active'));
+        document.getElementById('tab-' + tabName).classList.add('active');
+
+        // 底部按钮控制
+        const saveBtn = document.getElementById('btnSaveSys');
+        if (tabName === 'basic') {
+            saveBtn.style.display = 'block';
+        } else {
+            saveBtn.style.display = 'none';
+        }
+    }
+
     function generateNewSubToken() {
         const chars = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
         let token = '';
@@ -118,9 +287,10 @@
 
     async function openSystemSettingsModal() {
         sysModal.classList.add('active');
-        const btnSave = document.getElementById('btnSaveSys');
-        btnSave.innerText = "加载中...";
-        btnSave.disabled = true;
+        switchSysTab('basic'); 
+
+        hasCheckedGeo = false; 
+        renderGeoBtn('checking'); // 重置按钮为检查状态
 
         try {
             const res = await fetch('/api/get-settings');
@@ -132,14 +302,117 @@
             }
         } catch(e) {
             console.error("加载配置失败", e);
-        } finally {
-            btnSave.innerText = "保存设置";
-            btnSave.disabled = false;
         }
     }
 
     function closeSystemSettingsModal() {
         sysModal.classList.remove('active');
+    }
+
+    // 核心：检查状态
+    async function checkGeoStatus() {
+        hasCheckedGeo = true;
+        renderGeoBtn('checking');
+        
+        try {
+            const res = await fetch('/api/get-geo-status');
+            const result = await res.json();
+            
+            if(result.status === 'success') {
+                const data = result.data;
+                const local = data.local_time.startsWith('0001') ? '未下载' : data.local_time;
+                const remote = data.remote_time.startsWith('0001') ? '未知' : data.remote_time;
+                
+                document.getElementById('geoLocalTime').innerText = local;
+                document.getElementById('geoRemoteTime').innerText = remote;
+                
+                // 根据后端返回的状态设置 UI
+                // 后端状态: latest, update_available, not_found, check_failed
+                let uiState = 'error';
+                if (data.state === 'latest') uiState = 'latest';
+                else if (data.state === 'update_available' || data.state === 'not_found') uiState = 'update';
+                else uiState = 'error';
+
+                renderGeoBtn(uiState, data.state === 'not_found');
+
+            } else {
+                throw new Error(result.message);
+            }
+        } catch(e) {
+            console.error("Geo check error", e);
+            document.getElementById('geoRemoteTime').innerText = "网络错误";
+            renderGeoBtn('error');
+        }
+    }
+
+    // 核心：处理按钮点击
+    function handleGeoBtnClick() {
+        if (geoState === 'update') {
+            updateGeoDatabase();
+        } else if (geoState === 'error') {
+            checkGeoStatus(); // 重试检查
+        }
+        // latest 和 checking 状态不可点击
+    }
+
+    // 执行更新
+    async function updateGeoDatabase() {
+        if(!confirm("确定要下载更新 GeoIP 数据库吗？\n这可能需要几十秒的时间。")) return;
+
+        // 手动切到 loading 状态，文字改为更新中
+        const btn = document.getElementById('btnGeoUpdate');
+        btn.className = 'btn-geo-action btn-geo-loading';
+        btn.innerHTML = '<svg class="spin" style="width:16px;height:16px;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/></svg> 正在后台更新...';
+        btn.style.cursor = 'default';
+
+        try {
+            const response = await fetch('/api/update-geoip', { method: 'POST' });
+            const result = await response.json();
+            if(result.status === 'success') {
+                // 更新请求发送成功，等待2秒后自动刷新状态
+                setTimeout(() => {
+                    checkGeoStatus(); 
+                    alert("数据库更新流程已完成，新解析将自动生效。");
+                }, 2000);
+            } else {
+                alert("指令发送失败: " + result.message);
+                renderGeoBtn('update'); // 恢复可点击状态
+            }
+        } catch(e) {
+            alert("请求错误");
+            renderGeoBtn('update');
+        }
+    }
+
+    // 核心：渲染按钮状态机
+    function renderGeoBtn(state, isNotFound = false) {
+        geoState = state;
+        const btn = document.getElementById('btnGeoUpdate');
+        const desc = document.getElementById('geoActionDesc');
+        const rTime = document.getElementById('geoRemoteTime');
+
+        if (state === 'checking') {
+            btn.className = 'btn-geo-action btn-geo-loading';
+            btn.innerHTML = '<svg class="spin" style="width:16px;height:16px;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/></svg> 正在检查更新...';
+            desc.innerText = '正在连接 GitHub API 获取版本信息...';
+            if(rTime.innerText === '--') rTime.innerText = '检查中...';
+        
+        } else if (state === 'latest') {
+            btn.className = 'btn-geo-action btn-geo-latest';
+            btn.innerHTML = '<svg style="width:16px;height:16px;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"></polyline></svg> 已是最新版本';
+            desc.innerText = '当前数据库已是最新版本，无需执行任何操作。';
+        
+        } else if (state === 'update') {
+            btn.className = 'btn-geo-action btn-geo-update';
+            const actionText = isNotFound ? '立即下载数据库' : '立即更新数据库';
+            btn.innerHTML = `<svg style="width:16px;height:16px;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg> ${actionText}`;
+            desc.innerText = isNotFound ? '本地未找到数据库文件，请下载以启用 IP 归属地解析。' : '检测到新版本，建议更新以获得更准确的解析。';
+        
+        } else if (state === 'error') {
+            btn.className = 'btn-geo-action btn-geo-error';
+            btn.innerHTML = '<svg style="width:16px;height:16px;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.5 2v6h-6M2.5 22v-6h6M2 11.5a10 10 0 0 1 18.8-4.3M22 12.5a10 10 0 0 1-18.8 4.3"/></svg> 检查失败，点击重试';
+            desc.innerText = '无法获取版本信息，请检查网络连接或稍后重试。';
+        }
     }
 
     async function saveSystemSettings() {
@@ -154,6 +427,7 @@
         }
 
         const btnSave = document.getElementById('btnSaveSys');
+        const originalText = btnSave.innerText;
         btnSave.innerText = "保存中...";
         btnSave.disabled = true;
 
@@ -165,8 +439,8 @@
             });
             const result = await response.json();
             if (result.status === 'success') {
-                // 同步更新全局的 URL 缓存，让其它组件(如节点安装脚本)能立刻用上新地址
                 window.panelUrl = payload.panel_url; 
+                alert("设置保存成功");
                 closeSystemSettingsModal();
             } else {
                 alert("保存失败: " + result.message);
@@ -174,7 +448,7 @@
         } catch (error) {
             alert('网络错误，请稍后重试');
         } finally {
-            btnSave.innerText = "保存设置";
+            btnSave.innerText = originalText;
             btnSave.disabled = false;
         }
     }

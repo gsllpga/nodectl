@@ -52,7 +52,7 @@ func AddNode(name string, routingType int) (*database.NodePool, error) {
 }
 
 // UpdateNode 更新节点信息 (名称、路由类型、协议链接)
-func UpdateNode(uuid string, name string, routingType int, links map[string]string, isBlocked bool, disabledLinks []string) error {
+func UpdateNode(uuid string, name string, routingType int, links map[string]string, isBlocked bool, disabledLinks []string, ipv4, ipv6 string) error {
 	var node database.NodePool
 
 	if err := database.DB.Where("uuid = ?", uuid).First(&node).Error; err != nil {
@@ -63,7 +63,25 @@ func UpdateNode(uuid string, name string, routingType int, links map[string]stri
 	node.RoutingType = routingType
 	node.Links = links
 	node.IsBlocked = isBlocked
-	node.DisabledLinks = disabledLinks // [新增] 保存被禁用的协议列表
+	node.DisabledLinks = disabledLinks
+	node.IPV4 = ipv4
+	node.IPV6 = ipv6
+
+	// [新增] 解析 Region
+	if GlobalGeoIP != nil {
+		region := ""
+		if ipv4 != "" {
+			region = GlobalGeoIP.GetCountryIsoCode(ipv4)
+		}
+		if region == "" && ipv6 != "" {
+			region = GlobalGeoIP.GetCountryIsoCode(ipv6)
+		}
+		// 如果解析到了，就更新；如果没解析到但IP变空了，可能需要清空 region？
+		// 这里策略是：只要解析出有效代码就覆盖，否则保留原样(或根据需求清空)
+		if region != "" {
+			node.Region = region
+		}
+	}
 
 	return database.DB.Save(&node).Error
 }

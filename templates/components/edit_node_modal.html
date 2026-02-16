@@ -14,70 +14,51 @@
     }
     .edit-modal-overlay.active { display: flex; opacity: 1; }
     
-    /* 2. [核心修复] 卡片容器：改为 Flex 纵向布局 */
+    /* 2. 卡片容器 */
     .edit-modal-card {
         background: #ffffff; 
         width: 100%; 
         max-width: 400px; /* 默认窄模式 */
-        /* 固定高度，确保内部滚动条生效 */
         height: 60vh; max-height: 700px;
         border-radius: 16px; 
         box-shadow: 0 20px 40px rgba(0,0,0,0.15);
         transform: scale(0.95); transition: all 0.3s cubic-bezier(0.2, 0.8, 0.2, 1);
         position: relative;
-        display: flex; flex-direction: column; /* 关键：纵向排列 */
-        overflow: hidden; /* 防止卡片整体被撑大 */
+        display: flex; flex-direction: column; 
+        overflow: hidden; 
     }
     .edit-modal-overlay.active .edit-modal-card { transform: scale(1); }
-
-    /* 宽模式 */
     .edit-modal-card.has-content { max-width: 820px; }
 
-    /* 3. [核心修复] 中间内容区：占据剩余空间并允许收缩 */
+    /* 3. 中间内容区 */
     .edit-modal-body {
-        flex: 1; /* 自动填满中间区域 */
-        min-height: 0; /* 关键：允许子元素溢出触发滚动 */
-        width: 100%;
-        padding: 0; /* padding 移到内部 grid */
+        flex: 1; min-height: 0; width: 100%; padding: 0;
     }
-
-    /* 表单高度撑满 */
     #editNodeForm { height: 100%; display: flex; flex-direction: column; }
 
-    /* 左右分栏布局 */
     .edit-modal-split {
-        display: grid; grid-template-columns: 1fr; gap: 0; 
-        height: 100%; /* 撑满 Body */
+        display: grid; grid-template-columns: 1fr; gap: 0; height: 100%; 
     }
     .edit-modal-card.has-content .edit-modal-split {
         grid-template-columns: 260px 1fr; gap: 0;
     }
 
-    /* 左侧：固定不滚动或独立滚动 */
+    /* 左侧 */
     .edit-left-col { 
         padding: 25px;
         border-right: 1px solid transparent;
         overflow-y: auto;
     }
-    .edit-modal-card.has-content .edit-left-col {
-        border-right: 1px solid #f5f5f7;
-    }
+    .edit-modal-card.has-content .edit-left-col { border-right: 1px solid #f5f5f7; }
 
-    /* 右侧：[核心修复] 独立滚动区域 */
+    /* 右侧 */
     .edit-right-col { 
-        display: none; 
-        height: 100%; 
-        overflow-y: auto; /* 只有右侧会出现滚动条 */
-        padding: 25px;
-        /* 优化滚动条样式 */
-        scrollbar-width: thin; 
-        scrollbar-color: #e5e5ea transparent;
+        display: none; height: 100%; overflow-y: auto; padding: 25px;
+        scrollbar-width: thin; scrollbar-color: #e5e5ea transparent;
     }
-    
     .edit-right-col::-webkit-scrollbar { width: 6px; }
     .edit-right-col::-webkit-scrollbar-thumb { background: #e5e5ea; border-radius: 4px; }
     .edit-right-col::-webkit-scrollbar-track { background: transparent; }
-
     .edit-modal-card.has-content .edit-right-col { display: block; animation: fadeIn 0.3s ease; }
     @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
 
@@ -93,10 +74,24 @@
     .title-input:focus { border-color: #007aff; }
     .title-input::placeholder { color: #ccc; font-weight: 400; }
 
+    /* [新增] IP 输入框样式 */
+    .ip-input {
+        width: 100%; padding: 6px 0; font-size: 14px; font-weight: 500; font-family: monospace;
+        border: none; border-bottom: 1px solid #e1e1e8; border-radius: 0;
+        outline: none; transition: border 0.2s; color: #333; background: transparent;
+    }
+    .ip-input:focus { border-color: #007aff; }
+    .ip-input::placeholder { color: #ccc; font-weight: 400; font-family: -apple-system, sans-serif; }
+
+    /* [新增] 添加IP的小链接样式 */
+    .add-ip-link {
+        font-size: 11px; color: #007aff; cursor: pointer; display: inline-block; margin-top: 4px; text-decoration: none;
+    }
+    .add-ip-link:hover { text-decoration: underline; }
+
     /* 路由类型 */
     .segmented-control {
-        background: #f5f5f7; padding: 4px; border-radius: 10px;
-        display: flex; gap: 4px;
+        background: #f5f5f7; padding: 4px; border-radius: 10px; display: flex; gap: 4px;
     }
     .segment-option {
         flex: 1; text-align: center; padding: 8px 0; 
@@ -151,23 +146,16 @@
     .btn-delete-text:hover { color: #d74242; background: rgba(215, 66, 66, 0.08); }
     .btn-delete-text.confirm-state { color: #fff; background: #d74242; }
 
-    /* [核心修复] 内容文本域：优化内边距和行高，消除空白 */
     .card-body-row { padding: 0; display: block; }
     
     .protocol-textarea {
         width: 100%; border: none; 
-        padding: 8px 12px; /* 减小内边距 */
+        padding: 8px 12px; 
         font-size: 11px; line-height: 1.4; color: #333;
         font-family: Menlo, Monaco, "Courier New", monospace; 
         background: transparent; outline: none;
-        resize: none; 
-        overflow: hidden; 
-        min-height: 36px; /* 减小最小高度 */
-        
-        /* 强制换行，防止长字符撑开 */
-        white-space: pre-wrap;
-        word-break: break-all;
-        overflow-wrap: break-word;
+        resize: none; overflow: hidden; min-height: 36px;
+        white-space: pre-wrap; word-break: break-all; overflow-wrap: break-word;
     }
     .protocol-textarea:focus { background: #fafafa; }
 
@@ -179,13 +167,12 @@
     }
     .btn-add-protocol-left:hover { background: #e0efff; }
 
-    /* 5. 底部按钮固定栏 (Flex Item) */
+    /* 5. 底部按钮 */
     .edit-modal-footer { 
         padding: 15px 25px 20px 25px; 
-        border-top: 1px solid #eee;
-        background: #fff;
+        border-top: 1px solid #eee; background: #fff;
         display: flex; justify-content: flex-end; gap: 12px; 
-        z-index: 5; /* 确保层级 */
+        z-index: 5;
     }
     .btn-footer-cancel {
         background: #f5f5f7; border: none; color: #666;
@@ -198,11 +185,9 @@
     }
     .btn-footer-save:hover { background: #0062cc; }
 
-    /* 移动端适配 */
     @media (max-width: 768px) {
         .edit-modal-card { max-height: 90vh; }
         .edit-modal-card.has-content .edit-modal-split { grid-template-columns: 1fr; gap: 0; }
-        /* 移动端：左侧变为上侧，右侧变为下侧，整体滚动 */
         .edit-modal-split { display: block; overflow-y: auto; }
         .edit-left-col, .edit-right-col { height: auto; overflow: visible; padding: 20px; }
         .edit-left-col { border-right: none; border-bottom: 1px solid #f5f5f7; }
@@ -232,6 +217,8 @@
                             </div>
                             <input type="hidden" id="editNodeUIState">
                         </div>
+
+                        <div id="ipEditContainer"></div>
 
                         <div class="edit-section">
                             <button type="button" class="btn-add-protocol-left" onclick="showAddProtocolMenu()">
@@ -272,6 +259,7 @@
         document.getElementById('editNodeUUID').value = node.uuid;
         document.getElementById('editNodeName').value = node.name;
         
+        // 路由类型处理
         if (!node.is_blocked) {
             originalRoutingType = node.routing_type;
         } else {
@@ -280,6 +268,10 @@
         let uiState = node.is_blocked ? 3 : node.routing_type;
         selectEditGroup(uiState);
 
+        // [新增] 动态渲染 IP 地址输入框
+        renderIPInputs(node.ipv4, node.ipv6);
+
+        // 协议列表处理
         container.innerHTML = ''; 
         const disabledSet = new Set(node.disabled_links || []);
 
@@ -292,6 +284,78 @@
         
         updateLayoutState();
         editModalEl.classList.add('active');
+    }
+
+    // [新增] 渲染 IP 输入框的逻辑函数
+    function renderIPInputs(ipv4, ipv6) {
+        const container = document.getElementById('ipEditContainer');
+        const v4 = ipv4 || '';
+        const v6 = ipv6 || '';
+        
+        let html = '';
+
+        // 定义输入框的 HTML 模板
+        const v4Html = `
+            <div class="edit-section" id="section-ipv4" style="margin-bottom: 12px;">
+                <label class="section-label">IPv4 地址</label>
+                <input type="text" id="editNodeIPV4" class="ip-input" value="${v4}" placeholder="x.x.x.x">
+            </div>`;
+            
+        const v6Html = `
+            <div class="edit-section" id="section-ipv6" style="margin-bottom: 12px;">
+                <label class="section-label">IPv6 地址</label>
+                <input type="text" id="editNodeIPV6" class="ip-input" value="${v6}" placeholder="::1">
+            </div>`;
+
+        // 逻辑判断：
+        // 1. 如果都有值，显示两个
+        if (v4 && v6) {
+            html = v4Html + v6Html;
+        } 
+        // 2. 如果只有 IPv4 (或都为空)
+        else if ((v4 && !v6) || (!v4 && !v6)) {
+            html = v4Html + `<div style="text-align:right; margin-top:-15px; margin-bottom:15px;"><a class="add-ip-link" onclick="appendIPField('v6')">+ 添加 IPv6</a></div>`;
+        }
+        // 3. 如果只有 IPv6
+        else if (!v4 && v6) {
+            html = v6Html + `<div style="text-align:right; margin-top:-15px; margin-bottom:15px;"><a class="add-ip-link" onclick="appendIPField('v4')">+ 添加 IPv4</a></div>`;
+        }
+
+        container.innerHTML = html;
+    }
+
+    // [新增] 只有在单显模式下点击链接才会触发，用于追加显示另一个输入框
+    function appendIPField(type) {
+        const container = document.getElementById('ipEditContainer');
+        const links = container.querySelectorAll('.add-ip-link');
+        links.forEach(l => l.parentElement.remove()); // 移除所有"添加"链接
+
+        // 获取当前已有的值，防止覆盖
+        const v4El = document.getElementById('editNodeIPV4');
+        const v6El = document.getElementById('editNodeIPV6');
+        const currentV4 = v4El ? v4El.value : '';
+        const currentV6 = v6El ? v6El.value : '';
+
+        // 强制重新渲染为双显模式
+        // 这里 trick 一下：传入非空字符串（如果是 null）来强制 renderIPInputs 认为它有值
+        // 但实际上 value 属性还是要填写真实值
+        
+        // 简单粗暴做法：手动插入缺少的那个 HTML
+        if (type === 'v6' && !document.getElementById('editNodeIPV6')) {
+            const v6Html = `
+                <div class="edit-section" id="section-ipv6" style="margin-bottom: 12px; animation: fadeIn 0.3s;">
+                    <label class="section-label">IPv6 地址</label>
+                    <input type="text" id="editNodeIPV6" class="ip-input" value="" placeholder="::1">
+                </div>`;
+            container.insertAdjacentHTML('beforeend', v6Html);
+        } else if (type === 'v4' && !document.getElementById('editNodeIPV4')) {
+             const v4Html = `
+                <div class="edit-section" id="section-ipv4" style="margin-bottom: 12px; animation: fadeIn 0.3s;">
+                    <label class="section-label">IPv4 地址</label>
+                    <input type="text" id="editNodeIPV4" class="ip-input" value="" placeholder="x.x.x.x">
+                </div>`;
+            container.insertAdjacentHTML('afterbegin', v4Html);
+        }
     }
 
     function closeEditModal() {
@@ -371,7 +435,6 @@
         const checkedAttr = isEnabled ? 'checked' : '';
         const bodyDisplay = isEnabled ? 'block' : 'none';
 
-        // [核心修复] 使用 trim() 去除开头结尾的空格和换行
         const safeValue = linkValue ? linkValue.trim() : '';
 
         div.innerHTML = `
@@ -437,6 +500,12 @@
         const name = document.getElementById('editNodeName').value;
         const uiState = parseInt(document.getElementById('editNodeUIState').value);
         
+        // [新增] 获取 IP 地址值 (如果元素不存在则为空)
+        const v4El = document.getElementById('editNodeIPV4');
+        const v6El = document.getElementById('editNodeIPV6');
+        const ipv4 = v4El ? v4El.value.trim() : "";
+        const ipv6 = v6El ? v6El.value.trim() : "";
+
         let finalRoutingType = 1;
         let finalIsBlocked = false;
         if (uiState === 3) {
@@ -456,7 +525,6 @@
             const input = card.querySelector('.protocol-textarea');
             const toggle = card.querySelector('.proto-enable-check');
             
-            // [核心修复] 保存时也进行 trim()
             const linkVal = input.value.trim();
             if (linkVal) {
                 links[proto] = linkVal; 
@@ -475,7 +543,8 @@
                     routing_type: finalRoutingType, 
                     links, 
                     is_blocked: finalIsBlocked,
-                    disabled_links: disabledLinks 
+                    disabled_links: disabledLinks,
+                    ipv4, ipv6 // [新增] 发送 IP 字段
                 })
             });
             const res = await response.json();
