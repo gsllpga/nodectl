@@ -169,9 +169,14 @@
             padding: 10px 15px; border-top: 1px dashed #cce4ff; margin-top: 5px; 
             background: #f9f9fc; border-radius: 8px; flex: none; 
         }
-        /* 仅在手机端为单条策略组内的列表增加最大高度限制，防止无限拉长霸屏 */
-        .rule-items-container { max-height: 40vh; }
-        
+        /* 多组分流出站：限制 40vh */
+        .cr-tab-proxy .rule-items-container { max-height: 38vh; }
+
+        /* 全局直连出站：限制 50vh */
+        .cr-tab-direct .rule-items-container { max-height: 50vh; }
+        .cr-tab-direct .cr-add-row {
+            margin-top: auto; /* 核心：自动占据上方所有剩余空间，将自己推到底部 */
+        }
         .cr-tab-menu { gap: 15px; }
         .cr-tab-btn { font-size: 13px; }
         .cr-rule-item { margin-bottom: 5px; border: 1px solid #eee; }
