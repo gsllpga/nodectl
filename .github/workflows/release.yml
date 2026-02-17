@@ -5,9 +5,9 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: '发布版本号 (必须以 v 开头，例如: v0.1.1)'
+        description: '发布版本号 (必须以 v 开头，例如: v0.1.0)'
         required: true
-        default: 'v0.0.1'
+        default: 'v0.1.0'
 
 permissions:
   contents: write
