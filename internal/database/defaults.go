@@ -12,7 +12,7 @@ import (
 )
 
 // SupportedProtocols 定义系统支持的节点协议列表 (全局变量，供前端和逻辑使用)
-var SupportedProtocols = []string{"vless", "hy2", "socks", "tuic", "ss"}
+var SupportedProtocols = []string{"vless", "hy2", "socks5", "tuic", "ss"}
 
 // initDefaultConfigs 初始化默认的系统配置参数
 func initDefaultConfigs() {

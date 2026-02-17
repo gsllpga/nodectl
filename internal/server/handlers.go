@@ -132,11 +132,7 @@ func indexHandler(w http.ResponseWriter, r *http.Request) {
 		}
 
 		for protoKey := range node.Links {
-			if protoKey == "socks5" {
-				rawProtoCounts["socks"]++
-			} else {
-				rawProtoCounts[protoKey]++
-			}
+			rawProtoCounts[protoKey]++
 		}
 	}
 
@@ -155,7 +151,7 @@ func indexHandler(w http.ResponseWriter, r *http.Request) {
 				displayName = "Shadowsocks"
 			case "hy2":
 				displayName = "Hysteria2"
-			case "socks":
+			case "socks5":
 				displayName = "Socks5"
 			}
 			displayProtoStats = append(displayProtoStats, ProtoStatItem{
