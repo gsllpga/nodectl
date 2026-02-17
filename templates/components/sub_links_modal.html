@@ -1,4 +1,6 @@
 {{define "sub_links_modal.html"}}
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+
 <style>
     /* ================= 统一弹窗基础框架 ================= */
     .sub-modal-overlay {
@@ -9,11 +11,12 @@
     }
     .sub-modal-overlay.active { display: flex; opacity: 1; }
     
-    /* 默认窄模式 420px，展开后 800px */
+    /* 默认窄模式 380px，展开后 800px。高度自适应 */
     .sub-modal-card {
-        background: #ffffff; width: 100%; max-width: 420px; height: 550px; border-radius: 12px; 
+        background: #ffffff; width: 100%; max-width: 380px; border-radius: 12px; 
         box-shadow: 0 20px 40px rgba(0,0,0,0.15); display: flex; flex-direction: column; overflow: hidden;
         transition: max-width 0.3s cubic-bezier(0.2, 0.8, 0.2, 1);
+        max-height: 90vh; 
     }
     .sub-modal-card.has-content { max-width: 800px; }
 
@@ -31,7 +34,7 @@
     }
 
     /* 主内容区 */
-    .sub-body { flex: 1; display: flex; flex-direction: row; background: #fff; overflow: hidden; }
+    .sub-body { flex: 1; display: flex; flex-direction: row; background: #fff; overflow: hidden; min-height: 0; }
     
     /* 隐藏滚动条全局类 */
     .no-scrollbar { overflow-y: auto; scrollbar-width: none; -ms-overflow-style: none; }
@@ -39,7 +42,7 @@
 
     /* ================= 左侧面板 (定宽防挤压) ================= */
     .sub-left-col {
-        width: 420px; flex-shrink: 0; padding: 25px;
+        width: 380px; flex-shrink: 0; padding: 25px;
         border-right: 1px solid transparent; transition: border-color 0.3s;
     }
     .sub-modal-card.has-content .sub-left-col { border-right-color: #f5f5f7; }
@@ -49,7 +52,7 @@
     .sub-name-input {
         width: 100%; padding: 12px; border: 1px solid #d1d1d6; border-radius: 8px;
         font-size: 14px; color: #1d1d1f; outline: none; transition: border 0.2s; 
-        background: #fafbfc; margin-bottom: 30px; font-weight: 500;
+        background: #fafbfc; margin-bottom: 30px; font-weight: 500; box-sizing: border-box;
     }
     .sub-name-input:focus { border-color: #007aff; background: #fff; box-shadow: 0 0 0 2px rgba(0,122,255,0.1); }
 
@@ -76,8 +79,8 @@
 
     /* ================= 右侧详情面板 ================= */
     .sub-right-col {
-        flex: 1; padding: 30px; display: none; background: #fff; flex-direction: column;
-        justify-content: flex-start; /* 从上往下自然排布 */
+        flex: 1; padding: 25px 30px; display: none; background: #fff; flex-direction: column;
+        justify-content: flex-start;
     }
     .sub-modal-card.has-content .sub-right-col { display: flex; animation: fadeIn 0.3s ease; }
     @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
@@ -87,33 +90,51 @@
     .sub-right-title { font-size: 16px; font-weight: 700; color: #1d1d1f; margin-bottom: 8px; }
     .sub-right-desc { font-size: 13px; color: #666; line-height: 1.5; }
 
-    /* 链接区域 */
-    .sub-link-label { font-size: 13px; font-weight: 600; color: #555; margin-bottom: 8px; display: flex; align-items: center; gap: 6px;}
-    
+    /* 二维码展示区 */
+    .qr-wrapper {
+        display: flex; justify-content: center; align-items: center; margin-bottom: 20px;
+    }
+    .qr-box {
+        padding: 10px; background: #fff; border: 1px solid #e5e5ea;
+        border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+        display: flex; justify-content: center; align-items: center;
+    }
+
+    /* 自动变高的链接输入区域 */
     .sub-link-textarea {
-        width: 100%; height: 120px; padding: 15px; border: 1px solid #d1d1d6; border-radius: 8px;
-        font-family: Menlo, Monaco, "Courier New", monospace; font-size: 13px; line-height: 1.6;
-        color: #333; background: #fafbfc; resize: none; outline: none; margin-bottom: 12px;
-        word-break: break-all; transition: 0.2s;
+        width: 100%; min-height: 44px; padding: 12px 15px; border: 1px solid #d1d1d6; border-radius: 8px;
+        font-family: Menlo, Monaco, "Courier New", monospace; font-size: 12px; line-height: 1.5;
+        color: #333; background: #fafbfc; resize: none; outline: none; margin-bottom: 20px;
+        word-break: break-all; transition: border-color 0.2s; box-sizing: border-box;
+        overflow: hidden; /* 彻底去除内嵌滚动条 */
     }
     .sub-link-textarea:focus { border-color: #007aff; background: #fff; box-shadow: 0 0 0 2px rgba(0,122,255,0.1); }
 
-    /* 100% 宽度的按钮 */
-    .btn-sub-copy {
-        width: 100%; background: #007aff; color: white; border: none; padding: 12px; border-radius: 8px;
-        font-size: 14px; font-weight: 600; cursor: pointer; transition: 0.2s; display: flex; align-items: center; justify-content: center; gap: 6px;
+    /* 底部操作按钮组 */
+    .sub-actions-grid { display: grid; grid-template-columns: 1fr; gap: 12px; margin-top: auto; }
+    .sub-actions-grid.has-import { grid-template-columns: 1fr 1fr; }
+    
+    .btn-sub-action {
+        width: 100%; border: none; padding: 12px; border-radius: 8px;
+        font-size: 13px; font-weight: 600; cursor: pointer; transition: 0.2s; 
+        display: flex; align-items: center; justify-content: center; gap: 6px;
+        text-decoration: none; box-sizing: border-box;
     }
-    .btn-sub-copy:hover { background: #0062cc; }
-    .btn-sub-copy.copied { background: #34c759; }
+    .btn-copy { background: #007aff; color: white; }
+    .btn-copy:hover { background: #0062cc; }
+    .btn-copy.copied { background: #34c759; }
+    
+    .btn-import { background: #f0f7ff; color: #007aff; border: 1px solid #cce4ff; }
+    .btn-import:hover { background: #e0efff; }
 
     /* 统一 Footer 样式 */
     .sub-footer { padding: 15px 25px; border-top: 1px solid #eee; display: flex; justify-content: flex-end; background: #fff;}
     .btn-sub-cancel { background: #f5f5f7; border: none; color: #333; padding: 8px 25px; border-radius: 8px; cursor: pointer; font-size: 13px; font-weight: 600; transition: 0.2s;}
     .btn-sub-cancel:hover { background: #e5e5ea; }
 
-    /* ================= 移动端手风琴展开适配 ================= */
+    /* ================= 移动端适配 ================= */
     @media (max-width: 768px) {
-        .sub-modal-card { max-width: 95%; height: 85vh; }
+        .sub-modal-card { max-width: 95%; max-height: 85vh; }
         .sub-modal-card.has-content { max-width: 95%; }
         .sub-body { flex-direction: column; overflow-y: auto; display: block; }
         .sub-left-col { width: 100%; height: auto; border-right: none; padding: 20px; overflow: visible; }
@@ -129,7 +150,7 @@
             background: #f0f7ff; margin-bottom: 12px;
         }
         .sub-right-header { border-bottom-color: #cce4ff; margin-bottom: 15px; padding-bottom: 10px;}
-        .sub-link-textarea { height: 100px; background: #fff; }
+        .sub-actions-grid.has-import { grid-template-columns: 1fr 1fr; }
     }
 </style>
 
@@ -155,7 +176,7 @@
                     <div class="sub-format-card" onclick="selectSubFormat('clash', this)">
                         <div class="sub-format-info">
                             <div class="sub-format-name">😼 Clash Meta</div>
-                            <div class="sub-format-desc">软路由友好的订阅方式</div>
+                            <div class="sub-format-desc">推荐！有强大的分流能力</div>
                         </div>
                         <div class="sub-expand-indicator"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"></polyline></svg></div>
                     </div>
@@ -165,7 +186,7 @@
                     <div class="sub-format-card" onclick="selectSubFormat('v2ray', this)">
                         <div class="sub-format-info">
                             <div class="sub-format-name">🌐 V2Ray / Base64</div>
-                            <div class="sub-format-desc">v2rayN 等通用基础客户端</div>
+                            <div class="sub-format-desc">最适合手机使用的订阅格式</div>
                         </div>
                         <div class="sub-expand-indicator"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"></polyline></svg></div>
                     </div>
@@ -173,8 +194,7 @@
             </div>
 
             <div class="sub-right-col no-scrollbar" id="subRightCol">
-                <div id="subRightContent">
-                    </div>
+                <div id="subRightContent"></div>
             </div>
         </div>
 
@@ -196,17 +216,26 @@
     const subFormatData = {
         clash: { 
             title: "😼 Clash Meta 订阅",
-            desc: "首选 <b>OpenClash </b>推荐 <b>Clash Verge Rev</b> 或 <b>Mihomo Party</b> 使用。内置订阅模板未对手机端做易用性适配，手机端建议使用v2ray格式订阅。",
+            desc: "推荐使用 <b>Clash Verge Rev</b> 或 <b>OpenClash</b>。<br>手机端可直接扫描下方二维码添加。",
             getLink: () => `${currentBaseUrl}/sub/clash?token=${currentToken}` 
         },
         v2ray: { 
             title: "🌐 V2Ray / 通用 Base64",
-            desc: "最纯粹的节点明文聚合格式。适用于 <b>v2rayN</b>、<b>v2rayNG</b>、<b>Shadowrocket</b> 等绝大多数代理工具。",
+            desc: "适用于 <b>v2rayN</b>、<b>v2rayNG</b>、<b>Shadowrocket</b> 等绝大多数基础代理工具。",
             getLink: () => `${currentBaseUrl}/sub/v2ray?token=${currentToken}` 
         }
     };
 
-    // 监听窗口大小变化，实现手机端手风琴 DOM 移动
+    // 辅助函数：根据文字自适应 Textarea 的高度
+    function resizeSubLinkTextarea() {
+        const ta = document.getElementById('currentSubLinkText');
+        if (ta && ta.offsetParent !== null) {
+            ta.style.height = 'auto'; // 先归零
+            ta.style.height = (ta.scrollHeight + 2) + 'px'; // 重新设置计算高度
+        }
+    }
+
+    // 监听窗口大小变化
     function adjustRightPanelPosition() {
         const rightCol = document.getElementById('subRightCol');
         const body = document.querySelector('.sub-body');
@@ -228,10 +257,11 @@
                 body.appendChild(rightCol);
             }
         }
+        resizeSubLinkTextarea();
     }
     window.addEventListener('resize', adjustRightPanelPosition);
 
-    // 格式卡片点击切换逻辑 (支持 Toggle)
+    // 格式卡片点击切换逻辑
     function selectSubFormat(formatKey, cardElement) {
         if(currentFormatKey === formatKey) {
             if (window.innerWidth <= 768) {
@@ -248,8 +278,10 @@
         currentFormatKey = formatKey;
         
         renderRightPanel(formatKey);
-        subModalCard.classList.add('has-content');
         adjustRightPanelPosition();
+        
+        // 渲染完 DOM 后立即计算高度
+        setTimeout(resizeSubLinkTextarea, 20);
         
         if (window.innerWidth <= 768) {
             setTimeout(() => {
@@ -258,40 +290,79 @@
         }
     }
 
-    // 渲染右侧内容
+    // 核心渲染逻辑：生成一键导入按钮和二维码
     function renderRightPanel(formatKey) {
         const data = subFormatData[formatKey];
         const link = data.getLink();
         const contentDiv = document.getElementById('subRightContent');
+        const subName = document.getElementById('inputSubName').value.trim() || 'NodeCTL';
         
+        let importBtnHtml = '';
+        let gridClass = 'sub-actions-grid has-import';
+        
+        if (formatKey === 'clash') {
+            const clashUrl = `clash://install-config?url=${encodeURIComponent(link)}&name=${encodeURIComponent(subName)}`;
+            importBtnHtml = `
+                <a href="${clashUrl}" class="btn-sub-action btn-import">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+                    一键导入 Clash
+                </a>
+            `;
+        } else if (formatKey === 'v2ray') {
+            const b64Link = btoa(link);
+            const subUrl = `sub://${b64Link}`;
+            importBtnHtml = `
+                <a href="${subUrl}" class="btn-sub-action btn-import" title="支持 Shadowrocket 等主流手机客户端">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+                    一键导入 App
+                </a>
+            `;
+        }
+
         contentDiv.innerHTML = `
             <div class="sub-right-header">
                 <div class="sub-right-title">${data.title}</div>
                 <div class="sub-right-desc">${data.desc}</div>
             </div>
             
-            <div class="sub-link-label">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg>
-                订阅链接
+            <div class="qr-wrapper">
+                <div class="qr-box" id="qrCodeContainer"></div>
             </div>
+
             <textarea class="sub-link-textarea" id="currentSubLinkText" readonly onclick="this.select()">${link}</textarea>
-            <button class="btn-sub-copy" id="btnCopySubLink" onclick="copyCurrentSubLink()">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
-                一键复制链接
-            </button>
+            
+            <div class="${gridClass}">
+                <button class="btn-sub-action btn-copy" id="btnCopySubLink" onclick="copyCurrentSubLink()">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+                    一键复制链接
+                </button>
+                ${importBtnHtml}
+            </div>
         `;
+
+        const qrContainer = document.getElementById('qrCodeContainer');
+        qrContainer.innerHTML = '';
+        new QRCode(qrContainer, {
+            text: link,
+            width: 140,
+            height: 140,
+            colorDark : "#1d1d1f",
+            colorLight : "#ffffff",
+            correctLevel : QRCode.CorrectLevel.M
+        });
     }
 
-    // 打开弹窗并加载设置
+    // 打开弹窗并默认直接展开第一项 (修复动画带来的高度错误)
     async function openSubLinksModal() {
+        // 先为卡片加上 has-content，让弹窗初始就呈现 800px 宽度
+        subModalCard.classList.add('has-content');
+        document.getElementById('subRightCol').style.display = 'flex';
         subModal.classList.add('active');
         document.getElementById('subSaveIndicator').style.opacity = '0';
         
-        currentFormatKey = null;
-        subModalCard.classList.remove('has-content');
+        // 重置状态
+        currentFormatKey = null; 
         document.querySelectorAll('.sub-format-card').forEach(c => c.classList.remove('active'));
-        document.getElementById('subRightCol').style.display = 'none';
-        adjustRightPanelPosition();
 
         try {
             const res = await fetch('/api/get-settings');
@@ -302,6 +373,10 @@
                 currentToken = data.sub_token || '';
                 currentBaseUrl = data.panel_url ? data.panel_url.replace(/\/+$/, '') : window.location.origin;
                 document.getElementById('inputSubName').value = data.sub_custom_name || 'NodeCTL';
+                
+                // 数据加载完毕，直接选中 Clash 并渲染
+                const clashCard = document.querySelector('#wrap_clash .sub-format-card');
+                selectSubFormat('clash', clashCard);
             }
         } catch(e) { console.error("加载配置失败", e); }
     }
@@ -309,10 +384,14 @@
     // 关闭弹窗
     function closeSubLinksModal() {
         subModal.classList.remove('active');
-        setTimeout(() => subModalCard.classList.remove('has-content'), 300);
+        // 延迟移除 has-content，避免关闭淡出时触发突兀的尺寸回缩
+        setTimeout(() => {
+            subModalCard.classList.remove('has-content');
+            currentFormatKey = null;
+        }, 300);
     }
 
-    // 自动静默保存订阅名称 (防抖)
+    // 自动静默保存订阅名称 (防抖)，并自动刷新右侧的参数
     let subNameSaveTimer = null;
     function saveCustomSubNameDebounced() {
         clearTimeout(subNameSaveTimer);
@@ -331,6 +410,11 @@
                 if(res.ok) {
                     indicator.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"></path></svg> 名称已保存`;
                     setTimeout(() => indicator.style.opacity = '0', 2000);
+                    
+                    if (currentFormatKey) {
+                        renderRightPanel(currentFormatKey);
+                        setTimeout(resizeSubLinkTextarea, 10);
+                    }
                 }
             } catch(e) {
                 indicator.innerHTML = '<span style="color:#ff3b30;">保存失败</span>';
@@ -338,7 +422,7 @@
         }, 600);
     }
 
-    // 一键复制链接逻辑 (兼容 HTTP 环境)
+    // 一键复制链接逻辑
     function copyCurrentSubLink() {
         const textarea = document.getElementById('currentSubLinkText');
         const btn = document.getElementById('btnCopySubLink');

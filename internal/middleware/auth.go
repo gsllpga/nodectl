@@ -3,6 +3,7 @@ package middleware
 import (
 	"fmt"
 	"net/http"
+	"strings"
 
 	"nodectl/internal/database"
 	"nodectl/internal/logger"
@@ -19,12 +20,16 @@ func Auth(next http.HandlerFunc) http.HandlerFunc {
 		// 1. 尝试从请求中获取名为 nodectl_token 的 Cookie
 		cookie, err := r.Cookie("nodectl_token")
 		if err != nil {
-			// 没有带 Cookie，说明没登录，重定向到登录页
-			logger.Log.Warn("未授权访问拦截",
-				"reason", "请求缺少 nodectl_token Cookie",
-				"ip", clientIP,
-				"path", reqPath,
-			)
+			// 没有带 Cookie，说明未登录，重定向到登录页。
+			// 【优化】为了防止浏览器自动探测背景资源 (如 favicon, 浏览器插件探针) 造成 Warn 刷屏，
+			// 我们只在明确是核心业务路径 (根目录 或 /api/) 时，才记录安全拦截日志。
+			if reqPath == "/" || reqPath == "/index.html" || strings.HasPrefix(reqPath, "/api/") {
+				logger.Log.Warn("未授权访问拦截",
+					"reason", "请求缺少 nodectl_token Cookie",
+					"ip", clientIP,
+					"path", reqPath,
+				)
+			}
 			http.Redirect(w, r, "/login", http.StatusFound)
 			return
 		}
@@ -77,24 +82,11 @@ func Auth(next http.HandlerFunc) http.HandlerFunc {
 			return
 		}
 
-		// 4. 提取 Payload 信息并记录放行日志
-		if claims, ok := token.Claims.(jwt.MapClaims); ok {
-			username := claims["username"]
-			logger.Log.Debug("鉴权放行",
-				"user", username,
-				"ip", clientIP,
-				"path", reqPath,
-			)
-		} else {
-			logger.Log.Warn("Token 校验警告",
-				"reason", "无法解析 Token Claims 结构",
-				"ip", clientIP,
-			)
-			http.Redirect(w, r, "/login", http.StatusFound)
-			return
-		}
+		// 4. Token 校验通过，放行请求。
+		// 【优化】移除了原先高频刷屏的 "鉴权放行" Debug 日志。
+		// 成功的鉴权属于中间件的静默常态行为，不应该产生任何日志噪音。
 
-		// 5. 鉴权完全通过，执行下一个业务 Handler
+		// 将控制权交还给最终的 Handler
 		next.ServeHTTP(w, r)
 	}
 }
