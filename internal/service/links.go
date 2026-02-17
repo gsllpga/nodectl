@@ -602,3 +602,68 @@ func applyTransportOpts(node *ClashNode, network string, query url.Values) {
 		}
 	}
 }
+
+// ReplaceLinkIP 替换原始协议链接中的 IP 或域名
+func ReplaceLinkIP(link, newIP string) string {
+	if newIP == "" {
+		return link
+	}
+
+	// 格式化 IPv6 加上方括号
+	ipForURL := newIP
+	if strings.Contains(ipForURL, ":") && !strings.HasPrefix(ipForURL, "[") {
+		ipForURL = "[" + ipForURL + "]"
+	}
+
+	lowerLink := strings.ToLower(link)
+
+	// 1. 处理 VMess (Base64 JSON)
+	if strings.HasPrefix(lowerLink, "vmess://") {
+		b64Part := link[8:]
+		decoded := safeBase64Decode(b64Part)
+		if decoded == "" {
+			return link
+		}
+		var v map[string]interface{}
+		if err := json.Unmarshal([]byte(decoded), &v); err != nil {
+			return link
+		}
+		v["add"] = newIP // VMess JSON 中通常不需要方括号
+		newJSON, _ := json.Marshal(v)
+		return "vmess://" + base64.StdEncoding.EncodeToString(newJSON)
+	}
+
+	// 2. 处理 Shadowsocks (Base64 + @host:port)
+	if strings.HasPrefix(lowerLink, "ss://") {
+		body := link[5:]
+		if !strings.Contains(body, "@") {
+			if decoded := safeBase64Decode(body); decoded != "" {
+				body = decoded
+			} else {
+				return link
+			}
+		}
+		if lastColon := strings.LastIndex(body, ":"); lastColon != -1 {
+			if atIndex := strings.LastIndex(body[:lastColon], "@"); atIndex != -1 {
+				port := body[lastColon+1:]
+				userPass := body[:atIndex]
+				return "ss://" + base64.StdEncoding.EncodeToString([]byte(userPass)) + "@" + ipForURL + ":" + port
+			}
+		}
+		return link
+	}
+
+	// 3. 处理标准 URL (Vless, Trojan, Hy2, Tuic, Socks5 等)
+	u, err := url.Parse(link)
+	if err == nil && u.Host != "" {
+		port := u.Port()
+		if port != "" {
+			u.Host = ipForURL + ":" + port
+		} else {
+			u.Host = ipForURL
+		}
+		return u.String()
+	}
+
+	return link
+}

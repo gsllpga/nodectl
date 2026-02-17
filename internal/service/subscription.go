@@ -31,22 +31,33 @@ func GenerateRawNodesYAML(routingType int, useFlag bool) (string, error) {
 		return "", err
 	}
 
+	var strategyConfig database.SysConfig
+	database.DB.Where("key = ?", "pref_ip_strategy").First(&strategyConfig)
+	ipStrategy := strategyConfig.Value
+	if ipStrategy == "" {
+		ipStrategy = "ipv4_prefer"
+	}
+
 	var proxyList []*ClashNode
 
 	for _, node := range nodes {
+		ipOptions := determineIPs(node, ipStrategy)
+
 		for proto, link := range node.Links {
-			// 如果该协议被禁用，跳过
 			if contains(node.DisabledLinks, proto) {
 				continue
 			}
 
-			// 构造统一的前缀名 (例如 ss-香港节点)
-			baseName := fmt.Sprintf("%s-%s", strings.ToLower(proto), node.Name)
-
-			// 调用链接解析器，返回的已经是严格结构体指针 *ClashNode
-			proxyNode := ParseProxyLink(link, baseName, node.Region, useFlag)
-			if proxyNode != nil {
-				proxyList = append(proxyList, proxyNode)
+			// 根据 IP 策略可能生成 1 个，也可能生成 2 个(双栈)，也可能跳过(0个)
+			for _, ipOpt := range ipOptions {
+				baseName := fmt.Sprintf("%s-%s%s", strings.ToLower(proto), node.Name, ipOpt.Suffix)
+				proxyNode := ParseProxyLink(link, baseName, node.Region, useFlag)
+				if proxyNode != nil {
+					if ipOpt.IP != "" {
+						proxyNode.Server = ipOpt.IP // 覆盖 Clash 解析后的 Server IP
+					}
+					proxyList = append(proxyList, proxyNode)
+				}
 			}
 		}
 	}
@@ -98,31 +109,40 @@ func GenerateV2RaySubBase64(useFlag bool) (string, error) {
 		return "", err
 	}
 
+	var strategyConfig database.SysConfig
+	database.DB.Where("key = ?", "pref_ip_strategy").First(&strategyConfig)
+	ipStrategy := strategyConfig.Value
+	if ipStrategy == "" {
+		ipStrategy = "ipv4_prefer"
+	}
+
 	var lines []string
 
 	for _, node := range nodes {
+		ipOptions := determineIPs(node, ipStrategy)
+
 		for proto, link := range node.Links {
 			if contains(node.DisabledLinks, proto) {
 				continue
 			}
 
-			// 构造名称 (同 Clash 逻辑)
-			baseName := fmt.Sprintf("%s-%s", strings.ToLower(proto), node.Name)
-			finalName := baseName
-			if useFlag && node.Region != "" {
-				flag := getEmojiFlag(node.Region)
-				finalName = fmt.Sprintf("%s %s", flag, strings.ReplaceAll(baseName, flag, ""))
+			for _, ipOpt := range ipOptions {
+				baseName := fmt.Sprintf("%s-%s%s", strings.ToLower(proto), node.Name, ipOpt.Suffix)
+				finalName := baseName
+				if useFlag && node.Region != "" {
+					flag := getEmojiFlag(node.Region)
+					finalName = fmt.Sprintf("%s %s", flag, strings.ReplaceAll(baseName, flag, ""))
+				}
+				finalName = strings.TrimSpace(finalName)
+				safeName := strings.ReplaceAll(url.QueryEscape(finalName), "+", "%20")
+
+				cleanLink := strings.Split(link, "#")[0]
+
+				// 核心：使用刚才写的替换引擎，重构链接
+				targetLink := ReplaceLinkIP(cleanLink, ipOpt.IP)
+
+				lines = append(lines, fmt.Sprintf("%s#%s", targetLink, safeName))
 			}
-			finalName = strings.TrimSpace(finalName)
-
-			// V2ray/通用格式要求节点名称附带在 # 之后，并进行 URL 编码
-			// 注意：Go 的 QueryEscape 会把空格转成 +，而客户端更标准的是识别 %20
-			safeName := strings.ReplaceAll(url.QueryEscape(finalName), "+", "%20")
-
-			// 去除原始链接中可能带有的旧名称 (#xxx)
-			cleanLink := strings.Split(link, "#")[0]
-
-			lines = append(lines, fmt.Sprintf("%s#%s", cleanLink, safeName))
 		}
 	}
 
@@ -132,4 +152,53 @@ func GenerateV2RaySubBase64(useFlag bool) (string, error) {
 
 	logger.Log.Debug("V2Ray Base64 订阅组装完成", "link_count", len(lines))
 	return b64Str, nil
+}
+
+type IPOption struct {
+	IP     string
+	Suffix string // 用于双栈分离时给节点名加后缀
+}
+
+// determineIPs 根据策略计算应该生成哪些 IP
+func determineIPs(node database.NodePool, strategy string) []IPOption {
+	hasV4 := node.IPV4 != ""
+	hasV6 := node.IPV6 != ""
+
+	if !hasV4 && !hasV6 {
+		return []IPOption{{IP: "", Suffix: ""}} // 无IP记录，使用原链接IP
+	}
+
+	var ips []IPOption
+	switch strategy {
+	case "ipv4_only":
+		if hasV4 {
+			ips = append(ips, IPOption{IP: node.IPV4, Suffix: ""})
+		}
+	case "ipv6_only":
+		if hasV6 {
+			ips = append(ips, IPOption{IP: node.IPV6, Suffix: ""})
+		}
+	case "dual_stack":
+		if hasV4 && hasV6 {
+			ips = append(ips, IPOption{IP: node.IPV4, Suffix: "-V4"})
+			ips = append(ips, IPOption{IP: node.IPV6, Suffix: "-V6"})
+		} else if hasV4 {
+			ips = append(ips, IPOption{IP: node.IPV4, Suffix: ""})
+		} else if hasV6 {
+			ips = append(ips, IPOption{IP: node.IPV6, Suffix: ""})
+		}
+	case "ipv6_prefer":
+		if hasV6 {
+			ips = append(ips, IPOption{IP: node.IPV6, Suffix: ""})
+		} else if hasV4 {
+			ips = append(ips, IPOption{IP: node.IPV4, Suffix: ""})
+		}
+	default: // ipv4_prefer
+		if hasV4 {
+			ips = append(ips, IPOption{IP: node.IPV4, Suffix: ""})
+		} else if hasV6 {
+			ips = append(ips, IPOption{IP: node.IPV6, Suffix: ""})
+		}
+	}
+	return ips
 }
