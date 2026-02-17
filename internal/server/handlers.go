@@ -668,25 +668,52 @@ func apiGetGeoStatus(w http.ResponseWriter, r *http.Request) {
 }
 
 func apiGetClashSettings(w http.ResponseWriter, r *http.Request) {
-	clientIP := r.RemoteAddr
-	reqPath := r.URL.Path
-
 	if r.Method != http.MethodGet {
-		logger.Log.Warn("非法请求方法", "method", r.Method, "ip", clientIP, "path", reqPath)
 		http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
 		return
 	}
 
+	config := service.LoadClashModulesConfig()
+	customModules := service.GetCustomClashModules()
 	activeModules := service.GetActiveClashModules()
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"status": "success",
 		"data": map[string]interface{}{
-			"all_modules":    service.SupportedClashModules,
-			"active_modules": activeModules,
+			"builtin_modules": config.Modules,
+			"custom_modules":  customModules,
+			"presets":         config.Presets,
+			"active_modules":  activeModules,
 		},
 	})
+}
+
+func apiSaveCustomClashModules(w http.ResponseWriter, r *http.Request) {
+	clientIP := r.RemoteAddr
+	reqPath := r.URL.Path
+
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	var req struct {
+		Modules []service.ClashModuleDef `json:"modules"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		logger.Log.Warn("解析自定义分流模块失败", "error", err, "ip", clientIP, "path", reqPath)
+		sendJSON(w, "error", "数据格式错误")
+		return
+	}
+
+	if err := service.SaveCustomClashModules(req.Modules); err != nil {
+		logger.Log.Error("保存自定义分流模块失败", "error", err, "ip", clientIP, "path", reqPath)
+		sendJSON(w, "error", "保存自定义模块失败")
+		return
+	}
+
+	logger.Log.Info("自定义分流模块保存成功", "ip", clientIP, "path", reqPath, "count", len(req.Modules))
+	sendJSON(w, "success", "自定义模块保存成功")
 }
 
 func apiSaveClashSettings(w http.ResponseWriter, r *http.Request) {

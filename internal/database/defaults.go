@@ -41,6 +41,7 @@ func initBasicSettings() {
 		{Key: "sub_custom_name", Value: "NodeCTL", Description: "自定义订阅名称"},
 		{Key: "geo_db_version", Value: "", Description: "GeoIP 数据库版本号"},
 		{Key: "pref_ip_strategy", Value: "ipv4_prefer", Description: "节点IP生成策略"},
+		{Key: "clash_custom_modules", Value: "[]", Description: "用户自定义的 Clash 分流模块"},
 	}
 
 	for _, config := range defaultConfigs {

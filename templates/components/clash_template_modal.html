@@ -1,60 +1,284 @@
-<div id="clashTemplateModal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.4); z-index: 2000; align-items: center; justify-content: center;">
-    <div style="background: white; border-radius: 12px; width: 90%; max-width: 500px; padding: 25px; box-shadow: 0 10px 30px rgba(0,0,0,0.1);">
-        <h3 style="margin-bottom: 20px; color: #333; display: flex; align-items: center; gap: 8px;">
-            ⚙️ Clash 分流规则组合
-        </h3>
+{{define "clash_template_modal.html"}}
+<style>
+    .clash-modal-overlay {
+        display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+        background: rgba(0, 0, 0, 0.4); backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px);
+        z-index: 3000; align-items: center; justify-content: center;
+        opacity: 0; transition: opacity 0.3s ease;
+    }
+    .clash-modal-overlay.active { display: flex; opacity: 1; }
+    
+    .clash-modal-card {
+        background: #ffffff; width: 100%; max-width: 600px; border-radius: 12px; 
+        box-shadow: 0 20px 40px rgba(0,0,0,0.15); display: flex; flex-direction: column; overflow: hidden;
+        max-height: 90vh;
+    }
+
+    .clash-header { 
+        background: #f5f5f7; border-bottom: 1px solid #e5e5ea; 
+        padding: 15px 25px; display: flex; align-items: center; justify-content: space-between; 
+    }
+    .clash-title { font-size: 15px; font-weight: 600; color: #333; margin: 0; }
+
+    .clash-body { 
+        padding: 20px 25px; background: #fff; overflow-y: auto;
+        scrollbar-width: none; -ms-overflow-style: none;
+    }
+    .clash-body::-webkit-scrollbar { display: none; }
+
+    /* 预设区域 */
+    .preset-section {
+        background: #f9f9fc; border: 1px solid #e1e1e8; border-radius: 10px;
+        padding: 15px; margin-bottom: 20px;
+    }
+    .preset-title { font-size: 13px; font-weight: 600; color: #555; margin-bottom: 12px; display: flex; align-items: center; gap: 6px;}
+    .preset-btns-row { display: flex; gap: 10px; flex-wrap: wrap; }
+    
+    .btn-preset {
+        padding: 6px 14px; border-radius: 6px; border: 1px solid #d1d1d6; 
+        background: #fff; font-size: 12px; font-weight: 600; color: #555;
+        cursor: pointer; transition: all 0.2s;
+    }
+    .btn-preset:hover { border-color: #007aff; color: #007aff; }
+    .btn-preset.active { background: #007aff; color: #fff; border-color: #007aff; }
+    .preset-desc-box { font-size: 12px; color: #888; margin-top: 10px; min-height: 18px; line-height: 1.5; }
+
+    /* 模块多选区域 */
+    .clash-section-label { font-size: 13px; font-weight: 600; color: #888; margin-bottom: 12px; display: block; }
+    .clash-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 12px; margin-bottom: 25px;}
+
+    .clash-module-label {
+        display: flex; align-items: center; gap: 10px; cursor: pointer; 
+        font-size: 13px; font-weight: 500; color: #333; padding: 10px 12px; 
+        background: #fafbfc; border-radius: 8px; border: 1px solid #e1e1e8;
+        transition: all 0.2s; user-select: none; position: relative;
+    }
+    .clash-module-label:hover { border-color: #cce4ff; background: #f0f7ff; }
+    .clash-module-label.is-checked { border-color: #007aff; background: #f0f7ff; box-shadow: 0 2px 6px rgba(0,122,255,0.1);}
+
+    .mod-icon-box { width: 20px; height: 20px; display: flex; justify-content: center; align-items: center; flex-shrink: 0; font-size: 16px; }
+    .mod-icon-box img { width: 100%; height: 100%; object-fit: contain; }
+
+    .btn-delete-custom {
+        position: absolute; right: 8px; top: 50%; transform: translateY(-50%);
+        background: transparent; border: none; color: #d74242; cursor: pointer;
+        padding: 4px; display: none;
+    }
+    .clash-module-label:hover .btn-delete-custom { display: block; }
+
+    /* 自定义添加区域 */
+    .custom-add-box {
+        background: #fff; border: 1px dashed #d1d1d6; border-radius: 10px; padding: 15px;
+    }
+    .custom-input-row { display: flex; gap: 10px; margin-bottom: 10px; }
+    .custom-input {
+        flex: 1; padding: 8px 12px; border: 1px solid #d1d1d6; border-radius: 6px;
+        font-size: 12px; outline: none; transition: 0.2s; background: #fafbfc;
+    }
+    .custom-input:focus { border-color: #007aff; background: #fff; }
+    .btn-add-custom {
+        background: #f0f7ff; border: 1px solid #cce4ff; color: #007aff; font-weight: 600;
+        padding: 8px 15px; border-radius: 6px; cursor: pointer; font-size: 12px; white-space: nowrap; transition: 0.2s;
+    }
+    .btn-add-custom:hover { background: #e0efff; }
+
+    .clash-footer { 
+        padding: 15px 25px; border-top: 1px solid #eee; background: #fff;
+        display: flex; justify-content: flex-end; gap: 12px;
+    }
+    .btn-clash-cancel { background: #f5f5f7; border: none; color: #333; padding: 8px 22px; border-radius: 8px; cursor: pointer; font-size: 13px; font-weight: 600; transition: 0.2s;}
+    .btn-clash-save { background: #007aff; border: none; color: white; padding: 8px 22px; border-radius: 8px; cursor: pointer; font-size: 13px; font-weight: 600; transition: 0.2s;}
+
+    @media (max-width: 768px) {
+        .clash-grid { grid-template-columns: 1fr 1fr; }
+        .custom-input-row { flex-direction: column; }
+    }
+</style>
+
+<div class="clash-modal-overlay" id="clashTemplateModal">
+    <div class="clash-modal-card">
+        <div class="clash-header">
+            <div class="clash-title">⚙️ Clash 路由分流引擎</div>
+        </div>
         
-        <p style="font-size: 13px; color: #666; margin-bottom: 15px;">请勾选你想要在最终订阅文件中启用的分流规则组：</p>
-        
-        <div id="clashModulesContainer" style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; max-height: 400px; overflow-y: auto; padding: 10px 5px; border: 1px solid #eee; border-radius: 8px; margin-bottom: 20px;">
+        <div class="clash-body">
+            <div class="preset-section">
+                <div class="preset-title">一键模板预设</div>
+                <div class="preset-btns-row" id="presetBtnsContainer"></div>
+                <div class="preset-desc-box" id="presetDescBox">选择上方预设，快速应用分流组合</div>
             </div>
 
-        <div style="display: flex; justify-content: flex-end; gap: 10px;">
-            <button onclick="closeClashModal()" style="padding: 8px 16px; border-radius: 6px; border: 1px solid #ccc; background: white; cursor: pointer;">取消</button>
-            <button onclick="saveClashSettings()" style="padding: 8px 16px; border-radius: 6px; border: none; background: #007aff; color: white; cursor: pointer;">保存配置</button>
+            <label class="clash-section-label">启用的分流规则集 (支持多选)</label>
+            <div id="clashModulesContainer" class="clash-grid"></div>
+
+            <label class="clash-section-label">➕ 添加自定义规则集</label>
+            <div class="custom-add-box">
+                <div class="custom-input-row">
+                    <input type="text" id="customModName" class="custom-input" placeholder="标识名 (如: Spotify)">
+                    <input type="text" id="customModIcon" class="custom-input" placeholder="图标 Emoji 或图片 URL">
+                </div>
+                <div class="custom-input-row">
+                    <input type="text" id="customModUrl" class="custom-input" placeholder="规则集下载地址 (YAML 格式 URL)">
+                    <button class="btn-add-custom" onclick="addCustomModule()">添加并应用</button>
+                </div>
+            </div>
+        </div>
+
+        <div class="clash-footer">
+            <button class="btn-clash-cancel" onclick="closeClashModal()">取消</button>
+            <button class="btn-clash-save" id="clashSaveBtn" onclick="saveClashSettings()">保存应用配置</button>
         </div>
     </div>
 </div>
 
 <script>
+    const clashModal = document.getElementById('clashTemplateModal');
+    let cacheBuiltin = [];
+    let cacheCustom = [];
+    let cachePresets = [];
+    let activeSet = new Set(); // 追踪当前选中的 name
+
     async function openClashModal() {
-        document.getElementById('clashTemplateModal').style.display = 'flex';
+        clashModal.classList.add('active');
+        document.getElementById('clashModulesContainer').innerHTML = '<div style="font-size:13px; color:#999; padding: 10px;">加载中...</div>';
+        
         try {
             const res = await fetch('/api/clash/settings');
             const result = await res.json();
             if (result.status === 'success') {
-                renderClashModules(result.data.all_modules, result.data.active_modules);
+                cacheBuiltin = result.data.builtin_modules || [];
+                cacheCustom = result.data.custom_modules || [];
+                cachePresets = result.data.presets || [];
+                activeSet = new Set(result.data.active_modules || []);
+                
+                renderPresets();
+                renderModules();
             }
-        } catch (e) {
-            alert('加载规则列表失败');
-        }
+        } catch (error) { alert('加载配置失败'); }
     }
 
-    function closeClashModal() {
-        document.getElementById('clashTemplateModal').style.display = 'none';
+    function closeClashModal() { clashModal.classList.remove('active'); }
+
+    function renderPresets() {
+        const container = document.getElementById('presetBtnsContainer');
+        let html = '';
+        cachePresets.forEach((p, idx) => {
+            html += `<button class="btn-preset" onclick="applyPreset(${idx}, this)">${p.name}</button>`;
+        });
+        container.innerHTML = html;
     }
 
-    function renderClashModules(allModules, activeModules) {
-        const container = document.getElementById('clashModulesContainer');
-        container.innerHTML = '';
+    function applyPreset(index, btnElement) {
+        const preset = cachePresets[index];
+        document.getElementById('presetDescBox').innerText = preset.desc;
+        document.querySelectorAll('.btn-preset').forEach(b => b.classList.remove('active'));
+        btnElement.classList.add('active');
+
+        const isAll = preset.modules.includes('ALL');
+        const targetSet = new Set(preset.modules);
         
-        const activeSet = new Set(activeModules || []);
-
-        allModules.forEach(mod => {
-            const isChecked = activeSet.has(mod.id) ? 'checked' : '';
-            const html = `
-                <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; font-size: 14px; padding: 8px; background: #f9f9fc; border-radius: 6px; border: 1px solid #e1e1e8;">
-                    <input type="checkbox" class="clash-module-cb" value="${mod.id}" ${isChecked}>
-                    <span>${mod.icon} ${mod.name}</span>
-                </label>
-            `;
-            container.insertAdjacentHTML('beforeend', html);
+        document.querySelectorAll('.clash-module-cb').forEach(cb => {
+            if (isAll || targetSet.has(cb.value)) {
+                cb.checked = true;
+                activeSet.add(cb.value);
+            } else {
+                cb.checked = false;
+                activeSet.delete(cb.value);
+            }
+            syncLabelStyle(cb);
         });
     }
 
+    function renderModules() {
+        const container = document.getElementById('clashModulesContainer');
+        let html = '';
+        
+        // 渲染内置
+        cacheBuiltin.forEach(mod => { html += buildModuleHTML(mod, false); });
+        // 渲染自定义
+        cacheCustom.forEach(mod => { html += buildModuleHTML(mod, true); });
+        
+        container.innerHTML = html;
+    }
+
+    function buildModuleHTML(mod, isCustom) {
+        const isChecked = activeSet.has(mod.name) ? 'checked' : '';
+        const activeClass = isChecked ? 'is-checked' : '';
+        let iconHtml = (mod.icon && mod.icon.startsWith('http')) ? `<img src="${mod.icon}">` : (mod.icon || '📦');
+        
+        let deleteBtn = isCustom ? `<button class="btn-delete-custom" onclick="deleteCustomModule('${mod.name}', event)" title="删除">✖</button>` : '';
+
+        return `
+            <label class="clash-module-label ${activeClass}">
+                <input type="checkbox" class="clash-module-cb" value="${mod.name}" ${isChecked} style="display:none;" onchange="handleModuleToggle(this)">
+                <div class="mod-icon-box">${iconHtml}</div>
+                <span style="flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${mod.name}</span>
+                ${deleteBtn}
+            </label>
+        `;
+    }
+
+    function handleModuleToggle(cb) {
+        if(cb.checked) activeSet.add(cb.value);
+        else activeSet.delete(cb.value);
+        
+        syncLabelStyle(cb);
+        document.querySelectorAll('.btn-preset').forEach(b => b.classList.remove('active'));
+        document.getElementById('presetDescBox').innerText = '自定义修改中...';
+    }
+
+    function syncLabelStyle(cb) {
+        const label = cb.closest('.clash-module-label');
+        if (cb.checked) label.classList.add('is-checked');
+        else label.classList.remove('is-checked');
+    }
+
+    // 添加自定义模块并保存
+    async function addCustomModule() {
+        const name = document.getElementById('customModName').value.trim();
+        const icon = document.getElementById('customModIcon').value.trim();
+        const url = document.getElementById('customModUrl').value.trim();
+
+        if(!name || !url) return alert('标识名和规则下载地址为必填项！');
+        if(cacheBuiltin.find(m => m.name === name) || cacheCustom.find(m => m.name === name)) return alert('该名称已存在！');
+
+        cacheCustom.push({ name, icon, url });
+        activeSet.add(name); // 自动勾选新加的
+        
+        await syncCustomModulesToBackend();
+        
+        document.getElementById('customModName').value = '';
+        document.getElementById('customModIcon').value = '';
+        document.getElementById('customModUrl').value = '';
+        renderModules();
+    }
+
+    // 删除自定义模块
+    async function deleteCustomModule(name, event) {
+        // [修复关键点]：彻底阻断点击事件冒泡，防止触发 label 的底层 checkbox
+        event.preventDefault(); 
+        event.stopPropagation(); 
+        if(!confirm(`确定要删除自定义模块 [${name}] 吗？`)) return;
+        
+        cacheCustom = cacheCustom.filter(m => m.name !== name);
+        activeSet.delete(name);
+        await syncCustomModulesToBackend();
+        renderModules();
+    }
+
+    async function syncCustomModulesToBackend() {
+        await fetch('/api/clash/custom-modules/save', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ modules: cacheCustom })
+        });
+    }
+
+    // 最终保存
     async function saveClashSettings() {
-        const checkboxes = document.querySelectorAll('.clash-module-cb:checked');
-        const selectedModules = Array.from(checkboxes).map(cb => cb.value);
+        const btn = document.getElementById('clashSaveBtn');
+        const selectedModules = Array.from(activeSet);
+        btn.disabled = true; btn.innerText = '保存中...';
 
         try {
             const res = await fetch('/api/clash/save', {
@@ -62,15 +286,9 @@
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ modules: selectedModules })
             });
-            const result = await res.json();
-            if (result.status === 'success') {
-                alert('保存成功！');
-                closeClashModal();
-            } else {
-                alert('保存失败: ' + result.message);
-            }
-        } catch (e) {
-            alert('网络错误');
-        }
+            if (res.ok) closeClashModal();
+        } catch (error) { alert('网络错误'); } 
+        finally { btn.disabled = false; btn.innerText = '保存应用配置'; }
     }
 </script>
+{{end}}
