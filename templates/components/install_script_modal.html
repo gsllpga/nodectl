@@ -99,6 +99,19 @@
         padding: 8px 20px; border-radius: 6px; font-size: 13px; cursor: pointer; transition: 0.2s;
     }
     .btn-script-cancel:hover { background: #f6f8fa; color: #333; }
+
+    /* ✨ 移动端适配：统一弹窗宽度留白与代码框内边距 */
+    @media (max-width: 768px) {
+        .script-modal-card { 
+            max-width: 95%; /* 强制两边留出 2.5% 的呼吸空间 */
+        }
+        .cmd-box {
+            padding: 12px; /* 手机端适当缩减代码框的内边距，让出更多显示空间 */
+        }
+        .protocol-selector {
+            gap: 8px; /* 手机端协议按钮间距微调 */
+        }
+    }
 </style>
 
 <div class="script-modal-overlay" id="installScriptModal">

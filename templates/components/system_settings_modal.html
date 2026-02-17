@@ -9,13 +9,13 @@
     }
     .sys-modal-overlay.active { display: flex; opacity: 1; }
     
-    /* 默认窄模式 320px，展开后 750px */
+    /* 默认窄模式 320px，展开后 780px (稍微加宽以容纳监控面板) */
     .sys-modal-card {
         background: #ffffff; width: 100%; max-width: 320px; height: 550px; border-radius: 12px; 
         box-shadow: 0 20px 40px rgba(0,0,0,0.15); display: flex; flex-direction: column; overflow: hidden;
         transition: max-width 0.3s cubic-bezier(0.2, 0.8, 0.2, 1);
     }
-    .sys-modal-card.has-content { max-width: 750px; }
+    .sys-modal-card.has-content { max-width: 780px; }
 
     /* 统一 Header 样式 */
     .sys-header { 
@@ -40,7 +40,7 @@
         width: 320px; flex-shrink: 0; padding: 20px 25px;
         border-right: 1px solid transparent; transition: border-color 0.3s;
     }
-    .sys-modal-card.has-content .sys-left-col { width: 260px; border-right-color: #f5f5f7; }
+    .sys-modal-card.has-content .sys-left-col { width: 240px; border-right-color: #f5f5f7; }
 
     .sys-section-label { display: block; font-size: 13px; font-weight: 600; color: #888; margin-bottom: 12px; }
 
@@ -115,6 +115,59 @@
     .sys-toggle-switch input:checked + .sys-toggle-slider { background-color: #34c759; }
     .sys-toggle-switch input:checked + .sys-toggle-slider:before { transform: translateX(20px); }
 
+    /* ================= ✨ 系统监控专属样式 ================= */
+    .sys-mon-header-info { display: flex; align-items: center; gap: 8px; margin-bottom: 20px; }
+    .sys-mon-badge { 
+        padding: 3px 8px; border-radius: 6px; font-size: 11px; font-weight: 600; font-family: monospace; 
+    }
+    .sys-mon-badge-green { background: #eafff1; color: #16a34a; border: 1px solid #bbf7d0; }
+    .sys-mon-badge-purple { background: #f3e8ff; color: #7c3aed; border: 1px solid #e9d5ff; }
+
+    .sys-mon-grid {
+        display: grid; grid-template-columns: repeat(2, 1fr); gap: 15px; margin-bottom: 20px;
+    }
+    .sys-mon-card {
+        padding: 16px; border-radius: 12px; border: 1px solid #f0f0f5; 
+        display: flex; flex-direction: column; gap: 6px; position: relative; overflow: hidden;
+    }
+    .sys-mon-purple { background: #fdfaff; border-color: #f3e8ff; }
+    .sys-mon-green { background: #fafffc; border-color: #dcfce7; }
+    .sys-mon-yellow { background: #fffcf5; border-color: #fef08a; }
+    .sys-mon-blue { background: #f5fbff; border-color: #e0f2fe; }
+
+    .sys-mon-card-title { font-size: 12px; font-weight: 600; color: #666; display: flex; align-items: center; gap: 6px; margin-bottom: 4px;}
+    .sys-mon-card-val { font-size: 24px; font-weight: 700; color: #333; font-family: monospace; letter-spacing: -0.5px;}
+    .sys-mon-purple .sys-mon-card-val { color: #7c3aed; }
+    .sys-mon-green .sys-mon-card-val { color: #16a34a; }
+    .sys-mon-yellow .sys-mon-card-val { color: #d97706; }
+    .sys-mon-blue .sys-mon-card-val { color: #0284c7; }
+
+    .sys-mon-card-sub { font-size: 11px; color: #888; display: flex; justify-content: space-between; margin-top: 4px;}
+    
+    .sys-mon-progress-bg { width: 100%; height: 4px; background: rgba(0,0,0,0.05); border-radius: 2px; margin-top: auto; overflow: hidden; }
+    .sys-mon-progress { height: 100%; border-radius: 2px; transition: width 0.5s ease-out; }
+    .sys-mon-purple .sys-mon-progress { background: #a78bfa; }
+    .sys-mon-green .sys-mon-progress { background: #4ade80; }
+
+    /* 详情列表 */
+    .sys-mon-details-box {
+        background: #fafbfc; border: 1px solid #e5e5ea; border-radius: 12px; padding: 16px;
+    }
+    .sys-mon-details-title { font-size: 13px; font-weight: 600; color: #333; margin-bottom: 12px; display: flex; align-items: center; gap: 6px;}
+    .sys-mon-details-grid {
+        display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px 20px;
+    }
+    .sys-mon-detail-row {
+        display: flex; justify-content: space-between; align-items: center; font-size: 12px; border-bottom: 1px dashed #f0f0f5; padding-bottom: 6px;
+    }
+    .sys-mon-detail-row:last-child, .sys-mon-detail-row:nth-last-child(2) { border-bottom: none; padding-bottom: 0; }
+    .sys-mon-detail-key { color: #666; }
+    .sys-mon-detail-val { font-weight: 600; color: #d73a49; font-family: monospace; }
+    .sys-mon-detail-val.blue { color: #0366d6; }
+    .sys-mon-detail-val.green { color: #22863a; }
+
+    /* ======================================================= */
+
     /* Geo 信息卡片 */
     .sys-geo-info-card {
         background: #fafbfc; border: 1px solid #e5e5ea; border-radius: 10px; padding: 15px;
@@ -143,7 +196,7 @@
     .btn-sys-cancel { background: #f5f5f7; border: none; color: #333; padding: 8px 25px; border-radius: 8px; cursor: pointer; font-size: 13px; font-weight: 600; transition: 0.2s;}
     .btn-sys-cancel:hover { background: #e5e5ea; }
 
-    /* ================= 移动端适配：内联抽屉展开模式 ================= */
+    /* ================= 移动端适配 ================= */
     .sys-mobile-inline-form {
         padding: 15px; background: #fdfdfd; border: 1px solid #cce4ff; border-top: none;
         border-radius: 0 0 10px 10px; margin-top: -10px; margin-bottom: 10px;
@@ -160,7 +213,11 @@
         .sys-modal-card.has-content { max-width: 95%; }
         .sys-body { flex-direction: column; overflow-y: auto; display: block; }
         .sys-left-col { width: 100%; height: auto; border-right: none; padding: 15px; overflow: visible; }
-        .sys-right-col { display: none !important; } /* 右侧面板彻底隐藏，表单移动到左侧内联显示 */
+        .sys-right-col { display: none !important; } 
+        
+        .sys-mon-grid { grid-template-columns: 1fr; gap: 10px; }
+        .sys-mon-details-grid { grid-template-columns: 1fr; gap: 6px; }
+        .sys-mon-detail-row:nth-last-child(2) { border-bottom: 1px dashed #f0f0f5; padding-bottom: 6px; }
     }
 </style>
 
@@ -179,7 +236,7 @@
         
         <div class="sys-body sys-no-scrollbar">
             <div class="sys-left-col sys-no-scrollbar">
-                <label class="sys-section-label">选择设置分类</label>
+                <label class="sys-section-label">选择配置分类</label>
                 
                 <div class="sys-nav-card" data-sys-id="basic" onclick="selectSysCategory('basic', this)">
                     <div class="sys-nav-name">⚙️ 基础配置</div>
@@ -195,10 +252,15 @@
                     <div class="sys-nav-name">🌍 Geo 管理</div>
                     <div class="sys-expand-indicator"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"></polyline></svg></div>
                 </div>
+
+                <div class="sys-nav-card" data-sys-id="monitor" onclick="selectSysCategory('monitor', this)">
+                    <div class="sys-nav-name">💻 系统监控</div>
+                    <div class="sys-expand-indicator"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"></polyline></svg></div>
+                </div>
             </div>
 
             <div class="sys-right-col sys-no-scrollbar" id="sysRightCol">
-                <label class="sys-section-label" id="sysRightTitle">设置详情</label>
+                <label class="sys-section-label" id="sysRightTitle" style="display: none;">设置详情</label>
                 
                 <div class="sys-form-section" id="sys-form-basic" style="display:none;">
                     <div class="sys-field">
@@ -265,6 +327,87 @@
                         <div class="sys-desc" id="sysGeoActionDesc" style="text-align: center; background: transparent; border: none; padding: 0;">连接 API 获取版本信息中...</div>
                     </div>
                 </div>
+
+                <div class="sys-form-section" id="sys-form-monitor" style="display:none;">
+                    
+                    <div class="sys-mon-header-info">
+                        <span class="sys-mon-badge sys-mon-badge-green" id="sysMonOsArch">-- / --</span>
+                        <span class="sys-mon-badge sys-mon-badge-purple" id="sysMonGoVer">go--</span>
+                        <div style="flex:1;"></div>
+                        <div style="font-size:11px; color:#888; display:flex; align-items:center; gap:4px;">
+                            <svg class="sys-spin" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.5 2v6h-6M2.5 22v-6h6M2 11.5a10 10 0 0 1 18.8-4.3M22 12.5a10 10 0 0 1-18.8 4.3"/></svg>
+                            实时更新
+                        </div>
+                    </div>
+
+                    <div class="sys-mon-grid">
+                        <div class="sys-mon-card sys-mon-purple">
+                            <div class="sys-mon-card-title"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="4" width="16" height="16" rx="2" ry="2"></rect><rect x="9" y="9" width="6" height="6"></rect><line x1="9" y1="1" x2="9" y2="4"></line><line x1="15" y1="1" x2="15" y2="4"></line><line x1="9" y1="20" x2="9" y2="23"></line><line x1="15" y1="20" x2="15" y2="23"></line><line x1="20" y1="9" x2="23" y2="9"></line><line x1="20" y1="14" x2="23" y2="14"></line><line x1="1" y1="9" x2="4" y2="9"></line><line x1="1" y1="14" x2="4" y2="14"></line></svg> 堆内存</div>
+                            <div class="sys-mon-card-val" id="sysMonHeapInuse">-- MB</div>
+                            <div class="sys-mon-card-sub">
+                                <span>共申请 <span id="sysMonHeapSys">-- MB</span></span>
+                                <span id="sysMonHeapPct">0%</span>
+                            </div>
+                            <div class="sys-mon-progress-bg"><div class="sys-mon-progress" id="sysMonHeapBar" style="width: 0%;"></div></div>
+                        </div>
+
+                        <div class="sys-mon-card sys-mon-green">
+                            <div class="sys-mon-card-title"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="4" width="16" height="16" rx="2" ry="2"></rect><rect x="9" y="9" width="6" height="6"></rect></svg> CPU</div>
+                            <div class="sys-mon-card-val"><span id="sysMonCpuCores">--</span><span style="font-size: 14px; margin-left: 2px;">核</span></div>
+                            <div class="sys-mon-card-sub">
+                                <span>GOMAXPROCS: <span id="sysMonCpuMaxProcs">--</span></span>
+                                <span>100%</span>
+                            </div>
+                            <div class="sys-mon-progress-bg"><div class="sys-mon-progress" style="width: 100%;"></div></div>
+                        </div>
+
+                        <div class="sys-mon-card sys-mon-yellow">
+                            <div class="sys-mon-card-title"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 8V4H8"></path><rect x="4" y="8" width="16" height="12" rx="2"></rect><path d="M2 14h2"></path><path d="M20 14h2"></path><path d="M15 13v2"></path><path d="M9 13v2"></path></svg> GOROUTINES</div>
+                            <div class="sys-mon-card-val" id="sysMonGoroutines" style="margin-top: 5px;">--</div>
+                            <div class="sys-mon-card-sub" style="margin-top: auto;">
+                                <span>CGO调用: <span id="sysMonCgo">--</span></span>
+                            </div>
+                        </div>
+
+                        <div class="sys-mon-card sys-mon-blue">
+                            <div class="sys-mon-card-title"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg> 运行时间</div>
+                            <div class="sys-mon-card-val" id="sysMonUptime" style="font-size: 18px; margin-top: 8px;">--时--分--秒</div>
+                            <div class="sys-mon-card-sub" style="margin-top: auto;">
+                                <span>启动: <span id="sysMonStart">--</span></span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="sys-mon-details-box">
+                        <div class="sys-mon-details-title"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line></svg> 运行时详情</div>
+                        <div class="sys-mon-details-grid">
+                            <div class="sys-mon-detail-row">
+                                <span class="sys-mon-detail-key">GC 次数</span>
+                                <span class="sys-mon-detail-val" id="sysMonGcNum">--</span>
+                            </div>
+                            <div class="sys-mon-detail-row">
+                                <span class="sys-mon-detail-key">系统内存获取</span>
+                                <span class="sys-mon-detail-val blue" id="sysMonSysMem">-- MB</span>
+                            </div>
+                            <div class="sys-mon-detail-row">
+                                <span class="sys-mon-detail-key">GC 暂停时间</span>
+                                <span class="sys-mon-detail-val" id="sysMonGcPause">-- ms</span>
+                            </div>
+                            <div class="sys-mon-detail-row">
+                                <span class="sys-mon-detail-key">累计分配内存</span>
+                                <span class="sys-mon-detail-val blue" id="sysMonTotalAlloc">-- MB</span>
+                            </div>
+                            <div class="sys-mon-detail-row">
+                                <span class="sys-mon-detail-key">GC CPU 占用</span>
+                                <span class="sys-mon-detail-val" id="sysMonGcCpu">-- %</span>
+                            </div>
+                            <div class="sys-mon-detail-row">
+                                <span class="sys-mon-detail-key">栈内存使用</span>
+                                <span class="sys-mon-detail-val green" id="sysMonStack">-- MB</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
                 
             </div>
         </div>
@@ -280,13 +423,16 @@
     const sysModalCard = document.getElementById('sysModalCard');
     let hasCheckedGeo = false; 
     let geoState = 'checking'; 
+    let sysMonitorTimer = null; // 监控定时器
 
     // 手风琴/分栏切换核心逻辑
     function selectSysCategory(catId, cardElement) {
         const isAlreadyActive = cardElement.classList.contains('active');
         const isMobile = window.innerWidth <= 768;
         
-        // 重置所有卡片和表单位置
+        // 停止之前的监控
+        stopSysMonitor();
+
         document.querySelectorAll('.sys-nav-card').forEach(c => c.classList.remove('active', 'mobile-expanded'));
         document.querySelectorAll('.sys-form-section').forEach(f => {
             f.style.display = 'none';
@@ -294,22 +440,21 @@
             document.getElementById('sysRightCol').appendChild(f);
         });
 
-        // 手机端：点击已展开项则折叠
         if (isAlreadyActive && isMobile) {
             sysModalCard.classList.remove('has-content');
             return;
         }
 
-        // 激活当前项
         cardElement.classList.add('active');
-        const catName = cardElement.querySelector('.sys-nav-name').innerText.replace(/[\u2700-\u27BF]|[\uE000-\uF8FF]|\uD83C[\uDC00-\uDFFF]|\uD83D[\uDC00-\uDFFF]|[\u2011-\u26FF]|\uD83E[\uDD10-\uDDFF]/g, '').trim();
-        document.getElementById('sysRightTitle').innerText = catName;
+        // const catName = cardElement.querySelector('.sys-nav-name').innerText.replace(/[\u2700-\u27BF]|[\uE000-\uF8FF]|\uD83C[\uDC00-\uDFFF]|\uD83D[\uDC00-\uDFFF]|[\u2011-\u26FF]|\uD83E[\uDD10-\uDDFF]/g, '').trim();
+        // document.getElementById('sysRightTitle').innerText = catName;
         
         const formEl = document.getElementById('sys-form-' + catId);
 
-        // 如果是选中 Geo 管理，且还没检查过版本，触发检查
         if (catId === 'geo' && !hasCheckedGeo) {
             checkGeoStatus();
+        } else if (catId === 'monitor') {
+            startSysMonitor(); // ✨ 开启系统实时监控
         }
 
         if (isMobile) {
@@ -329,7 +474,6 @@
         }
     }
 
-    // 响应式布局自适应修正 (防窗口拉伸)
     function adjustSysLayout() {
         const isMobile = window.innerWidth <= 768;
         const activeCard = document.querySelector('.sys-nav-card.active');
@@ -373,7 +517,6 @@
     }
 
     async function openSystemSettingsModal() {
-        // 重置状态
         document.querySelectorAll('.sys-nav-card').forEach(c => c.classList.remove('active', 'mobile-expanded'));
         document.querySelectorAll('.sys-form-section').forEach(f => {
             f.style.display = 'none';
@@ -385,7 +528,6 @@
             sysModalCard.classList.add('has-content');
             const firstCard = document.querySelector('.sys-nav-card');
             firstCard.classList.add('active');
-            document.getElementById('sysRightTitle').innerText = '基础配置';
             document.getElementById('sys-form-basic').style.display = 'block';
         } else {
             sysModalCard.classList.remove('has-content');
@@ -411,6 +553,7 @@
 
     function closeSystemSettingsModal() {
         sysModal.classList.remove('active');
+        stopSysMonitor(); // 确保关闭弹窗时停止监控
         setTimeout(() => sysModalCard.classList.remove('has-content'), 300);
     }
 
@@ -454,91 +597,132 @@
     }
 
     // ================= Geo API 相关逻辑 =================
+    // ... 省略了保持不变的 Geo 相关函数 (checkGeoStatus, handleGeoBtnClick, updateGeoDatabase, renderGeoBtn)
     async function checkGeoStatus() {
         hasCheckedGeo = true;
         renderGeoBtn('checking');
-        
         try {
             const res = await fetch('/api/get-geo-status');
             const result = await res.json();
-            
             if(result.status === 'success') {
                 const data = result.data;
                 document.getElementById('sysGeoLocalVersion').innerText = data.local_version || '未下载';
                 document.getElementById('sysGeoRemoteVersion').innerText = data.remote_version || '未知';
-                
                 let uiState = 'error';
                 if (data.state === 'latest') uiState = 'latest';
                 else if (data.state === 'update_available' || data.state === 'not_found') uiState = 'update';
-                else uiState = 'error';
-
                 renderGeoBtn(uiState, data.state === 'not_found');
-            } else {
-                throw new Error(result.message);
-            }
+            } else { throw new Error(result.message); }
         } catch(e) {
             document.getElementById('sysGeoRemoteVersion').innerText = "网络错误";
             renderGeoBtn('error');
         }
     }
-
-    function handleGeoBtnClick() {
-        if (geoState === 'update') updateGeoDatabase();
-        else if (geoState === 'error') checkGeoStatus(); 
-    }
-
+    function handleGeoBtnClick() { if (geoState === 'update') updateGeoDatabase(); else if (geoState === 'error') checkGeoStatus(); }
     async function updateGeoDatabase() {
         renderGeoBtn('updating');
-
         try {
             const response = await fetch('/api/update-geoip', { method: 'POST' });
             const result = await response.json();
-            if(result.status === 'success') {
-                setTimeout(() => { checkGeoStatus(); }, 3000);
-            } else {
-                alert("指令发送失败: " + result.message);
-                renderGeoBtn('update');
-            }
-        } catch(e) {
-            alert("请求错误");
-            renderGeoBtn('update');
-        }
+            if(result.status === 'success') { setTimeout(() => { checkGeoStatus(); }, 3000); } 
+            else { alert("指令发送失败: " + result.message); renderGeoBtn('update'); }
+        } catch(e) { alert("请求错误"); renderGeoBtn('update'); }
     }
-
     function renderGeoBtn(state, isNotFound = false) {
         geoState = state;
         const btn = document.getElementById('btnSysGeoUpdate');
         const desc = document.getElementById('sysGeoActionDesc');
         const rVer = document.getElementById('sysGeoRemoteVersion');
-
         if (state === 'checking') {
             btn.className = 'btn-sys-geo-action btn-sys-geo-loading';
             btn.innerHTML = '<svg class="sys-spin" style="width:16px;height:16px;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/></svg> 正在比对版本...';
             desc.innerText = '正在连接 GitHub API 获取版本信息...';
             if(rVer.innerText === '--') rVer.innerText = '检查中...';
-        
         } else if (state === 'updating') {
             btn.className = 'btn-sys-geo-action btn-sys-geo-loading';
             btn.innerHTML = '<svg class="sys-spin" style="width:16px;height:16px;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/></svg> 正在后台下载更新...';
             btn.style.cursor = 'default';
             desc.innerText = '后端正在执行下载和解压任务，请稍候...';
-
         } else if (state === 'latest') {
             btn.className = 'btn-sys-geo-action btn-sys-geo-latest';
             btn.innerHTML = '<svg style="width:16px;height:16px;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"></polyline></svg> 已是最新版本';
             desc.innerText = '当前数据库已是最新版本，无需执行任何操作。';
-        
         } else if (state === 'update') {
             btn.className = 'btn-sys-geo-action btn-sys-geo-update';
             const actionText = isNotFound ? '立即下载数据库' : '立即更新数据库';
             btn.innerHTML = `<svg style="width:16px;height:16px;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg> ${actionText}`;
             desc.innerText = isNotFound ? '本地未找到数据库文件，请下载以启用 IP 归属地解析。' : '检测到新版本，建议更新以获得更准确的解析。';
-        
         } else if (state === 'error') {
             btn.className = 'btn-sys-geo-action btn-sys-geo-error';
             btn.innerHTML = '<svg style="width:16px;height:16px;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.5 2v6h-6M2.5 22v-6h6M2 11.5a10 10 0 0 1 18.8-4.3M22 12.5a10 10 0 0 1-18.8 4.3"/></svg> 检查失败，点击重试';
             desc.innerText = '无法获取版本信息，请检查网络连接或稍后重试。';
         }
     }
+
+
+    // ================= ✨ 系统监控拉取与渲染 =================
+    function formatBytes(bytes) {
+        if (bytes === 0) return '0 MB';
+        const mb = bytes / (1024 * 1024);
+        return mb.toFixed(2) + ' MB';
+    }
+
+    async function fetchSystemMonitor() {
+        try {
+            const res = await fetch('/api/system-monitor');
+            const result = await res.json();
+            if (result.status === 'success') {
+                const d = result.data;
+                
+                // 顶部基础信息
+                document.getElementById('sysMonOsArch').innerText = d.os_arch;
+                document.getElementById('sysMonGoVer').innerText = d.go_version;
+
+                // 堆内存卡片
+                document.getElementById('sysMonHeapInuse').innerText = formatBytes(d.heap_inuse);
+                document.getElementById('sysMonHeapSys').innerText = formatBytes(d.heap_sys);
+                let heapPct = d.heap_sys > 0 ? ((d.heap_inuse / d.heap_sys) * 100).toFixed(1) : 0;
+                document.getElementById('sysMonHeapPct').innerText = heapPct + '%';
+                document.getElementById('sysMonHeapBar').style.width = heapPct + '%';
+
+                // CPU 卡片
+                document.getElementById('sysMonCpuCores').innerText = d.num_cpu;
+                document.getElementById('sysMonCpuMaxProcs').innerText = d.go_max_procs;
+
+                // Goroutines 卡片
+                document.getElementById('sysMonGoroutines').innerText = d.num_goroutine;
+                document.getElementById('sysMonCgo').innerText = d.num_cgo_call;
+
+                // 运行时间卡片
+                document.getElementById('sysMonUptime').innerText = d.uptime;
+                document.getElementById('sysMonStart').innerText = d.start_time;
+
+                // 底部详情
+                document.getElementById('sysMonGcNum').innerText = d.num_gc;
+                document.getElementById('sysMonGcPause').innerText = d.pause_total_ms.toFixed(2) + ' ms';
+                document.getElementById('sysMonGcCpu').innerText = (d.gc_cpu_fraction * 100).toFixed(4) + ' %';
+                document.getElementById('sysMonSysMem').innerText = formatBytes(d.sys_mem);
+                document.getElementById('sysMonTotalAlloc').innerText = formatBytes(d.total_alloc);
+                document.getElementById('sysMonStack').innerText = formatBytes(d.stack_inuse);
+            }
+        } catch (e) {
+            console.error("无法获取系统监控数据", e);
+        }
+    }
+
+    function startSysMonitor() {
+        fetchSystemMonitor(); // 立即执行一次
+        if (!sysMonitorTimer) {
+            sysMonitorTimer = setInterval(fetchSystemMonitor, 2000); // 每 2 秒拉取一次
+        }
+    }
+
+    function stopSysMonitor() {
+        if (sysMonitorTimer) {
+            clearInterval(sysMonitorTimer);
+            sysMonitorTimer = null;
+        }
+    }
+
 </script>
 {{end}}

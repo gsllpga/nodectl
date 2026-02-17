@@ -5,7 +5,7 @@
        ======================================================= */
     :root {
         --clash-modal-max-width: 900px;   /* 弹窗最大宽度 */
-        --clash-modal-max-height: 85vh;   /* 弹窗最大高度 (vh为屏幕高度的百分比) */
+        --clash-modal-max-height: 85vh;   /* 弹窗最大高度 */
         --clash-left-col-width: 320px;    /* 左侧自定义添加区的固定宽度 */
     }
 
@@ -27,18 +27,24 @@
         display: flex; flex-direction: column; overflow: hidden;
     }
 
+    /* 统一 Header 样式 (加入静默保存指示器) */
     .clash-header { 
         background: #f5f5f7; border-bottom: 1px solid #e5e5ea; 
         padding: 15px 25px; display: flex; align-items: center; justify-content: space-between; 
     }
     .clash-title { font-size: 15px; font-weight: 600; color: #333; margin: 0; }
+    
+    .clash-save-indicator {
+        font-size: 12px; font-weight: 600; color: #34c759; opacity: 0; transition: opacity 0.3s;
+        display: flex; align-items: center; gap: 4px;
+    }
 
     /* 左右分栏容器 */
     .clash-body-wrapper {
         display: flex; flex-direction: row; overflow: hidden; flex: 1; min-height: 0;
     }
 
-    /* 左侧：添加自定义规则栏 */
+    /* ================= 左侧：添加自定义规则栏 ================= */
     .clash-left-col {
         width: var(--clash-left-col-width); flex-shrink: 0; padding: 25px; border-right: 1px solid #e5e5ea;
         background: #fafbfc; overflow-y: auto; scrollbar-width: none; -ms-overflow-style: none;
@@ -46,6 +52,9 @@
     .clash-left-col::-webkit-scrollbar { display: none; }
 
     .left-section-title { font-size: 14px; font-weight: 600; color: #333; margin-bottom: 20px; display: flex; align-items: center; gap: 6px; }
+
+    /* 移动端专属手风琴 Header (PC端隐藏) */
+    .mobile-add-header { display: none; }
 
     .custom-input-group { margin-bottom: 15px; }
     .custom-input-group label { display: block; font-size: 12px; font-weight: 600; color: #666; margin-bottom: 6px; }
@@ -61,7 +70,7 @@
     }
     .btn-add-custom:hover { background: #0062cc; }
 
-    /* 右侧：规则展示区 */
+    /* ================= 右侧：规则展示区 ================= */
     .clash-right-col {
         flex: 1; padding: 25px; background: #fff; overflow-y: auto;
         scrollbar-width: none; -ms-overflow-style: none;
@@ -82,32 +91,30 @@
         font-size: 13px; font-weight: 600; color: #666; display: flex; align-items: center; gap: 6px;
     }
 
-    /* ✨ 新增：极其优雅的悬浮提示框 (Tooltip) */
+    /* 优雅的悬浮提示框 (Tooltip) */
     .info-tooltip-wrap {
         position: relative; display: inline-flex; align-items: center; cursor: pointer; margin-left: 2px;
-        outline: none; /* 去除手机端点击发光 */
+        outline: none; 
     }
     .info-tooltip-wrap svg { color: #a1a1aa; transition: color 0.2s; }
     .info-tooltip-wrap:hover svg, .info-tooltip-wrap:focus svg { color: #007aff; }
     
     .tooltip-content {
-        position: absolute; bottom: 130%; left: 50%; transform: translateX(-50%) translateY(5px);
-        background: rgba(29, 29, 31, 0.9); color: #fff; padding: 6px 10px; border-radius: 6px;
+        position: absolute; top: 140%; left: -10px; transform: translateY(-5px);
+        background: rgba(29, 29, 31, 0.9); color: #fff; padding: 8px 12px; border-radius: 6px;
         font-size: 11px; white-space: nowrap; font-weight: 500; letter-spacing: 0.5px;
         opacity: 0; visibility: hidden; transition: all 0.2s; pointer-events: none; z-index: 100;
-        box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+        box-shadow: 0 4px 12px rgba(0,0,0,0.15); line-height: 1.5; text-align: left;
     }
-    /* 小箭头 */
     .tooltip-content::after {
-        content: ''; position: absolute; top: 100%; left: 50%; margin-left: -4px;
-        border-width: 4px; border-style: solid; border-color: rgba(29, 29, 31, 0.9) transparent transparent transparent;
+        content: ''; position: absolute; bottom: 100%; left: 17px; margin-left: -4px;
+        border-width: 4px; border-style: solid; border-color: transparent transparent rgba(29, 29, 31, 0.9) transparent;
     }
-    /* 悬浮或手机端点击获取焦点时显示 */
     .info-tooltip-wrap:hover .tooltip-content, .info-tooltip-wrap:focus .tooltip-content {
-        opacity: 1; visibility: visible; transform: translateX(-50%) translateY(0);
+        opacity: 1; visibility: visible; transform: translateY(0);
     }
 
-    /* 精致的灰白色预设下拉菜单 */
+    /* 精致的下拉菜单 */
     .preset-select {
         padding: 6px 14px; font-size: 12px; font-weight: 600; color: #333;
         background-color: #f5f5f7; border: 1px solid #d1d1d6; border-radius: 6px;
@@ -143,40 +150,59 @@
     }
     .clash-module-label:hover .custom-actions { display: flex; }
 
-    /* 编辑按钮 (蓝灰色) */
+    /* 编辑与删除按钮 */
     .btn-edit-custom {
         background: #f0f7ff; border: 1px solid #cce4ff; color: #007aff; border-radius: 6px;
         cursor: pointer; padding: 4px; display: flex; align-items: center; justify-content: center; transition: all 0.2s;
     }
     .btn-edit-custom:hover { background: #e0efff; }
 
-    /* 删除按钮 (红粉色) - ✨ 支持二次确认状态的样式切换 */
     .btn-delete-custom {
         background: #fff5f5; border: 1px solid #fed7d7; color: #d74242; border-radius: 6px;
         cursor: pointer; padding: 4px; display: flex; align-items: center; justify-content: center; transition: all 0.2s;
     }
     .btn-delete-custom:hover { background: #fee2e2; }
     
-    /* 二次确认高亮状态 */
     .btn-delete-custom.confirm-state {
         background: #d74242; color: #ffffff; border-color: #d74242;
         padding: 4px 10px; font-size: 11px; font-weight: bold; white-space: nowrap;
     }
     .btn-delete-custom.confirm-state:hover { background: #c53030; }
 
-    /* 底部操作区 */
+    /* 底部操作区 (已干掉保存按钮，只保留关闭) */
     .clash-footer { 
         padding: 15px 25px; border-top: 1px solid #eee; background: #fff;
-        display: flex; justify-content: flex-end; gap: 12px; z-index: 10;
+        display: flex; justify-content: flex-end; z-index: 10;
     }
-    .btn-clash-cancel { background: #f5f5f7; border: none; color: #333; padding: 8px 22px; border-radius: 8px; cursor: pointer; font-size: 13px; font-weight: 600; transition: 0.2s;}
-    .btn-clash-save { background: #007aff; border: none; color: white; padding: 8px 22px; border-radius: 8px; cursor: pointer; font-size: 13px; font-weight: 600; transition: 0.2s;}
+    .btn-clash-close { background: #f5f5f7; border: none; color: #333; padding: 8px 25px; border-radius: 8px; cursor: pointer; font-size: 13px; font-weight: 600; transition: 0.2s;}
+    .btn-clash-close:hover { background: #e5e5ea; }
 
-    /* 移动端自适应 */
+    /* ================= 移动端自适应与折叠抽屉 ================= */
     @media (max-width: 768px) {
         .clash-modal-card { max-width: 95%; }
         .clash-body-wrapper { flex-direction: column; overflow-y: auto;}
-        .clash-left-col { width: 100%; border-right: none; border-bottom: 1px solid #e5e5ea; padding: 20px; overflow: visible;}
+        
+        .clash-left-col { width: 100%; border-right: none; border-bottom: 1px dashed #e5e5ea; padding: 0 !important; overflow: visible;}
+        
+        /* 移动端折叠触发器 */
+        .mobile-add-header {
+            display: flex; justify-content: space-between; align-items: center;
+            padding: 18px 20px; background: #fafbfc; cursor: pointer; user-select: none; transition: background 0.2s;
+        }
+        .mobile-add-header:active { background: #f0f0f5; }
+        
+        .mobile-add-chevron { transition: transform 0.3s; display: flex; align-items: center; color: #888; }
+        
+        /* 实际表单容器默认隐藏 */
+        .mobile-add-content { display: none; padding: 0 20px 20px 20px; }
+        .clash-left-col.expanded .mobile-add-content { display: block; animation: slideDown 0.2s ease-out; }
+        .clash-left-col.expanded .mobile-add-header { border-bottom: 1px solid transparent; }
+        .clash-left-col.expanded .mobile-add-chevron { transform: rotate(180deg); color: #007aff; }
+
+        @keyframes slideDown { from { opacity: 0; transform: translateY(-5px); } to { opacity: 1; transform: translateY(0); } }
+
+        .desktop-only { display: none !important; }
+
         .clash-right-col { width: 100%; padding: 20px; overflow: visible;}
         .clash-grid { grid-template-columns: repeat(2, 1fr); }
         .clash-custom-grid { grid-template-columns: 1fr; } 
@@ -187,43 +213,60 @@
     <div class="clash-modal-card">
         <div class="clash-header">
             <div class="clash-title">⚙️ Clash 路由分流引擎</div>
+            <div class="clash-save-indicator" id="clashSaveIndicator">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"></path></svg>
+                已保存
+            </div>
         </div>
         
         <div class="clash-body-wrapper">
-            <div class="clash-left-col">
-                <div class="left-section-title">
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"></path><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"></path></svg>
-                    添加自定义规则集
-                </div>
+            <div class="clash-left-col" id="clashLeftCol">
                 
-                <div class="custom-input-group">
-                    <label>标识名 (必填)</label>
-                    <input type="text" id="customModName" class="custom-input" placeholder="如: 私人网盘">
-                </div>
-                
-                <div class="custom-input-group">
-                    <label>图标 (可选)</label>
-                    <input type="text" id="customModIcon" class="custom-input" placeholder="支持 Emoji 或 ico URL">
-                </div>
-                
-                <div class="custom-input-group">
-                    <label>Domain 规则集 (.mrs)</label>
-                    <input type="text" id="customModDomain" class="custom-input" placeholder="Domain MRS 链接地址">
+                <div class="mobile-add-header" onclick="toggleMobileAddCustom()">
+                    <div style="font-size: 14px; font-weight: 600; color: #333; display: flex; align-items: center; gap: 6px;">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"></path><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"></path></svg>
+                        添加自定义规则集
+                    </div>
+                    <div class="mobile-add-chevron">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
+                    </div>
                 </div>
 
-                <div class="custom-input-group">
-                    <label>IP 规则集 (.mrs)</label>
-                    <input type="text" id="customModIP" class="custom-input" placeholder="IP MRS 链接地址">
+                <div class="mobile-add-content" id="mobileAddContent">
+                    <div class="left-section-title desktop-only">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"></path><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"></path></svg>
+                        添加自定义规则集
+                    </div>
+                    
+                    <div class="custom-input-group">
+                        <label>标识名 (必填)</label>
+                        <input type="text" id="customModName" class="custom-input" placeholder="如: 私人网盘">
+                    </div>
+                    
+                    <div class="custom-input-group">
+                        <label>图标 (可选)</label>
+                        <input type="text" id="customModIcon" class="custom-input" placeholder="支持 Emoji 或 ico URL">
+                    </div>
+                    
+                    <div class="custom-input-group">
+                        <label>Domain 规则集 (.mrs)</label>
+                        <input type="text" id="customModDomain" class="custom-input" placeholder="Domain 链接地址">
+                    </div>
+
+                    <div class="custom-input-group">
+                        <label>IP 规则集 (.mrs)</label>
+                        <input type="text" id="customModIP" class="custom-input" placeholder="IP 链接地址">
+                    </div>
+
+                    <div class="custom-input-group">
+                        <label>Classical 规则集 (.yaml)</label>
+                        <input type="text" id="customModUrl" class="custom-input" placeholder="Classical 链接地址">
+                    </div>
+
+                    <p style="font-size: 11px; color: #888; margin-bottom: 15px; line-height: 1.4;">提示：三种规则集地址至少需填写一项。推荐填写 Domain + IP 组合，或填写单条 Classical 链接。</p>
+
+                    <button id="btnAddCustom" class="btn-add-custom" onclick="addCustomModule()">添加并应用配置</button>
                 </div>
-
-                <div class="custom-input-group">
-                    <label>Classical 规则集 (.yaml)</label>
-                    <input type="text" id="customModUrl" class="custom-input" placeholder="Classical YAML 链接地址">
-                </div>
-
-                <p style="font-size: 11px; color: #888; margin-bottom: 15px; line-height: 1.4;">提示：三种规则集地址至少需填写一项。推荐填写 Domain + IP 组合，或填写单条 Classical 链接。</p>
-
-                <button id="btnAddCustom" class="btn-add-custom" onclick="addCustomModule()">添加并应用配置</button>
             </div>
 
             <div class="clash-right-col">
@@ -232,7 +275,7 @@
                     <div class="module-group-header">
                         <div class="module-group-title">
                             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></svg>
-                            官方内置分流规则
+                            内置分流规则
                             <div class="info-tooltip-wrap" tabindex="0">
                                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
                                 <div class="tooltip-content">mihomo核心官方内置分流规则</div>
@@ -240,7 +283,7 @@
                         </div>
                         <select id="presetSelect" class="preset-select" onchange="applyPresetFromDropdown(this)" title="选择预设快速应用">
                             <option value="-1">自定义配置</option>
-                            </select>
+                        </select>
                     </div>
                     <div id="builtinModulesContainer" class="clash-grid"></div>
                 </div>
@@ -259,8 +302,7 @@
         </div>
 
         <div class="clash-footer">
-            <button class="btn-clash-cancel" onclick="closeClashModal()">取消</button>
-            <button class="btn-clash-save" id="clashSaveBtn" onclick="saveClashSettings()">保存应用配置</button>
+            <button class="btn-clash-close" onclick="closeClashModal()">关闭</button>
         </div>
     </div>
 </div>
@@ -272,14 +314,23 @@
     let cachePresets = [];
     let activeSet = new Set(); 
     let editingCustomName = null; 
-    let deleteTimeoutMap = {}; // 记录各个删除按钮的计时器
+    let deleteTimeoutMap = {}; 
+
+    // 手机端折叠切换逻辑
+    function toggleMobileAddCustom() {
+        if (window.innerWidth > 768) return; // 仅手机端生效
+        document.getElementById('clashLeftCol').classList.toggle('expanded');
+    }
 
     async function openClashModal() {
         clashModal.classList.add('active');
         document.getElementById('builtinModulesContainer').innerHTML = '<div style="font-size:13px; color:#999;">加载中...</div>';
         
         resetEditState();
-        deleteTimeoutMap = {}; // 清理所有计时器
+        deleteTimeoutMap = {}; 
+        
+        // 手机端初始确保折叠
+        document.getElementById('clashLeftCol').classList.remove('expanded');
 
         try {
             const res = await fetch('/api/clash/settings');
@@ -300,10 +351,41 @@
     function closeClashModal() { 
         clashModal.classList.remove('active'); 
         resetEditState(); 
-        // 彻底清空存在的倒计时
         Object.values(deleteTimeoutMap).forEach(clearTimeout);
         deleteTimeoutMap = {};
     }
+
+    // ================= ✨ 核心静默保存引擎 =================
+    let clashAutoSaveTimer = null;
+    function triggerClashAutoSave(immediate = false) {
+        clearTimeout(clashAutoSaveTimer);
+        const indicator = document.getElementById('clashSaveIndicator');
+        indicator.innerHTML = '<span style="color:#888;">保存中...</span>';
+        indicator.style.opacity = '1';
+
+        const delayMs = immediate ? 0 : 600;
+
+        clashAutoSaveTimer = setTimeout(async () => {
+            const selectedModules = Array.from(activeSet);
+            try {
+                const res = await fetch('/api/clash/save', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ modules: selectedModules })
+                });
+                if (res.ok) {
+                    indicator.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"></path></svg> 已保存`;
+                    setTimeout(() => indicator.style.opacity = '0', 2000);
+                } else {
+                    indicator.innerHTML = '<span style="color:#ff3b30;">保存失败</span>';
+                }
+            } catch (error) {
+                indicator.innerHTML = '<span style="color:#ff3b30;">网络错误</span>';
+            }
+        }, delayMs);
+    }
+
+    // ========================================================
 
     function renderPresetsDropdown() {
         const select = document.getElementById('presetSelect');
@@ -362,6 +444,7 @@
         });
         
         matchCurrentStateToPreset();
+        triggerClashAutoSave(true); // 切换预设后立即保存
     }
 
     function renderModules() {
@@ -389,7 +472,6 @@
         const activeClass = isChecked ? 'is-checked' : '';
         let iconHtml = (mod.icon && mod.icon.startsWith('http')) ? `<img src="${mod.icon}">` : (mod.icon || '📦');
         
-        // ✨ 将删除按钮改为传入 this 对象
         let actionsHtml = isCustom ? `
             <div class="custom-actions">
                 <button class="btn-edit-custom" onclick="editCustomModule('${mod.name}', event)" title="编辑此自定义规则">
@@ -417,6 +499,7 @@
         
         syncLabelStyle(cb);
         matchCurrentStateToPreset();
+        triggerClashAutoSave(true); // 手动点击复选框立即保存
     }
 
     function syncLabelStyle(cb) {
@@ -444,6 +527,11 @@
         
         const mod = cacheCustom.find(m => m.name === name);
         if (!mod) return;
+
+        // 手机端如果在编辑时，自动展开左侧抽屉
+        if (window.innerWidth <= 768) {
+            document.getElementById('clashLeftCol').classList.add('expanded');
+        }
 
         document.getElementById('customModName').value = mod.name || '';
         document.getElementById('customModIcon').value = mod.icon || '';
@@ -491,20 +579,24 @@
         }
         
         await syncCustomModulesToBackend();
+        triggerClashAutoSave(true); // 添加或修改后自动保存启用状态
+        
         resetEditState(); 
         renderModules();
         matchCurrentStateToPreset();
+
+        // 手机端添加成功后自动收起左侧表单
+        if (window.innerWidth <= 768) {
+            document.getElementById('clashLeftCol').classList.remove('expanded');
+        }
     }
 
-    // ✨ 核心机制：二次点击确认的优雅删除逻辑
     async function deleteCustomModule(name, btnElement, event) {
         event.preventDefault(); 
         event.stopPropagation(); 
         
-        // 判断当前按钮是否已经处于“待确认”状态
         if (btnElement.classList.contains('confirm-state')) {
-            // 是：执行真正的删除逻辑
-            clearTimeout(deleteTimeoutMap[name]); // 拦截并取消计时器
+            clearTimeout(deleteTimeoutMap[name]); 
             delete deleteTimeoutMap[name];
 
             cacheCustom = cacheCustom.filter(m => m.name !== name);
@@ -513,19 +605,15 @@
             if (editingCustomName === name) resetEditState();
 
             await syncCustomModulesToBackend();
+            triggerClashAutoSave(true); // 删除后立刻静默保存当前状态
             renderModules();
             matchCurrentStateToPreset();
         } else {
-            // 否：第一次点击，进入“待确认”状态
             btnElement.classList.add('confirm-state');
-            
-            // 备份原来的 SVG 图标
             const originalSvg = btnElement.innerHTML;
             btnElement.innerHTML = '确定删除?';
             
-            // 设定 3 秒后自动恢复为普通的垃圾桶图标
             deleteTimeoutMap[name] = setTimeout(() => {
-                // 判断该 DOM 节点是否还存在于页面中 (防止在此期间被 renderModules() 重绘冲掉报错)
                 if (btnElement && btnElement.parentNode) {
                     btnElement.classList.remove('confirm-state');
                     btnElement.innerHTML = originalSvg;
@@ -534,6 +622,7 @@
         }
     }
 
+    // 后端同步自定义模块定义
     async function syncCustomModulesToBackend() {
         await fetch('/api/clash/custom-modules/save', {
             method: 'POST',
@@ -542,20 +631,5 @@
         });
     }
 
-    async function saveClashSettings() {
-        const btn = document.getElementById('clashSaveBtn');
-        const selectedModules = Array.from(activeSet);
-        btn.disabled = true; btn.innerText = '保存中...';
-
-        try {
-            const res = await fetch('/api/clash/save', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ modules: selectedModules })
-            });
-            if (res.ok) closeClashModal();
-        } catch (error) { alert('网络错误'); } 
-        finally { btn.disabled = false; btn.innerText = '保存应用配置'; }
-    }
 </script>
 {{end}}

@@ -4,6 +4,10 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0"> 
     <title>{{.Title}} - NodeCTL</title>
+    
+    <link rel="preconnect" href="https://flagcdn.com" crossorigin>
+    <link rel="dns-prefetch" href="https://flagcdn.com">
+    
     <script src="https://cdn.jsdelivr.net/npm/sortablejs@latest/Sortable.min.js"></script>
     <style>
         /* =========================================================
@@ -908,9 +912,10 @@
                 // 1. 处理跨平台国旗显示 (调用外部 flagcdn 接口转换图片)
                 let flagHTML = `<span style="margin-right: 8px; font-size: 16px; display: inline-block; width: 22px; text-align: center;">🌐</span>`;
                 if (node.region && node.region.trim() !== '') {
-                    // flagcdn 要求使用全小写的 2 位 ISO 缩写 (如 cn, hk, us)
                     const isoCode = node.region.trim().toLowerCase();
-                    flagHTML = `<img src="https://flagcdn.com/w20/${isoCode}.png" alt="${isoCode}" style="width: 22px; height: 16px; object-fit: cover; margin-right: 8px; border-radius: 2px; box-shadow: 0 0 2px rgba(0,0,0,0.15);">`;
+                    // ✨ 修复 1: 去掉 /w20/ 限制，并将 .png 改为原生矢量 .svg (无限清晰)
+                    // ✨ 修复 2: 加上 loading="lazy"，不在屏幕视野内的节点国旗不会占用初次加载的网络资源
+                    flagHTML = `<img src="https://flagcdn.com/${isoCode}.svg" loading="lazy" alt="${isoCode}" style="width: 22px; height: 16px; object-fit: cover; margin-right: 8px; border-radius: 2px; box-shadow: 0 0 2px rgba(0,0,0,0.15);">`;
                 }
 
                 // 2. 动态生成启用的协议标签 (应用全新的自动调色盘算法)

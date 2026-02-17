@@ -75,6 +75,13 @@
     }
     .btn-add-submit:hover { background: #0062cc; }
     .btn-add-submit:disabled { background: #aacdfa; cursor: not-allowed; }
+
+    /* ✨ 移动端适配：统一弹窗宽度留白 */
+    @media (max-width: 768px) {
+        .add-modal-card { 
+            max-width: 95%; /* 强制两边留出 2.5% 的呼吸空间 */
+        }
+    }
 </style>
 
 <div class="add-modal-overlay" id="addNodeModal">

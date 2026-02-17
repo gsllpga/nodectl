@@ -86,6 +86,14 @@
     
     /* 底部加载指示器 */
     .update-loading { padding: 20px; text-align: center; color: #86868b; font-size: 12px; line-height: 1.6;}
+
+    /* ✨ 移动端适配：统一弹窗宽度，留下左右呼吸边距 */
+    @media (max-width: 768px) {
+        .update-modal-card { 
+            max-width: 95%; 
+            max-height: 85vh; 
+        }
+    }
 </style>
 
 <div class="update-modal-overlay" id="updateModal">
@@ -160,7 +168,6 @@
             const data = await res.json();
             if (data.length < 3) hasMore = false;
 
-            // 【核心修复】如果是第一页，强制清空容器，防止并发点击时发生数据重复累加
             if (page === 1) {
                 document.getElementById('releaseList').innerHTML = "";
                 allReleases = [];
@@ -234,7 +241,6 @@
 
     function openUpdateModal() {
         document.getElementById('updateModal').classList.add('active');
-        // 只有在数据为空且没有正在请求的时候，才触发拉取
         if (allReleases.length === 0 && !isFetching && hasMore) {
             loadReleases(1);
         }
@@ -245,7 +251,6 @@
     }
 
     document.addEventListener("DOMContentLoaded", () => {
-        // 【核心修复】精准替换版本号文字，并触发平滑淡入，彻底消除闪烁
         const badgeText = document.getElementById('versionText');
         if (badgeText) {
             badgeText.innerText = DISPLAY_VERSION;
@@ -266,7 +271,6 @@
             });
         }
 
-        // 延迟 1 秒静默拉取
         setTimeout(() => {
             if (allReleases.length === 0 && !isFetching) {
                 loadReleases(1);

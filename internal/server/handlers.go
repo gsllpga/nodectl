@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"runtime"
 	"strings"
 	"time"
 
@@ -20,6 +21,9 @@ import (
 	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
 )
+
+// AppStartTime 记录后端程序启动的确切时间
+var AppStartTime = time.Now()
 
 // ------------------- [通用辅助函数] -------------------
 
@@ -964,4 +968,58 @@ func apiSubRuleList(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0")
 	w.Write([]byte(formattedContent))
+}
+
+// apiGetSystemMonitor 获取系统运行状态与硬件监控数据
+func apiGetSystemMonitor(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	// 读取 Go 底层内存状态
+	var m runtime.MemStats
+	runtime.ReadMemStats(&m)
+
+	// 计算运行时长
+	uptime := time.Since(AppStartTime)
+	days := int(uptime.Hours() / 24)
+	hours := int(uptime.Hours()) % 24
+	minutes := int(uptime.Minutes()) % 60
+	seconds := int(uptime.Seconds()) % 60
+
+	uptimeStr := ""
+	if days > 0 {
+		uptimeStr += fmt.Sprintf("%d天 ", days)
+	}
+	uptimeStr += fmt.Sprintf("%d时%d分%d秒", hours, minutes, seconds)
+
+	// 组装监控数据
+	data := map[string]interface{}{
+		"os_arch":       fmt.Sprintf("%s / %s", runtime.GOOS, runtime.GOARCH), // 系统和架构
+		"go_version":    runtime.Version(),                                    // Go版本
+		"num_cpu":       runtime.NumCPU(),                                     // 逻辑CPU核心数
+		"go_max_procs":  runtime.GOMAXPROCS(0),                                // 使用的线程数
+		"num_goroutine": runtime.NumGoroutine(),                               // 当前协程数量
+		"num_cgo_call":  runtime.NumCgoCall(),                                 // CGO调用次数
+		"start_time":    AppStartTime.Format("2006/01/02 15:04:05"),           // 启动时间
+		"uptime":        uptimeStr,                                            // 运行时长
+		// 内存相关 (单位均为 Bytes，前端拿到后再转换为 MB/GB)
+		"heap_alloc":  m.HeapAlloc,  // 当前分配的堆内存
+		"heap_sys":    m.HeapSys,    // 向系统申请的堆内存
+		"heap_inuse":  m.HeapInuse,  // 正在使用的堆内存
+		"sys_mem":     m.Sys,        // 向系统申请的总内存
+		"total_alloc": m.TotalAlloc, // 累计分配的内存(包含已释放的)
+		"stack_inuse": m.StackInuse, // 栈内存使用量
+		// GC 垃圾回收状态
+		"num_gc":          m.NumGC,                       // 垃圾回收次数
+		"pause_total_ms":  float64(m.PauseTotalNs) / 1e6, // GC总暂停时间(毫秒)
+		"gc_cpu_fraction": m.GCCPUFraction,               // GC占用CPU的时间比例
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"status": "success",
+		"data":   data,
+	})
 }

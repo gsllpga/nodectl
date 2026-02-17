@@ -41,6 +41,7 @@ func Start(tmplFS embed.FS) {
 	mux.HandleFunc("/api/custom-rules/get", middleware.Auth(apiGetCustomRules))
 	mux.HandleFunc("/api/custom-rules/save", middleware.Auth(apiSaveCustomRules))
 	mux.HandleFunc("/api/clash/custom-modules/save", middleware.Auth(apiSaveCustomClashModules))
+	mux.HandleFunc("/api/system-monitor", middleware.Auth(apiGetSystemMonitor))
 
 	// [新增] 公开路由 (不需要 middleware.Auth)
 	mux.HandleFunc("/api/public/install-script", apiPublicScript) // 获取脚本
