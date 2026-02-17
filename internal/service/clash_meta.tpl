@@ -270,10 +270,12 @@ proxy-groups:
     icon: "https://cdn.jsdelivr.net/gh/GitMetaio/Surfing@rm/Home/icon/HBASE-copy.svg"
     <<: *proxy_groups
 
-  - name: 自定义出站
+{{range .CustomProxies}}
+  - name: {{.Name}}
     icon: "https://cdn.jsdelivr.net/gh/GitMetaio/Surfing@rm/Home/icon/User.svg"
     type: select
     <<: *proxy_groups
+{{end}}
 
 rule-anchor:
   Local: &Local
@@ -293,16 +295,18 @@ rule-providers:
     type: http
     behavior: classical
     format: text
-    url: "直连规则订阅地址/direct.list"
+    url: "{{.BaseURL}}/sub/rules/direct?token={{.Token}}"
     path: ./rules/direct.list
     interval: 86400
-  自定义出站:
+{{range .CustomProxies}}
+  {{.Name}}_规则:
     type: http
     behavior: classical
     format: text
-    url: "定义规则订阅地址/customize.list"
-    path: ./rules/customize.list
+    url: "{{$.BaseURL}}/sub/rules/proxy/{{.ID}}?token={{$.Token}}"
+    path: ./rules/custom_{{.ID}}.list
     interval: 3600
+{{end}}
   WebRTC_端/域:
     <<: *Classical
     path: ./rules/WebRTC.list
@@ -503,7 +507,9 @@ rule-providers:
 rules:
   # ------ 核心基础 Rules 保留 ------
   - RULE-SET,我的直连规则,🇨🇳 大陆
-  - RULE-SET,自定义出站,自定义出站
+{{range .CustomProxies}}
+  - RULE-SET,{{.Name}}_规则,{{.Name}}
+{{end}}
   - RULE-SET,No-ads-all_域,⛔️ 拒绝连接
   - RULE-SET,WebRTC_端/域,⛔️ 拒绝连接
   - DST-PORT,53,🌐 DNS_Hijack

@@ -3,7 +3,9 @@ package service
 import (
 	"bytes"
 	_ "embed"
+	"encoding/json"
 	"fmt"
+	"net"
 	"nodectl/internal/database"
 	"regexp"
 	"strings"
@@ -42,11 +44,14 @@ var SupportedClashModules = []RuleModule{
 	{ID: "Twitter", Name: "Twitter(X)", Icon: "🐦"},
 }
 
-// ClashTemplateData 用于传入模板渲染的数据结构
+// [修改 internal/service/clash.go 中的结构体]
 type ClashTemplateData struct {
-	RelaySubURL string          // 中转节点订阅链接
-	ExitSubURL  string          // 落地节点订阅链接
-	Modules     map[string]bool // 用户启用的规则模块
+	RelaySubURL   string          // 中转节点订阅链接
+	ExitSubURL    string          // 落地节点订阅链接
+	Modules       map[string]bool // 用户启用的规则模块
+	BaseURL       string
+	Token         string
+	CustomProxies []CustomProxyRule // [新增] 多组自定义分流
 }
 
 // GetActiveClashModules 从数据库获取用户保存的启用的模块
@@ -71,7 +76,7 @@ func SaveActiveClashModules(modules []string) error {
 }
 
 // RenderClashConfig 最终生成用户的 YAML 配置
-func RenderClashConfig(relayURL, exitURL string) (string, error) {
+func RenderClashConfig(relayURL, exitURL, baseURL, token string) (string, error) {
 	activeMods := GetActiveClashModules()
 	modMap := make(map[string]bool)
 	for _, m := range activeMods {
@@ -79,9 +84,12 @@ func RenderClashConfig(relayURL, exitURL string) (string, error) {
 	}
 
 	data := ClashTemplateData{
-		RelaySubURL: relayURL,
-		ExitSubURL:  exitURL,
-		Modules:     modMap,
+		RelaySubURL:   relayURL,
+		ExitSubURL:    exitURL,
+		Modules:       modMap,
+		BaseURL:       baseURL,
+		Token:         token,
+		CustomProxies: GetCustomProxyRules(), // [新增] 获取多组分流规则
 	}
 
 	tmpl, err := template.New("clash").Parse(ClashTemplateStr)
@@ -105,4 +113,112 @@ func RenderClashConfig(relayURL, exitURL string) (string, error) {
 	cleanYAML := re2.ReplaceAllString(step1, "\n\n")
 
 	return cleanYAML, nil
+}
+
+// ---------------------------------------------------------
+// 自定义规则处理逻辑 (智能识别 IP/CIDR 与 域名)
+// ---------------------------------------------------------
+
+// ParseCustomRules 自动解析原生文本，输出 Clash Classical 规范规则
+func ParseCustomRules(raw string) string {
+	var result []string
+	// 统一换行符并逐行解析
+	lines := strings.Split(strings.ReplaceAll(raw, "\r\n", "\n"), "\n")
+
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+
+		// 1. 保留注释
+		if strings.HasPrefix(line, "#") || strings.HasPrefix(line, "//") {
+			result = append(result, line)
+			continue
+		}
+
+		// 2. 如果用户手动写了规范格式 (包含逗号)，直接放行
+		if strings.Contains(line, ",") {
+			result = append(result, line)
+			continue
+		}
+
+		// [修复] 清洗协议头: 剥离 http:// 或 https://
+		if idx := strings.Index(line, "://"); idx != -1 {
+			line = line[idx+3:]
+		}
+
+		// 3. 智能判断是 IP 还是 域名
+		if isIPOrCIDR(line) {
+			// 如果是没有掩码的纯 IP，自动补全掩码
+			if !strings.Contains(line, "/") {
+				if strings.Contains(line, ":") {
+					line += "/128" // IPv6
+				} else {
+					line += "/32" // IPv4
+				}
+			}
+			result = append(result, "IP-CIDR,"+line)
+		} else {
+			// [修复] 清洗路径: 剥离域名后面的路径 (如 github.com/xxx -> github.com)
+			if idx := strings.Index(line, "/"); idx != -1 {
+				line = line[:idx]
+			}
+			result = append(result, "DOMAIN-SUFFIX,"+line)
+		}
+	}
+
+	return strings.Join(result, "\n")
+}
+
+// isIPOrCIDR 判断字符串是否为合法的 IP 或 CIDR
+func isIPOrCIDR(s string) bool {
+	if _, _, err := net.ParseCIDR(s); err == nil {
+		return true
+	}
+	if ip := net.ParseIP(s); ip != nil {
+		return true
+	}
+	return false
+}
+
+// CustomProxyRule 定义自定义分流出站的结构
+type CustomProxyRule struct {
+	ID      string `json:"id"`
+	Name    string `json:"name"`
+	Content string `json:"content"`
+}
+
+// GetCustomProxyRules 从数据库获取自定义分流规则列表
+func GetCustomProxyRules() []CustomProxyRule {
+	var conf database.SysConfig
+	database.DB.Where("key = ?", "clash_custom_proxy_rules").First(&conf)
+
+	var rules []CustomProxyRule
+	if conf.Value != "" {
+		json.Unmarshal([]byte(conf.Value), &rules)
+	}
+	return rules
+}
+
+// SaveCustomProxyRules 保存自定义分流规则列表
+func SaveCustomProxyRules(rules []CustomProxyRule) error {
+	data, _ := json.Marshal(rules)
+	return database.DB.Where(database.SysConfig{Key: "clash_custom_proxy_rules"}).
+		Assign(database.SysConfig{Value: string(data)}).
+		FirstOrCreate(&database.SysConfig{}).Error
+}
+
+// GetCustomDirectRules 获取直连规则文本
+func GetCustomDirectRules() string {
+	var conf database.SysConfig
+	database.DB.Where("key = ?", "clash_custom_direct_raw").First(&conf)
+	return conf.Value
+}
+
+// SaveCustomDirectRules 保存直连规则文本
+func SaveCustomDirectRules(content string) error {
+	return database.DB.Where(database.SysConfig{Key: "clash_custom_direct_raw"}).
+		Assign(database.SysConfig{Value: content}).
+		FirstOrCreate(&database.SysConfig{}).Error
 }

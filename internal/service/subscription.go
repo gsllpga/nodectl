@@ -2,7 +2,9 @@ package service
 
 import (
 	"bytes"
+	"encoding/base64"
 	"fmt"
+	"net/url"
 	"nodectl/internal/database"
 	"regexp"
 	"strconv"
@@ -80,4 +82,48 @@ func contains(slice []string, item string) bool {
 		}
 	}
 	return false
+}
+
+// [新增] GenerateV2RaySubBase64 生成通用 Base64 订阅 (包含直连和落地)
+func GenerateV2RaySubBase64(useFlag bool) (string, error) {
+	var nodes []database.NodePool
+	// 取出直连(1)和落地(2)的节点，排除被屏蔽的
+	if err := database.DB.Where("routing_type IN ? AND is_blocked = ?", []int{1, 2}, false).
+		Order("sort_index ASC").Find(&nodes).Error; err != nil {
+		return "", err
+	}
+
+	var lines []string
+
+	for _, node := range nodes {
+		for proto, link := range node.Links {
+			if contains(node.DisabledLinks, proto) {
+				continue
+			}
+
+			// 构造名称 (同 Clash 逻辑)
+			baseName := fmt.Sprintf("%s-%s", strings.ToLower(proto), node.Name)
+			finalName := baseName
+			if useFlag && node.Region != "" {
+				flag := getEmojiFlag(node.Region)
+				finalName = fmt.Sprintf("%s %s", flag, strings.ReplaceAll(baseName, flag, ""))
+			}
+			finalName = strings.TrimSpace(finalName)
+
+			// V2ray/通用格式要求节点名称附带在 # 之后，并进行 URL 编码
+			// 注意：Go 的 QueryEscape 会把空格转成 +，而客户端更标准的是识别 %20
+			safeName := strings.ReplaceAll(url.QueryEscape(finalName), "+", "%20")
+
+			// 去除原始链接中可能带有的旧名称 (#xxx)
+			cleanLink := strings.Split(link, "#")[0]
+
+			lines = append(lines, fmt.Sprintf("%s#%s", cleanLink, safeName))
+		}
+	}
+
+	// 用换行符拼接并进行 Base64 编码
+	rawStr := strings.Join(lines, "\n")
+	b64Str := base64.StdEncoding.EncodeToString([]byte(rawStr))
+
+	return b64Str, nil
 }

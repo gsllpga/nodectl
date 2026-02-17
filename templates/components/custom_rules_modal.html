@@ -1,0 +1,575 @@
+{{define "custom_rules_modal.html"}}
+<style>
+    .cr-modal-overlay {
+        display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+        background: rgba(0, 0, 0, 0.4); backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px);
+        z-index: 3000; align-items: center; justify-content: center;
+        opacity: 0; transition: opacity 0.3s ease;
+    }
+    .cr-modal-overlay.active { display: flex; opacity: 1; }
+    
+    .cr-modal-card {
+        background: #ffffff; width: 100%; max-width: 800px; height: 550px; border-radius: 12px; 
+        box-shadow: 0 20px 40px rgba(0,0,0,0.15); display: flex; flex-direction: column; overflow: hidden;
+    }
+
+    .cr-header { background: #f5f5f7; border-bottom: 1px solid #e5e5ea; padding-top: 15px; padding-left: 25px; display: flex; align-items: center; justify-content: space-between; padding-right: 20px; }
+    .cr-title-area { display: flex; flex-direction: column; }
+    .cr-title { font-size: 15px; font-weight: 600; color: #333; margin-bottom: 10px; display: flex; align-items: center; gap: 8px;}
+    
+    .cr-save-indicator {
+        font-size: 12px; font-weight: 600; color: #34c759; opacity: 0; transition: opacity 0.3s;
+        display: flex; align-items: center; gap: 4px;
+    }
+
+    .cr-tab-menu { display: flex; gap: 24px; }
+    .cr-tab-btn {
+        background: transparent; border: none; font-size: 14px; font-weight: 600; color: #86868b;
+        padding: 10px 0; cursor: pointer; position: relative; transition: 0.2s;
+    }
+    .cr-tab-btn.active { color: #007aff; }
+    .cr-tab-btn.active::after {
+        content: ''; position: absolute; bottom: -1px; left: 0; right: 0; height: 2px; background: #007aff; border-radius: 2px;
+    }
+
+    .cr-body { flex: 1; position: relative; background: #fff; overflow: hidden; }
+    
+    /* 隐藏滚动条全局类 */
+    .no-scrollbar { overflow-y: auto; scrollbar-width: none; -ms-overflow-style: none; }
+    .no-scrollbar::-webkit-scrollbar { display: none; }
+
+    /* 直连出站 Tab */
+    .cr-tab-direct {
+        position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+        padding: 20px 25px; display: none; flex-direction: column; background: #fff;
+    }
+    .cr-tab-direct.active { display: flex; }
+
+    /* 分流出站 Tab */
+    .cr-tab-proxy {
+        position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+        display: none; flex-direction: row; background: #fff;
+    }
+    .cr-tab-proxy.active { display: flex; }
+
+    /* 左侧策略组列表 */
+    .cr-left-panel {
+        width: 260px; border-right: 1px solid #eee; background: #fafbfc;
+        display: flex; flex-direction: column;
+    }
+    .cr-rule-list { flex: 1; padding: 15px; display: flex; flex-direction: column; gap: 8px; }
+    
+    .cr-rule-item {
+        background: transparent; border-radius: 8px; border: 1px solid transparent; transition: 0.2s;
+        display: flex; flex-direction: column; align-items: stretch;
+    }
+    .cr-rule-item:hover { background: #f0f0f5; }
+    .cr-rule-item.active { background: #e0efff; border-color: #b3d7ff; }
+    
+    .cr-rule-item-header {
+        display: flex; justify-content: space-between; align-items: center;
+        padding: 8px 12px; min-height: 38px; cursor: pointer; color: #333; font-weight: 500; font-size: 13px;
+    }
+    .cr-rule-item.active .cr-rule-item-header { color: #007aff; }
+
+    .cr-group-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .cr-group-input {
+        flex: 1; padding: 4px 8px; border: 1px solid #007aff; border-radius: 4px;
+        font-size: 13px; outline: none; margin-right: 8px; width: 100%;
+    }
+
+    .cr-item-actions { display: none; align-items: center; gap: 2px; }
+    .cr-rule-item:hover .cr-item-actions { display: flex; }
+    .cr-rule-edit, .cr-rule-delete {
+        display: flex; align-items: center; justify-content: center;
+        padding: 5px; border-radius: 6px; cursor: pointer; transition: 0.2s; color: #888;
+    }
+    .cr-rule-edit:hover { background: #cce4ff; color: #007aff; }
+    .cr-rule-delete:hover { background: #ffe5e5; color: #ff3b30; }
+    .cr-rule-delete.confirming {
+        background: #ff3b30; color: white; font-size: 11px; padding: 4px 8px; font-weight: bold; width: auto; white-space: nowrap; border-radius: 6px;
+    }
+
+    .cr-btn-add-rule {
+        margin: 15px; padding: 10px; background: white; border: 1px dashed #ccc; border-radius: 8px;
+        color: #555; cursor: pointer; font-size: 13px; font-weight: 600; text-align: center; transition: 0.2s;
+    }
+    .cr-btn-add-rule:hover { border-color: #007aff; color: #007aff; }
+
+    /* 右侧规则编辑器 */
+    .cr-right-panel {
+        flex: 1; display: flex; flex-direction: column; padding: 20px; background: transparent; overflow: hidden;
+    }
+    .cr-desc { font-size: 12px; color: #888; margin-bottom: 12px; line-height: 1.5; background: #f9f9fc; padding: 10px; border-radius: 8px; border: 1px solid #eee; flex-shrink: 0;}
+
+    /* ================= 核心：结构化列表设计 ================= */
+    .rule-items-container {
+        /* 取消了 max-height 限制，允许列表填满下方所有剩余空间 */
+        flex: 1; padding-right: 5px; margin-bottom: 10px;
+        display: flex; flex-direction: column; gap: 4px;
+    }
+    .cr-item-row {
+        display: flex; gap: 8px; align-items: center; background: #f9f9fc;
+        padding: 4px 8px; border-radius: 6px; border: 1px solid #f0f0f0; transition: 0.2s; flex-shrink: 0;
+    }
+    .cr-item-row:hover { background: #f0f0f5; border-color: #e5e5ea; }
+    
+    .cr-item-remark {
+        flex: 0 0 60px; width: 60px; min-width: 0; /* 强制锁定 60px */
+        font-size: 12px; color: #666; background: transparent; border: 1px solid transparent; 
+        outline: none; padding: 4px 6px; border-radius: 4px; transition: 0.2s;
+    }
+    .cr-item-remark:focus { background: #fff; border-color: #007aff; color: #333; }
+    
+    .cr-item-rule {
+        flex: 1; min-width: 0; font-family: monospace; font-size: 12px; color: #1d1d1f; background: transparent; 
+        border: 1px solid transparent; outline: none; padding: 4px 6px; border-radius: 4px; transition: 0.2s;
+    }
+    .cr-item-rule:focus { background: #fff; border-color: #007aff; }
+    
+    .cr-item-del {
+        color: #ff3b30; cursor: pointer; padding: 4px; opacity: 0; transition: 0.2s; display: flex; align-items: center;
+    }
+    .cr-item-row:hover .cr-item-del { opacity: 1; }
+    .cr-item-del:hover { background: #ffe5e5; border-radius: 4px; }
+
+    /* 底部添加行 */
+    .cr-add-row {
+        display: flex; gap: 8px; align-items: center; background: #f0f7ff;
+        padding: 8px 10px; border-radius: 8px; border: 1px dashed #b3d7ff; flex-shrink: 0;
+    }
+    .cr-add-input {
+        flex: 1; min-width: 0; font-size: 12px; padding: 6px 10px; border: 1px solid #cce4ff; 
+        border-radius: 6px; outline: none; font-family: monospace;
+    }
+    .cr-add-input:focus { border-color: #007aff; box-shadow: 0 0 0 2px rgba(0,122,255,0.1); }
+    .cr-btn-parse {
+        background: #007aff; color: white; border: none; padding: 6px 14px; flex-shrink: 0;
+        border-radius: 6px; font-size: 12px; font-weight: 600; cursor: pointer; transition: 0.2s;
+    }
+    .cr-btn-parse:hover { background: #0062cc; }
+
+    .cr-empty-state {
+        flex: 1; display: flex; align-items: center; justify-content: center;
+        color: #999; font-size: 13px; text-align: center; line-height: 1.6;
+    }
+
+    .cr-footer { padding: 15px 25px; border-top: 1px solid #eee; display: flex; justify-content: flex-end; background: #fff;}
+    .btn-cr-cancel { background: #f5f5f7; border: none; color: #333; padding: 8px 25px; border-radius: 8px; cursor: pointer; font-size: 13px; font-weight: 600; transition: 0.2s;}
+    .btn-cr-cancel:hover { background: #e5e5ea; }
+
+    /* ================= 移动端手风琴响应式 ================= */
+    @media (max-width: 768px) {
+        .cr-modal-card { width: 95%; height: 85vh; }
+        .cr-tab-proxy { flex-direction: column; }
+        .cr-left-panel { width: 100%; border-right: none; flex: 1; display: flex; flex-direction: column; min-height: 0; background: #fff;}
+        
+        /* 手机端手风琴展开时的编辑器容器设置 */
+        .cr-right-panel { 
+            padding: 10px 15px; border-top: 1px dashed #cce4ff; margin-top: 5px; 
+            background: #f9f9fc; border-radius: 8px; flex: none; 
+        }
+        /* 仅在手机端为单条策略组内的列表增加最大高度限制，防止无限拉长霸屏 */
+        .rule-items-container { max-height: 40vh; }
+        
+        .cr-tab-menu { gap: 15px; }
+        .cr-tab-btn { font-size: 13px; }
+        .cr-rule-item { margin-bottom: 5px; border: 1px solid #eee; }
+        .cr-item-actions { display: flex; } /* 移动端始终显示操作按钮 */
+    }
+</style>
+
+<div class="cr-modal-overlay" id="customRulesModal">
+    <div class="cr-modal-card">
+        <div class="cr-header">
+            <div class="cr-title-area">
+                <div class="cr-title">⚡ 自定义分流规则</div>
+                <div class="cr-tab-menu">
+                    <button class="cr-tab-btn active" onclick="switchCrTab('proxy')">多组分流出站</button>
+                    <button class="cr-tab-btn" onclick="switchCrTab('direct')">全局直连出站</button>
+                </div>
+            </div>
+            <div class="cr-save-indicator" id="saveIndicator">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"></path></svg>
+                已保存
+            </div>
+        </div>
+        
+        <div class="cr-body">
+            <div id="cr-tab-proxy" class="cr-tab-proxy active">
+                <div class="cr-left-panel" id="proxyLeftPanel">
+                    <div class="cr-rule-list no-scrollbar" id="proxyGroupList"></div>
+                    <button class="cr-btn-add-rule" onclick="addProxyGroup()">+ 新建分流策略组</button>
+                </div>
+                <div class="cr-right-panel" id="proxyEditorContainer"></div>
+            </div>
+
+            <div id="cr-tab-direct" class="cr-tab-direct">
+                <div class="cr-desc">
+                    💡 <b>智能解析：</b>填写的域名和IP将<b>不经过代理</b>直接访问网络。
+                </div>
+                <div class="rule-items-container no-scrollbar" id="directItemsContainer"></div>
+                <div class="cr-add-row">
+                    <input type="text" id="directNewInput" class="cr-add-input" placeholder="输入域名或IP (如: baidu.com 或 192.168.1.1)" onkeydown="if(event.key==='Enter') addDirectItem()">
+                    <button class="cr-btn-parse" onclick="addDirectItem()">解析写入</button>
+                </div>
+            </div>
+        </div>
+
+        <div class="cr-footer">
+            <button class="btn-cr-cancel" onclick="closeCustomRulesModal()">关闭</button>
+        </div>
+    </div>
+</div>
+
+<script>
+    const editSvg = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>`;
+    const trashSvg = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>`;
+
+    let proxyRules = []; 
+    let currentProxyId = null;
+    let currentProxyItems = []; 
+    let directItems = []; 
+
+    // --- 文本与结构化数组的双向解析器 ---
+    function parseContentToItems(content) {
+        if(!content) return [];
+        const lines = content.split('\n');
+        const items = [];
+        let currentRemark = '';
+        for(let line of lines) {
+            line = line.trim();
+            if(!line) continue;
+            if(line.startsWith('#') || line.startsWith('//')) {
+                let text = line.replace(/^[#\/]+\s*/, '');
+                currentRemark = currentRemark ? currentRemark + ' ' + text : text;
+            } else {
+                items.push({ remark: currentRemark, rule: line });
+                currentRemark = '';
+            }
+        }
+        if(currentRemark) items.push({ remark: currentRemark, rule: '' });
+        return items;
+    }
+
+    function serializeItemsToContent(items) {
+        let lines = [];
+        for(let item of items) {
+            if(item.remark) lines.push('# ' + item.remark);
+            if(item.rule) lines.push(item.rule);
+        }
+        return lines.join('\n');
+    }
+
+    // --- 前端智能格式化引擎 (包含清洗) ---
+    function autoFormatRule(raw) {
+        raw = raw.trim();
+        if(raw.includes(',')) return raw;
+        
+        raw = raw.replace(/^[a-zA-Z]+:\/\//, '');
+        const isIP = /^((25[0-5]|2[0-4]\d|[01]?\d\d?)\.){3}(25[0-5]|2[0-4]\d|[01]?\d\d?)(?:\/\d{1,2})?$/.test(raw);
+        const isIPv6 = /^([0-9a-fA-F:]+)(?:\/\d{1,3})?$/.test(raw);
+        
+        if(isIP || isIPv6) {
+            if(!raw.includes('/')) raw += raw.includes(':') ? '/128' : '/32';
+            return 'IP-CIDR,' + raw;
+        }
+        
+        raw = raw.split('/')[0].split('?')[0];
+        return 'DOMAIN-SUFFIX,' + raw;
+    }
+
+    // --- 自动保存防抖引擎 ---
+    let autoSaveTimer = null;
+    function triggerAutoSave() {
+        if (currentProxyId) {
+            const ruleObj = proxyRules.find(r => r.id === currentProxyId);
+            if (ruleObj) ruleObj.content = serializeItemsToContent(currentProxyItems);
+        }
+
+        clearTimeout(autoSaveTimer);
+        const indicator = document.getElementById('saveIndicator');
+        indicator.innerHTML = '<span style="color:#888;">保存中...</span>';
+        indicator.style.opacity = '1';
+
+        autoSaveTimer = setTimeout(async () => {
+            const payload = { direct: serializeItemsToContent(directItems), proxy: proxyRules };
+            try {
+                const res = await fetch('/api/custom-rules/save', {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload)
+                });
+                if (res.ok) {
+                    indicator.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"></path></svg> 已保存`;
+                    setTimeout(() => indicator.style.opacity = '0', 2000);
+                }
+            } catch (e) {
+                indicator.innerHTML = '<span style="color:#ff3b30;">保存失败</span>';
+            }
+        }, 600);
+    }
+
+    // --- 弹窗基础交互 ---
+    async function openCustomRulesModal() {
+        document.getElementById('customRulesModal').classList.add('active');
+        switchCrTab('proxy');
+        try {
+            const res = await fetch('/api/custom-rules/get');
+            const result = await res.json();
+            if (result.status === 'success') {
+                directItems = parseContentToItems(result.data.direct || '');
+                renderDirectItems();
+
+                proxyRules = result.data.proxy || [];
+                if (proxyRules.length > 0) {
+                    selectProxyGroup(proxyRules[0].id);
+                } else {
+                    renderProxyGroupsList();
+                    renderProxyEditor();
+                }
+            }
+        } catch (e) { console.error("加载失败", e); }
+    }
+
+    function closeCustomRulesModal() {
+        document.getElementById('customRulesModal').classList.remove('active');
+    }
+
+    function switchCrTab(tab) {
+        document.querySelectorAll('.cr-tab-btn').forEach(b => b.classList.remove('active'));
+        document.getElementById('cr-tab-proxy').classList.remove('active');
+        document.getElementById('cr-tab-direct').classList.remove('active');
+        
+        if (tab === 'proxy') {
+            document.querySelectorAll('.cr-tab-btn')[0].classList.add('active');
+            document.getElementById('cr-tab-proxy').classList.add('active');
+        } else {
+            document.querySelectorAll('.cr-tab-btn')[1].classList.add('active');
+            document.getElementById('cr-tab-direct').classList.add('active');
+        }
+    }
+
+    // --- 【直连 Tab】逻辑 ---
+    function renderDirectItems() {
+        const container = document.getElementById('directItemsContainer');
+        container.innerHTML = directItems.map((item, index) => `
+            <div class="cr-item-row">
+                <input type="text" class="cr-item-remark" placeholder="备注" value="${item.remark}" oninput="directItems[${index}].remark = this.value; triggerAutoSave();">
+                <input type="text" class="cr-item-rule" value="${item.rule}" oninput="directItems[${index}].rule = this.value; triggerAutoSave();">
+                <div class="cr-item-del" onclick="deleteDirectItem(${index})" title="删除">${trashSvg}</div>
+            </div>
+        `).join('');
+        container.scrollTop = container.scrollHeight;
+    }
+
+    function addDirectItem() {
+        const input = document.getElementById('directNewInput');
+        const raw = input.value.trim();
+        if(!raw) return;
+        directItems.push({ remark: '', rule: autoFormatRule(raw) });
+        input.value = '';
+        renderDirectItems();
+        triggerAutoSave();
+    }
+
+    function deleteDirectItem(index) {
+        directItems.splice(index, 1);
+        renderDirectItems();
+        triggerAutoSave();
+    }
+
+    // --- 【分流 Proxy Tab】核心响应式排版逻辑 ---
+    function adjustEditorPosition() {
+        const editor = document.getElementById('proxyEditorContainer');
+        const proxyTab = document.getElementById('cr-tab-proxy');
+        
+        if (window.innerWidth <= 768) {
+            // 手机端
+            if (!currentProxyId) {
+                editor.style.display = 'none'; // 收起编辑器
+                if (editor.parentNode !== proxyTab) proxyTab.appendChild(editor);
+            } else {
+                editor.style.display = 'flex';
+                const activeItem = document.getElementById('rule_item_' + currentProxyId);
+                if (activeItem && editor.parentNode !== activeItem) {
+                    activeItem.appendChild(editor);
+                }
+            }
+        } else {
+            // 电脑端
+            editor.style.display = 'flex';
+            if (editor.parentNode !== proxyTab) {
+                proxyTab.appendChild(editor);
+            }
+            if(!currentProxyId && editor.innerHTML === '') renderProxyEditor();
+        }
+    }
+    window.addEventListener('resize', adjustEditorPosition);
+
+    function renderProxyGroupsList() {
+        // 先将编辑器节点安全移出，防止被 innerHTML 覆盖销毁
+        const editor = document.getElementById('proxyEditorContainer');
+        if (editor && editor.parentNode !== document.getElementById('cr-tab-proxy')) {
+            document.getElementById('cr-tab-proxy').appendChild(editor);
+        }
+
+        const listDiv = document.getElementById('proxyGroupList');
+        listDiv.innerHTML = proxyRules.map(rule => `
+            <div class="cr-rule-item ${rule.id === currentProxyId ? 'active' : ''}" id="rule_item_${rule.id}">
+                <div class="cr-rule-item-header" onclick="selectProxyGroup('${rule.id}')">
+                    <span class="cr-group-name" id="name_disp_${rule.id}">🎯 ${rule.name || '未命名'}</span>
+                    
+                    <input type="text" class="cr-group-input" id="name_input_${rule.id}" value="${rule.name || ''}" 
+                           style="display:none;" onclick="event.stopPropagation()"
+                           onblur="finishRename('${rule.id}')" onkeydown="if(event.key==='Enter') this.blur()">
+                    
+                    <div class="cr-item-actions" id="actions_${rule.id}">
+                        <span class="cr-rule-edit" onclick="startRename(event, '${rule.id}')" title="重命名">${editSvg}</span>
+                        <span class="cr-rule-delete" onclick="deleteProxyGroup(event, '${rule.id}')" id="del_btn_${rule.id}" title="删除">${trashSvg}</span>
+                    </div>
+                </div>
+            </div>
+        `).join('');
+
+        adjustEditorPosition();
+    }
+
+    // 重命名交互
+    function startRename(event, id) {
+        event.stopPropagation();
+        document.getElementById(`name_disp_${id}`).style.display = 'none';
+        document.getElementById(`actions_${id}`).style.display = 'none';
+        const input = document.getElementById(`name_input_${id}`);
+        input.style.display = 'block';
+        input.focus();
+        input.select();
+    }
+
+    function finishRename(id) {
+        const input = document.getElementById(`name_input_${id}`);
+        const newName = input.value.trim() || '未命名';
+        const rule = proxyRules.find(r => r.id === id);
+        if (rule && rule.name !== newName) {
+            rule.name = newName;
+            triggerAutoSave();
+        }
+        renderProxyGroupsList(); 
+    }
+
+    // 策略组双重确认删除
+    let pendingDeleteId = null;
+    let pendingDeleteTimer = null;
+
+    function deleteProxyGroup(event, id) {
+        event.stopPropagation();
+        const btn = document.getElementById(`del_btn_${id}`);
+        
+        if (pendingDeleteId === id) {
+            clearTimeout(pendingDeleteTimer);
+            pendingDeleteId = null;
+            proxyRules = proxyRules.filter(r => r.id !== id);
+            if (currentProxyId === id) {
+                currentProxyId = null; // 删除后置空，自动收缩
+            }
+            renderProxyGroupsList();
+            renderProxyEditor();
+            triggerAutoSave();
+        } else {
+            pendingDeleteId = id;
+            btn.innerHTML = '确认删除?';
+            btn.classList.add('confirming');
+            
+            clearTimeout(pendingDeleteTimer);
+            pendingDeleteTimer = setTimeout(() => {
+                pendingDeleteId = null;
+                renderProxyGroupsList();
+            }, 2500);
+        }
+    }
+
+    // [修复] 支持手机端点击展开/收起 Toggle 逻辑
+    function selectProxyGroup(id) {
+        if(currentProxyId === id) {
+            // 手机端重复点击，则收起 (设为 null)
+            if (window.innerWidth <= 768) {
+                currentProxyId = null;
+                renderProxyGroupsList();
+                renderProxyEditor();
+                return;
+            }
+        }
+        currentProxyId = id;
+        const ruleObj = proxyRules.find(r => r.id === id);
+        currentProxyItems = parseContentToItems(ruleObj.content || '');
+        renderProxyGroupsList();
+        renderProxyEditor();
+    }
+
+    function addProxyGroup() {
+        const newId = 'rule_' + Date.now().toString(36);
+        proxyRules.push({ id: newId, name: '新建策略组', content: '' });
+        currentProxyId = newId;
+        currentProxyItems = [];
+        renderProxyGroupsList();
+        renderProxyEditor();
+        triggerAutoSave();
+        
+        setTimeout(() => startRename({stopPropagation:()=>{}}, newId), 50);
+    }
+
+    // --- 【分流 Proxy Tab】右侧编辑器内容逻辑 ---
+    function renderProxyEditor() {
+        const container = document.getElementById('proxyEditorContainer');
+        const ruleObj = proxyRules.find(r => r.id === currentProxyId);
+
+        if (!ruleObj) {
+            if (window.innerWidth <= 768) {
+                container.style.display = 'none'; // 手机端置空时彻底隐藏
+                container.innerHTML = '';
+            } else {
+                container.style.display = 'flex';
+                container.innerHTML = `<div class="cr-empty-state">👈 请新建或选择一个策略组<br><br>可创建诸如 "AI大模型"、"看漫画" 等专属分组</div>`;
+            }
+            return;
+        }
+
+        container.style.display = 'flex';
+        container.innerHTML = `
+            <div class="rule-items-container no-scrollbar" id="proxyItemsContainer"></div>
+            <div class="cr-add-row">
+                <input type="text" id="proxyNewInput" class="cr-add-input" placeholder="输入域名或IP" onkeydown="if(event.key==='Enter') addProxyItem()">
+                <button class="cr-btn-parse" onclick="addProxyItem()">解析写入</button>
+            </div>
+        `;
+        renderProxyItems();
+    }
+
+    function renderProxyItems() {
+        const container = document.getElementById('proxyItemsContainer');
+        if(!container) return;
+        container.innerHTML = currentProxyItems.map((item, index) => `
+            <div class="cr-item-row">
+                <input type="text" class="cr-item-remark" placeholder="备注" value="${item.remark}" oninput="currentProxyItems[${index}].remark = this.value; triggerAutoSave();">
+                <input type="text" class="cr-item-rule" value="${item.rule}" oninput="currentProxyItems[${index}].rule = this.value; triggerAutoSave();">
+                <div class="cr-item-del" onclick="deleteProxyItem(${index})" title="删除">${trashSvg}</div>
+            </div>
+        `).join('');
+        container.scrollTop = container.scrollHeight;
+    }
+
+    function addProxyItem() {
+        const input = document.getElementById('proxyNewInput');
+        const raw = input.value.trim();
+        if(!raw) return;
+        currentProxyItems.push({ remark: '', rule: autoFormatRule(raw) });
+        input.value = '';
+        renderProxyItems();
+        triggerAutoSave();
+    }
+
+    function deleteProxyItem(index) {
+        currentProxyItems.splice(index, 1);
+        renderProxyItems();
+        triggerAutoSave();
+    }
+</script>
+{{end}}

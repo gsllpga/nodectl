@@ -1,152 +1,378 @@
 {{define "sub_links_modal.html"}}
 <style>
-    /* ================= 订阅链接弹窗专用样式 ================= */
-    .link-modal-overlay {
+    /* ================= 统一弹窗基础框架 ================= */
+    .sub-modal-overlay {
         display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%;
         background: rgba(0, 0, 0, 0.4); backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px);
         z-index: 3000; align-items: center; justify-content: center;
         opacity: 0; transition: opacity 0.3s ease;
     }
-    .link-modal-overlay.active { display: flex; opacity: 1; }
+    .sub-modal-overlay.active { display: flex; opacity: 1; }
     
-    .link-modal-card {
-        background: #ffffff; width: 100%; max-width: 550px; border-radius: 16px; 
-        box-shadow: 0 20px 40px rgba(0,0,0,0.15);
-        transform: scale(0.95); transition: all 0.3s cubic-bezier(0.2, 0.8, 0.2, 1);
-        display: flex; flex-direction: column; overflow: hidden;
+    /* 默认窄模式 420px，展开后 800px */
+    .sub-modal-card {
+        background: #ffffff; width: 100%; max-width: 420px; height: 620px; border-radius: 12px; 
+        box-shadow: 0 20px 40px rgba(0,0,0,0.15); display: flex; flex-direction: column; overflow: hidden;
+        transition: max-width 0.3s cubic-bezier(0.2, 0.8, 0.2, 1);
     }
-    .link-modal-overlay.active .link-modal-card { transform: scale(1); }
+    .sub-modal-card.has-content { max-width: 800px; }
 
-    .link-header { 
-        padding: 20px 25px 15px; border-bottom: 1px solid #f5f5f7; display: flex; justify-content: space-between; align-items: center;
+    /* 统一 Header 样式 */
+    .sub-header { 
+        background: #f5f5f7; border-bottom: 1px solid #e5e5ea; 
+        padding: 15px 20px 15px 25px; display: flex; align-items: center; justify-content: space-between; 
     }
-    .link-title { font-size: 16px; font-weight: 700; color: #1d1d1f; display: flex; align-items: center; gap: 8px; }
-    .link-close { cursor: pointer; color: #999; transition: color 0.2s; background: none; border: none; padding: 5px; }
-    .link-close:hover { color: #333; }
-
-    .link-body { padding: 25px; overflow-y: auto; max-height: 60vh; background: #fafbfc; }
-
-    .sub-item-card {
-        background: white; border: 1px solid #eee; border-radius: 12px; padding: 15px; margin-bottom: 15px;
-        box-shadow: 0 2px 8px rgba(0,0,0,0.02);
-    }
-    .sub-item-card:last-child { margin-bottom: 0; }
+    .sub-title { font-size: 15px; font-weight: 600; color: #333; display: flex; align-items: center; gap: 8px; margin: 0; }
     
-    .sub-item-header { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
-    .sub-item-title { font-size: 14px; font-weight: 600; color: #333; }
-    .sub-item-desc { font-size: 12px; color: #888; }
+    /* 右上角自动保存指示器 */
+    .sub-save-indicator {
+        font-size: 12px; font-weight: 600; color: #34c759; opacity: 0; transition: opacity 0.3s;
+        display: flex; align-items: center; gap: 4px;
+    }
 
-    .sub-input-group {
-        display: flex; gap: 8px; margin-top: 10px; background: #f5f5f7; padding: 6px; border-radius: 8px; border: 1px solid #e5e5ea;
+    /* 主内容区 */
+    .sub-body { flex: 1; display: flex; flex-direction: row; background: #fff; overflow: hidden; }
+    
+    /* 隐藏滚动条全局类 */
+    .no-scrollbar { overflow-y: auto; scrollbar-width: none; -ms-overflow-style: none; }
+    .no-scrollbar::-webkit-scrollbar { display: none; }
+
+    /* ================= 左侧面板 (定宽防挤压) ================= */
+    .sub-left-col {
+        width: 420px; flex-shrink: 0; padding: 25px;
+        border-right: 1px solid transparent; transition: border-color 0.3s;
     }
-    .sub-input-group input {
-        flex: 1; border: none; background: transparent; font-family: monospace; font-size: 12px; color: #555; padding: 0 8px; outline: none;
+    .sub-modal-card.has-content .sub-left-col { border-right-color: #f5f5f7; }
+
+    .sub-section-label { display: block; font-size: 13px; font-weight: 600; color: #888; margin-bottom: 12px; }
+    
+    .sub-name-input {
+        width: 100%; padding: 12px; border: 1px solid #d1d1d6; border-radius: 8px;
+        font-size: 14px; color: #1d1d1f; outline: none; transition: border 0.2s; 
+        background: #fafbfc; margin-bottom: 30px; font-weight: 500;
     }
-    .btn-copy-sub {
-        background: #007aff; color: white; border: none; border-radius: 6px; padding: 6px 14px; font-size: 12px; font-weight: 600; cursor: pointer; transition: 0.2s; white-space: nowrap;
+    .sub-name-input:focus { border-color: #007aff; background: #fff; box-shadow: 0 0 0 2px rgba(0,122,255,0.1); }
+
+    /* 格式选择卡片 */
+    .format-wrapper { display: flex; flex-direction: column; }
+    
+    .sub-format-card {
+        border: 1px solid #e5e5ea; border-radius: 10px; background: #fff; margin-bottom: 12px;
+        padding: 12px 16px; user-select: none; cursor: pointer; transition: all 0.2s;
+        display: flex; align-items: center; justify-content: space-between;
     }
-    .btn-copy-sub:hover { background: #0062cc; }
-    .btn-copy-sub.copied { background: #34c759; }
+    .sub-format-card:hover { border-color: #d1d1d6; background: #fafafa; }
+    .sub-format-card.active { border-color: #007aff; background: #f0f7ff; }
+    
+    .sub-format-info { display: flex; flex-direction: column; gap: 4px; }
+    .sub-format-name { font-size: 14px; font-weight: 600; color: #333; transition: color 0.2s; display: flex; align-items: center; gap: 6px;}
+    .sub-format-card.active .sub-format-name { color: #007aff; }
+    .sub-format-desc { font-size: 12px; color: #888; transition: color 0.2s; }
+    .sub-format-card.active .sub-format-desc { color: #5a9df8; }
+
+    .sub-expand-indicator { color: #ccc; transition: all 0.2s; display: flex; align-items: center;}
+    .sub-format-card:hover .sub-expand-indicator { color: #86868b; transform: translateX(2px); }
+    .sub-format-card.active .sub-expand-indicator { color: #007aff; }
+
+    /* ================= 右侧详情面板 ================= */
+    .sub-right-col {
+        flex: 1; padding: 30px; display: none; background: #fff; flex-direction: column;
+        justify-content: flex-start; /* 从上往下自然排布 */
+    }
+    .sub-modal-card.has-content .sub-right-col { display: flex; animation: fadeIn 0.3s ease; }
+    @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+
+    /* 右侧头部介绍区 */
+    .sub-right-header { margin-bottom: 20px; padding-bottom: 15px; border-bottom: 1px dashed #eee; }
+    .sub-right-title { font-size: 16px; font-weight: 700; color: #1d1d1f; margin-bottom: 8px; }
+    .sub-right-desc { font-size: 13px; color: #666; line-height: 1.5; }
+
+    /* 链接区域 */
+    .sub-link-label { font-size: 13px; font-weight: 600; color: #555; margin-bottom: 8px; display: flex; align-items: center; gap: 6px;}
+    
+    .sub-link-textarea {
+        width: 100%; height: 120px; padding: 15px; border: 1px solid #d1d1d6; border-radius: 8px;
+        font-family: Menlo, Monaco, "Courier New", monospace; font-size: 13px; line-height: 1.6;
+        color: #333; background: #fafbfc; resize: none; outline: none; margin-bottom: 12px;
+        word-break: break-all; transition: 0.2s;
+    }
+    .sub-link-textarea:focus { border-color: #007aff; background: #fff; box-shadow: 0 0 0 2px rgba(0,122,255,0.1); }
+
+    /* 100% 宽度的按钮 */
+    .btn-sub-copy {
+        width: 100%; background: #007aff; color: white; border: none; padding: 12px; border-radius: 8px;
+        font-size: 14px; font-weight: 600; cursor: pointer; transition: 0.2s; display: flex; align-items: center; justify-content: center; gap: 6px;
+    }
+    .btn-sub-copy:hover { background: #0062cc; }
+    .btn-sub-copy.copied { background: #34c759; }
+
+    /* 统一 Footer 样式 */
+    .sub-footer { padding: 15px 25px; border-top: 1px solid #eee; display: flex; justify-content: flex-end; background: #fff;}
+    .btn-sub-cancel { background: #f5f5f7; border: none; color: #333; padding: 8px 25px; border-radius: 8px; cursor: pointer; font-size: 13px; font-weight: 600; transition: 0.2s;}
+    .btn-sub-cancel:hover { background: #e5e5ea; }
+
+    /* ================= 移动端手风琴展开适配 ================= */
+    @media (max-width: 768px) {
+        .sub-modal-card { max-width: 95%; height: 85vh; }
+        .sub-modal-card.has-content { max-width: 95%; }
+        .sub-body { flex-direction: column; overflow-y: auto; display: block; }
+        .sub-left-col { width: 100%; height: auto; border-right: none; padding: 20px; overflow: visible; }
+        
+        .sub-format-card.active { 
+            margin-bottom: 0; border-bottom-left-radius: 0; border-bottom-right-radius: 0; border-bottom: 1px dashed #cce4ff;
+        }
+        
+        .sub-right-col { 
+            width: 100%; height: auto; padding: 15px; 
+            border: 1px solid #007aff; border-top: none;
+            border-bottom-left-radius: 10px; border-bottom-right-radius: 10px; 
+            background: #f0f7ff; margin-bottom: 12px;
+        }
+        .sub-right-header { border-bottom-color: #cce4ff; margin-bottom: 15px; padding-bottom: 10px;}
+        .sub-link-textarea { height: 100px; background: #fff; }
+    }
 </style>
 
-<div class="link-modal-overlay" id="subLinksModal">
-    <div class="link-modal-card">
-        <div class="link-header">
-            <div class="link-title">🔗 获取订阅链接</div>
-            <button class="link-close" onclick="closeSubLinksModal()">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
-            </button>
+<div class="sub-modal-overlay" id="subLinksModal">
+    <div class="sub-modal-card" id="subModalCard">
+        
+        <div class="sub-header">
+            <div class="sub-title">🔗 订阅分发中心</div>
+            <div class="sub-save-indicator" id="subSaveIndicator">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"></path></svg>
+                名称已保存
+            </div>
         </div>
         
-        <div class="link-body" id="subLinksContainer">
-            <div style="text-align: center; color: #888; padding: 20px;">正在生成链接...</div>
+        <div class="sub-body no-scrollbar">
+            <div class="sub-left-col no-scrollbar">
+                <label class="sub-section-label">📝 客户端显示的订阅名称</label>
+                <input type="text" id="inputSubName" class="sub-name-input" placeholder="例如：我的私人节点池" oninput="saveCustomSubNameDebounced()">
+                
+                <label class="sub-section-label">📌 选择订阅格式</label>
+                
+                <div class="format-wrapper" id="wrap_clash">
+                    <div class="sub-format-card" onclick="selectSubFormat('clash', this)">
+                        <div class="sub-format-info">
+                            <div class="sub-format-name">😼 Clash Meta</div>
+                            <div class="sub-format-desc">软路由友好的订阅方式</div>
+                        </div>
+                        <div class="sub-expand-indicator"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"></polyline></svg></div>
+                    </div>
+                </div>
+
+                <div class="format-wrapper" id="wrap_v2ray">
+                    <div class="sub-format-card" onclick="selectSubFormat('v2ray', this)">
+                        <div class="sub-format-info">
+                            <div class="sub-format-name">🌐 V2Ray / Base64</div>
+                            <div class="sub-format-desc">v2rayN 等通用基础客户端</div>
+                        </div>
+                        <div class="sub-expand-indicator"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"></polyline></svg></div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="sub-right-col no-scrollbar" id="subRightCol">
+                <div id="subRightContent">
+                    </div>
+            </div>
+        </div>
+
+        <div class="sub-footer">
+            <button class="btn-sub-cancel" onclick="closeSubLinksModal()">关闭</button>
         </div>
     </div>
 </div>
 
 <script>
     const subModal = document.getElementById('subLinksModal');
+    const subModalCard = document.getElementById('subModalCard');
+    
+    let currentBaseUrl = '';
+    let currentToken = '';
+    let currentFormatKey = null;
 
+    // 预定义的链接与展示文案数据
+    const subFormatData = {
+        clash: { 
+            title: "😼 Clash Meta 订阅",
+            desc: "首选 <b>OpenClash </b>推荐 <b>Clash Verge Rev</b> 或 <b>Mihomo Party</b> 使用。内置订阅模板未对手机端做易用性适配，手机端建议使用v2ray格式订阅。",
+            getLink: () => `${currentBaseUrl}/sub/clash?token=${currentToken}` 
+        },
+        v2ray: { 
+            title: "🌐 V2Ray / 通用 Base64",
+            desc: "最纯粹的节点明文聚合格式。适用于 <b>v2rayN</b>、<b>v2rayNG</b>、<b>Shadowrocket</b> 等绝大多数代理工具。",
+            getLink: () => `${currentBaseUrl}/sub/v2ray?token=${currentToken}` 
+        }
+    };
+
+    // 监听窗口大小变化，实现手机端手风琴 DOM 移动
+    function adjustRightPanelPosition() {
+        const rightCol = document.getElementById('subRightCol');
+        const body = document.querySelector('.sub-body');
+        
+        if (window.innerWidth <= 768) {
+            if (!currentFormatKey) {
+                rightCol.style.display = 'none';
+                if (rightCol.parentNode !== body) body.appendChild(rightCol);
+            } else {
+                rightCol.style.display = 'flex';
+                const wrapper = document.getElementById('wrap_' + currentFormatKey);
+                if (wrapper && rightCol.parentNode !== wrapper) {
+                    wrapper.appendChild(rightCol);
+                }
+            }
+        } else {
+            if (currentFormatKey) rightCol.style.display = 'flex';
+            if (rightCol.parentNode !== body) {
+                body.appendChild(rightCol);
+            }
+        }
+    }
+    window.addEventListener('resize', adjustRightPanelPosition);
+
+    // 格式卡片点击切换逻辑 (支持 Toggle)
+    function selectSubFormat(formatKey, cardElement) {
+        if(currentFormatKey === formatKey) {
+            if (window.innerWidth <= 768) {
+                currentFormatKey = null;
+                cardElement.classList.remove('active');
+                subModalCard.classList.remove('has-content');
+                adjustRightPanelPosition();
+                return;
+            }
+        }
+        
+        document.querySelectorAll('.sub-format-card').forEach(c => c.classList.remove('active'));
+        cardElement.classList.add('active');
+        currentFormatKey = formatKey;
+        
+        renderRightPanel(formatKey);
+        subModalCard.classList.add('has-content');
+        adjustRightPanelPosition();
+        
+        if (window.innerWidth <= 768) {
+            setTimeout(() => {
+                cardElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            }, 50);
+        }
+    }
+
+    // 渲染右侧内容
+    function renderRightPanel(formatKey) {
+        const data = subFormatData[formatKey];
+        const link = data.getLink();
+        const contentDiv = document.getElementById('subRightContent');
+        
+        contentDiv.innerHTML = `
+            <div class="sub-right-header">
+                <div class="sub-right-title">${data.title}</div>
+                <div class="sub-right-desc">${data.desc}</div>
+            </div>
+            
+            <div class="sub-link-label">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg>
+                订阅链接
+            </div>
+            <textarea class="sub-link-textarea" id="currentSubLinkText" readonly onclick="this.select()">${link}</textarea>
+            <button class="btn-sub-copy" id="btnCopySubLink" onclick="copyCurrentSubLink()">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+                一键复制链接
+            </button>
+        `;
+    }
+
+    // 打开弹窗并加载设置
     async function openSubLinksModal() {
         subModal.classList.add('active');
-        const container = document.getElementById('subLinksContainer');
-        container.innerHTML = '<div style="text-align: center; color: #888; padding: 20px;">正在加载配置...</div>';
+        document.getElementById('subSaveIndicator').style.opacity = '0';
+        
+        currentFormatKey = null;
+        subModalCard.classList.remove('has-content');
+        document.querySelectorAll('.sub-format-card').forEach(c => c.classList.remove('active'));
+        document.getElementById('subRightCol').style.display = 'none';
+        adjustRightPanelPosition();
 
         try {
-            // 复用现有的获取系统配置 API
             const res = await fetch('/api/get-settings');
             const result = await res.json();
             
             if(result.status === 'success') {
                 const data = result.data;
-                const token = data.sub_token || '';
-                // 如果未设置面板 URL，则自动使用当前浏览器访问的地址
-                let baseUrl = data.panel_url ? data.panel_url.replace(/\/+$/, '') : window.location.origin;
-
-                const links = [
-                    {
-                        title: "😼 Clash Meta 订阅 (推荐)",
-                        desc: "包含完整分流规则与策略组的 YAML 配置文件",
-                        url: `${baseUrl}/sub/clash?token=${token}`
-                    },
-                    {
-                        title: "🎯 直连节点池 (Raw)",
-                        desc: "仅包含直连节点的 YAML 列表 (供外部工具引用)",
-                        url: `${baseUrl}/sub/raw/1?token=${token}`
-                    },
-                    {
-                        title: "🚀 落地节点池 (Raw)",
-                        desc: "仅包含落地节点的 YAML 列表 (供外部工具引用)",
-                        url: `${baseUrl}/sub/raw/2?token=${token}`
-                    }
-                ];
-
-                container.innerHTML = links.map((item, index) => `
-                    <div class="sub-item-card">
-                        <div class="sub-item-header">
-                            <span class="sub-item-title">${item.title}</span>
-                        </div>
-                        <div class="sub-item-desc">${item.desc}</div>
-                        <div class="sub-input-group">
-                            <input type="text" id="sub_link_${index}" value="${item.url}" readonly>
-                            <button class="btn-copy-sub" id="btn_copy_${index}" onclick="copySubLink('sub_link_${index}', 'btn_copy_${index}')">复制</button>
-                        </div>
-                    </div>
-                `).join('');
-            } else {
-                container.innerHTML = '<div style="text-align: center; color: #d74242; padding: 20px;">配置加载失败</div>';
+                currentToken = data.sub_token || '';
+                currentBaseUrl = data.panel_url ? data.panel_url.replace(/\/+$/, '') : window.location.origin;
+                document.getElementById('inputSubName').value = data.sub_custom_name || 'NodeCTL';
             }
-        } catch(e) {
-            container.innerHTML = '<div style="text-align: center; color: #d74242; padding: 20px;">网络异常，请稍后重试</div>';
-        }
+        } catch(e) { console.error("加载配置失败", e); }
     }
 
+    // 关闭弹窗
     function closeSubLinksModal() {
         subModal.classList.remove('active');
+        setTimeout(() => subModalCard.classList.remove('has-content'), 300);
     }
 
-    function copySubLink(inputId, btnId) {
-        const input = document.getElementById(inputId);
-        const btn = document.getElementById(btnId);
+    // 自动静默保存订阅名称 (防抖)
+    let subNameSaveTimer = null;
+    function saveCustomSubNameDebounced() {
+        clearTimeout(subNameSaveTimer);
+        const indicator = document.getElementById('subSaveIndicator');
+        indicator.innerHTML = '<span style="color:#888;">保存中...</span>';
+        indicator.style.opacity = '1';
+
+        subNameSaveTimer = setTimeout(async () => {
+            const newName = document.getElementById('inputSubName').value.trim() || 'NodeCTL';
+            try {
+                const res = await fetch('/api/update-settings', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ sub_custom_name: newName })
+                });
+                if(res.ok) {
+                    indicator.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"></path></svg> 名称已保存`;
+                    setTimeout(() => indicator.style.opacity = '0', 2000);
+                }
+            } catch(e) {
+                indicator.innerHTML = '<span style="color:#ff3b30;">保存失败</span>';
+            }
+        }, 600);
+    }
+
+    // 一键复制链接逻辑 (兼容 HTTP 环境)
+    function copyCurrentSubLink() {
+        const textarea = document.getElementById('currentSubLinkText');
+        const btn = document.getElementById('btnCopySubLink');
         
-        input.select();
-        input.setSelectionRange(0, 99999); // 兼容移动端
+        textarea.select();
+        textarea.setSelectionRange(0, 99999); 
         
+        if (navigator.clipboard && window.isSecureContext) {
+            navigator.clipboard.writeText(textarea.value).then(() => {
+                showCopySuccess(btn);
+            }).catch(() => fallbackCopy(btn));
+        } else {
+            fallbackCopy(btn);
+        }
+    }
+
+    function fallbackCopy(btn) {
         try {
             document.execCommand('copy');
-            const originalText = btn.innerText;
-            btn.innerText = '已复制!';
-            btn.classList.add('copied');
-            
-            setTimeout(() => {
-                btn.innerText = originalText;
-                btn.classList.remove('copied');
-            }, 2000);
+            showCopySuccess(btn);
         } catch (err) {
-            alert('复制失败，请手动选择文本复制');
+            alert('一键复制失败，请直接在上方框内长按手动复制链接');
         }
-        // 清除选中状态
-        window.getSelection().removeAllRanges();
+    }
+
+    function showCopySuccess(btn) {
+        const originalHtml = btn.innerHTML;
+        btn.innerHTML = '✅ 复制成功!';
+        btn.classList.add('copied');
+        
+        setTimeout(() => {
+            btn.innerHTML = originalHtml;
+            btn.classList.remove('copied');
+        }, 2000);
     }
 </script>
 {{end}}

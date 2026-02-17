@@ -468,7 +468,7 @@
             /* 3. 快捷规则按钮保持一行四列，缩小间隙 */
             .rule-actions { 
                 display: grid; 
-                grid-template-columns: repeat(5, 1fr); /* [修改] 原为 4，现改为 5 */
+                grid-template-columns: repeat(4, 1fr); /* [修改] 原为 4，现改为 5 */
                 gap: 6px; /* [修改] 稍微把间隙缩小以容纳更多按钮 */
             }
             
@@ -764,8 +764,7 @@
                     </div>
                 </div>
                 <div class="rule-actions">
-                    <a href="/editor/direct" class="btn-edit-rule"><span class="rule-icon">🎯</span><span class="rule-name">直连规则</span></a>
-                    <a href="/editor/outbound" class="btn-edit-rule"><span class="rule-icon">⚡</span><span class="rule-name">自定义出站</span></a>
+                    <a href="javascript:void(0)" onclick="openCustomRulesModal()" class="btn-edit-rule"><span class="rule-icon">⚡</span><span class="rule-name">自定义规则</span></a>
                     
                     <a href="javascript:void(0)" onclick="openGlobalSettingsModal()" class="btn-edit-rule"><span class="rule-icon">📜</span><span class="rule-name">SingBox</span></a>
                     
@@ -1085,5 +1084,6 @@
     {{template "update_modal.html" .}}
     {{template "clash_template_modal.html" .}}
     {{template "sub_links_modal.html" .}}
+    {{template "custom_rules_modal.html" .}}
 </body>
 </html>

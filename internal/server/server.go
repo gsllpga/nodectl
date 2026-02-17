@@ -38,14 +38,19 @@ func Start(tmplFS embed.FS) {
 	mux.HandleFunc("/api/update-settings", middleware.Auth(apiUpdateSettings))
 	mux.HandleFunc("/api/clash/settings", middleware.Auth(apiGetClashSettings))
 	mux.HandleFunc("/api/clash/save", middleware.Auth(apiSaveClashSettings))
+	mux.HandleFunc("/api/custom-rules/get", middleware.Auth(apiGetCustomRules))
+	mux.HandleFunc("/api/custom-rules/save", middleware.Auth(apiSaveCustomRules))
 
 	// [新增] 公开路由 (不需要 middleware.Auth)
 	mux.HandleFunc("/api/public/install-script", apiPublicScript) // 获取脚本
 	mux.HandleFunc("/api/callback/report", apiCallbackReport)     // 脚本上报
 	// [新增] 客户端订阅接口 (公开，依靠 URL Token 鉴权)
 	mux.HandleFunc("/sub/clash", apiSubClash)
-	mux.HandleFunc("/sub/raw/1", apiSubRaw) // 1=直连池
-	mux.HandleFunc("/sub/raw/2", apiSubRaw) // 2=落地池
+	mux.HandleFunc("/sub/v2ray", apiSubV2ray)
+	mux.HandleFunc("/sub/raw/1", apiSubRaw)             // 1=直连池
+	mux.HandleFunc("/sub/raw/2", apiSubRaw)             // 2=落地池
+	mux.HandleFunc("/sub/rules/direct", apiSubRuleList) // 自定义直连规则
+	mux.HandleFunc("/sub/rules/proxy/", apiSubRuleList) // 自定义分流规则
 
 	// [新增] GeoIP 更新接口
 	mux.HandleFunc("/api/update-geoip", middleware.Auth(apiUpdateGeoIP))

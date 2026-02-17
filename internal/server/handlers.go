@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -541,7 +542,7 @@ func apiGetSettings(w http.ResponseWriter, r *http.Request) {
 	database.DB.Where("key IN ?", []string{
 		"panel_url", "sub_token", "proxy_port_ss", "proxy_port_hy2", "proxy_port_tuic",
 		"proxy_port_reality", "proxy_reality_sni", "proxy_ss_method",
-		"proxy_port_socks5", "proxy_socks5_user", "proxy_socks5_pass", "pref_use_emoji_flag",
+		"proxy_port_socks5", "proxy_socks5_user", "proxy_socks5_pass", "pref_use_emoji_flag", "sub_custom_name",
 	}).Find(&configs)
 
 	data := make(map[string]string)
@@ -573,6 +574,7 @@ func apiUpdateSettings(w http.ResponseWriter, r *http.Request) {
 		"panel_url": true, "sub_token": true, "proxy_port_ss": true, "proxy_port_hy2": true,
 		"proxy_port_tuic": true, "proxy_port_reality": true, "proxy_reality_sni": true,
 		"proxy_ss_method": true, "proxy_port_socks5": true, "proxy_socks5_user": true, "proxy_socks5_pass": true, "pref_use_emoji_flag": true,
+		"sub_custom_name": true,
 	}
 
 	for k, v := range req {
@@ -719,6 +721,7 @@ func getBaseURL(r *http.Request) string {
 }
 
 // apiSubClash 输出最终的 Clash 订阅模板
+// [修改] apiSubClash 输出最终的 Clash 订阅模板
 func apiSubClash(w http.ResponseWriter, r *http.Request) {
 	if !verifySubToken(r) {
 		http.Error(w, "Invalid Token", http.StatusForbidden)
@@ -729,21 +732,65 @@ func apiSubClash(w http.ResponseWriter, r *http.Request) {
 	token := r.URL.Query().Get("token")
 
 	// 构造发给 Clash 模板的内部抓取地址
-	// 注意：这里的 /sub/raw/1 对应直连(RoutingType=1)，/sub/raw/2 对应落地(RoutingType=2)
-	// 这个映射需要和你数据库的设计保持一致
-	relayURL := fmt.Sprintf("%s/sub/raw/2?token=%s", baseURL, token) // 中转/落地
-	exitURL := fmt.Sprintf("%s/sub/raw/1?token=%s", baseURL, token)  // 直连
+	relayURL := fmt.Sprintf("%s/sub/raw/2?token=%s", baseURL, token)
+	exitURL := fmt.Sprintf("%s/sub/raw/1?token=%s", baseURL, token)
 
-	// 调用上一节写的模板渲染函数
-	yamlContent, err := service.RenderClashConfig(relayURL, exitURL)
+	yamlContent, err := service.RenderClashConfig(relayURL, exitURL, baseURL, token)
 	if err != nil {
 		http.Error(w, "模板生成失败", http.StatusInternalServerError)
 		return
 	}
 
+	// [新增] 从数据库获取自定义名称
+	var nameConfig database.SysConfig
+	database.DB.Where("key = ?", "sub_custom_name").First(&nameConfig)
+	subName := nameConfig.Value
+	if subName == "" {
+		subName = "NodeCTL"
+	}
+
 	w.Header().Set("Content-Type", "text/yaml; charset=utf-8")
-	w.Header().Set("Content-Disposition", `attachment; filename="clash_meta_config.yaml"`)
+	w.Header().Set("profile-title", subName) // 兼容客户端配置名称显示
+
+	encodedName := url.QueryEscape(subName + ".yaml")
+	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename*=utf-8''%s`, encodedName))
+
 	w.Write([]byte(yamlContent))
+}
+
+// [新增] apiSubV2ray 输出通用 Base64 订阅
+func apiSubV2ray(w http.ResponseWriter, r *http.Request) {
+	if !verifySubToken(r) {
+		http.Error(w, "Invalid Token", http.StatusForbidden)
+		return
+	}
+
+	// 获取国旗偏好设置
+	var flagConfig database.SysConfig
+	database.DB.Where("key = ?", "pref_use_emoji_flag").First(&flagConfig)
+	useFlag := flagConfig.Value != "false"
+
+	b64Content, err := service.GenerateV2RaySubBase64(useFlag)
+	if err != nil {
+		http.Error(w, "订阅生成失败", http.StatusInternalServerError)
+		return
+	}
+
+	// 获取自定义名称
+	var nameConfig database.SysConfig
+	database.DB.Where("key = ?", "sub_custom_name").First(&nameConfig)
+	subName := nameConfig.Value
+	if subName == "" {
+		subName = "NodeCTL"
+	}
+
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	w.Header().Set("profile-title", subName)
+
+	encodedName := url.QueryEscape(subName + ".txt")
+	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename*=utf-8''%s`, encodedName))
+
+	w.Write([]byte(b64Content))
 }
 
 // apiSubRaw 输出纯节点列表 (对应 Python 的 0.yaml 和 1.yaml)
@@ -775,4 +822,68 @@ func apiSubRaw(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "text/yaml; charset=utf-8")
 	w.Write([]byte(yamlContent))
+}
+
+// apiGetCustomRules 获取自定义规则原生文本 (供前端展示)
+func apiGetCustomRules(w http.ResponseWriter, r *http.Request) {
+	directRaw := service.GetCustomDirectRules()
+	proxyRules := service.GetCustomProxyRules()
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"status": "success",
+		"data": map[string]interface{}{
+			"direct": directRaw,
+			"proxy":  proxyRules, // 现在返回的是数组
+		},
+	})
+}
+
+// apiSaveCustomRules 保存自定义规则原生文本
+func apiSaveCustomRules(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		DirectRules string                    `json:"direct"`
+		ProxyRules  []service.CustomProxyRule `json:"proxy"` // 接收数组
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		sendJSON(w, "error", "数据解析失败")
+		return
+	}
+
+	service.SaveCustomDirectRules(req.DirectRules)
+	service.SaveCustomProxyRules(req.ProxyRules)
+
+	sendJSON(w, "success", "自定义规则保存成功")
+}
+
+// [修改] apiSubRuleList 输出智能格式化后的规则列表
+func apiSubRuleList(w http.ResponseWriter, r *http.Request) {
+	if !verifySubToken(r) {
+		http.Error(w, "Invalid Token", http.StatusForbidden)
+		return
+	}
+
+	// 解析路径
+	path := strings.TrimPrefix(r.URL.Path, "/sub/rules/")
+	var rawContent string
+
+	if path == "direct" {
+		rawContent = service.GetCustomDirectRules()
+	} else if strings.HasPrefix(path, "proxy/") {
+		// 提取 proxy/{id} 中的 id
+		id := strings.TrimPrefix(path, "proxy/")
+		rules := service.GetCustomProxyRules()
+		for _, rule := range rules {
+			if rule.ID == id {
+				rawContent = rule.Content
+				break
+			}
+		}
+	}
+
+	formattedContent := service.ParseCustomRules(rawContent)
+
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0")
+	w.Write([]byte(formattedContent))
 }
