@@ -3,6 +3,7 @@ package service
 import (
 	"bytes"
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"net/url"
 	"regexp"
@@ -223,10 +224,6 @@ func determineIPs(node database.NodePool, strategy string) []IPOption {
 	return ips
 }
 
-// ---------------------------------------------------------
-// 缺失的辅助函数 (补充)
-// ---------------------------------------------------------
-
 // ParseProxyLink 解析链接并强制覆盖合并后的完美名称
 func ParseProxyLink(link string, baseName string, region string, useFlag bool) *ClashNode {
 	finalName := baseName
@@ -278,4 +275,95 @@ func ReplaceLinkIP(link string, newIP string) string {
 	}
 
 	return u.String()
+}
+
+// ---------------------------------------------------------
+// 节点重命名引擎
+// ---------------------------------------------------------
+
+// RenameNodeLink 修改节点分享链接的名字后缀 (#name)
+// 智能重命名引擎：已支持解析各种 Base64 嵌套进行安全重命名
+func RenameNodeLink(link string, newName string) string {
+	lowerLink := strings.ToLower(link)
+
+	// 处理 VMess (JSON 修改并重新 Base64 编码)
+	if strings.HasPrefix(lowerLink, "vmess://") {
+		body := safeBase64Decode(link[8:])
+		if body == "" {
+			return link
+		}
+		var vj map[string]interface{}
+		if err := json.Unmarshal([]byte(body), &vj); err == nil {
+			vj["ps"] = newName
+			if newBody, err := json.Marshal(vj); err == nil {
+				return "vmess://" + base64.StdEncoding.EncodeToString(newBody)
+			}
+		}
+		return link
+	}
+
+	// 处理 SSR (复杂查询参数和 Base64 编码)
+	if strings.HasPrefix(lowerLink, "ssr://") {
+		decoded := safeBase64Decode(link[6:])
+		if decoded == "" {
+			return link
+		}
+		// SSR 格式: host:port:protocol:method:obfs:base64pass/?obfsparam=...&remarks=base64(name)
+		if strings.Contains(decoded, "remarks=") {
+			parts := strings.Split(decoded, "remarks=")
+			prefix := parts[0]
+			suffix := parts[1]
+			// 去掉旧的 remarks 值 (直到下一个 & 或结尾)
+			if idx := strings.Index(suffix, "&"); idx != -1 {
+				suffix = suffix[idx:]
+			} else {
+				suffix = ""
+			}
+			newDecoded := prefix + "remarks=" + base64.RawURLEncoding.EncodeToString([]byte(newName)) + suffix
+			return "ssr://" + base64.RawURLEncoding.EncodeToString([]byte(newDecoded))
+		}
+		// 如果没有 remarks 参数，追加上去
+		sep := "/?"
+		if strings.Contains(decoded, "/?") {
+			sep = "&"
+		}
+		newDecoded := decoded + sep + "remarks=" + base64.RawURLEncoding.EncodeToString([]byte(newName))
+		return "ssr://" + base64.RawURLEncoding.EncodeToString([]byte(newDecoded))
+	}
+
+	// 处理 SS 纯 Base64 格式的特殊情况
+	if strings.HasPrefix(lowerLink, "ss://") {
+		u, err := url.Parse(link)
+		if err != nil || u.Host == "" {
+			encoded := strings.TrimPrefix(link, "ss://")
+			hashIdx := strings.LastIndex(encoded, "#")
+			if hashIdx != -1 {
+				encoded = encoded[:hashIdx]
+			}
+			return "ss://" + encoded + "#" + url.PathEscape(newName)
+		}
+		u.Fragment = newName
+		return u.String()
+	}
+
+	// 处理其他标准 URI 格式协议 (包含新增的 anytls)
+	if strings.HasPrefix(lowerLink, "vless://") ||
+		strings.HasPrefix(lowerLink, "trojan://") ||
+		strings.HasPrefix(lowerLink, "hy2://") ||
+		strings.HasPrefix(lowerLink, "hysteria2://") ||
+		strings.HasPrefix(lowerLink, "hy://") ||
+		strings.HasPrefix(lowerLink, "hysteria://") ||
+		strings.HasPrefix(lowerLink, "tuic://") ||
+		strings.HasPrefix(lowerLink, "socks5://") ||
+		strings.HasPrefix(lowerLink, "anytls://") ||
+		strings.HasPrefix(lowerLink, "http://") ||
+		strings.HasPrefix(lowerLink, "https://") {
+		u, err := url.Parse(link)
+		if err == nil {
+			u.Fragment = newName
+			return u.String()
+		}
+	}
+
+	return link
 }
