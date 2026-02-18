@@ -3,7 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0"> 
-    <title>{{.Title}} - NodeCTL</title>
+    <title>{{.Title}}</title>
+    
+    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23007aff' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><rect x='2' y='2' width='20' height='8' rx='2' ry='2'></rect><rect x='2' y='14' width='20' height='8' rx='2' ry='2'></rect><line x1='6' y1='6' x2='6.01' y2='6'></line><line x1='6' y1='18' x2='6.01' y2='18'></line></svg>">
     
     <link rel="preconnect" href="https://flagcdn.com" crossorigin>
     <link rel="dns-prefetch" href="https://flagcdn.com">
@@ -624,6 +626,37 @@
             height: 18px;              
             line-height: 16px;         
         }
+        /* =========================================================
+           11. 操作按钮组响应式间距控制 (Action Buttons)
+           ========================================================= */
+        /* 默认 PC 端样式：宽敞防误触 */
+        .node-actions-group {
+            display: flex; 
+            align-items: center; 
+            gap: 8px; /* PC 端大间距 */
+        }
+        .node-action-btn {
+            background: transparent; 
+            border: none; 
+            cursor: pointer; 
+            padding: 4px 4px; /* PC 端大内边距 */
+            display: flex; 
+            align-items: center; 
+            transition: opacity 0.2s;
+        }
+        .node-action-btn:hover {
+            opacity: 0.7;
+        }
+
+        /* 移动端样式：屏幕宽度小于 768px 时生效 */
+        @media (max-width: 768px) {
+            .node-actions-group {
+                gap: 2px; /* 手机端极其紧凑的间距 */
+            }
+            .node-action-btn {
+                padding: 1px 2px; /* 手机端极小的内边距 */
+            }
+        }
     </style>
 </head>
 <body>
@@ -978,18 +1011,18 @@
                         </div>
                     </div>
                     
-                    <div style="display: flex; align-items: center; gap: 2px;">
-                        <div class="node-status-dot" style="background: ${finalDotColor}; margin-right: 5px;"></div>
+                    <div class="node-actions-group">
+                        <div class="node-status-dot" style="background: ${finalDotColor}; margin-right: 3px;"></div>
                         
-                        <button type="button" onclick="openScriptModal('${node.uuid}')" style="background: transparent; border: none; cursor: pointer; padding: 4px; display: flex; align-items: center; color: #007aff;" title="生成部署脚本">
+                        <button type="button" onclick="openScriptModal('${node.uuid}')" class="node-action-btn" style="color: #007aff;" title="生成部署脚本">
                             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
                         </button>
 
-                        <button type="button" onclick="openEditModal('${node.uuid}')" style="background: transparent; border: none; cursor: pointer; padding: 4px; display: flex; align-items: center; color: #007aff;" title="编辑节点">
+                        <button type="button" onclick="openEditModal('${node.uuid}')" class="node-action-btn" style="color: #007aff;" title="编辑节点">
                                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
                         </button>
 
-                        <button type="button" onclick="openDeleteModal('${node.uuid}')" style="background: transparent; border: none; cursor: pointer; padding: 4px; display: flex; align-items: center; color: #d74242;" title="删除节点">
+                        <button type="button" onclick="openDeleteModal('${node.uuid}')" class="node-action-btn" style="color: #d74242;" title="删除节点">
                             <svg style="pointer-events: none; width: 18px; height: 18px;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>
                         </button>
                     </div>
