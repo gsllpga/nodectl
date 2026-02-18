@@ -283,8 +283,18 @@ func apiUpdateNode(w http.ResponseWriter, r *http.Request) {
 		targetNode.Links = safeLinks
 
 	} else {
-		// [HTTPS 模式 或 强制 HTTP 模式] 直接全量覆盖，允许自由编辑
-		targetNode.Links = req.Links
+		// [HTTPS 模式 或 强制 HTTP 模式] 允许自由编辑，但必须拦截前端未刷新时发来的占位符
+		safeLinks := make(map[string]string)
+		for k, v := range req.Links {
+			if v == "__KEEP_EXISTING__" {
+				if oldVal, ok := targetNode.Links[k]; ok {
+					safeLinks[k] = oldVal
+				}
+			} else {
+				safeLinks[k] = v // 允许自由覆盖或新增
+			}
+		}
+		targetNode.Links = safeLinks
 	}
 
 	// 6. 保存更新 (因为 targetNode 包含 ID，GORM 会正确执行 UPDATE)
@@ -682,7 +692,11 @@ func apiGetSettings(w http.ResponseWriter, r *http.Request) {
 
 	data := make(map[string]string)
 	for _, c := range configs {
-		data[c.Key] = c.Value
+		if c.Key == "cf_api_key" && c.Value != "" {
+			data[c.Key] = "********"
+		} else {
+			data[c.Key] = c.Value
+		}
 	}
 
 	// 获取当前证书的解析信息
@@ -722,6 +736,9 @@ func apiUpdateSettings(w http.ResponseWriter, r *http.Request) {
 
 	for k, v := range req {
 		if validKeys[k] {
+			if k == "cf_api_key" && v == "********" {
+				continue
+			}
 			if err := database.DB.Model(&database.SysConfig{}).Where("key = ?", k).Update("value", v).Error; err != nil {
 				logger.Log.Error("更新系统配置异常", "key", k, "error", err, "ip", clientIP, "path", reqPath)
 			}
@@ -1192,6 +1209,12 @@ func apiApplyCert(w http.ResponseWriter, r *http.Request) {
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		sendJSON(w, "error", "参数解析失败")
 		return
+	}
+
+	if req.ApiKey == "********" {
+		var keyConf database.SysConfig
+		database.DB.Where("key = ?", "cf_api_key").First(&keyConf)
+		req.ApiKey = keyConf.Value
 	}
 
 	if req.Email == "" || req.ApiKey == "" || req.Domain == "" {

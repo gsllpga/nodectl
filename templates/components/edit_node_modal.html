@@ -513,8 +513,8 @@
             
             cards.forEach(card => {
                 const proto = card.getAttribute('data-proto');
-                // HTTP 模式下 input 可能不存在
-                const input = card.querySelector('.link-input');
+                // ✨ 核心修复：更新获取输入框的 Class 名称为 .link-textarea
+                const input = card.querySelector('.link-textarea');
                 const toggle = card.querySelector('.proto-switch');
                 
                 // 只要开关存在，就说明协议卡片存在

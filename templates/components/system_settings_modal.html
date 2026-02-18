@@ -916,6 +916,13 @@
                 if (response.ok) {
                     window.panelUrl = payload.panel_url; 
                     indicator.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"></path></svg> 已保存`;
+                    
+                    // ✨ 核心修复：设置保存后静默刷新主页节点列表
+                    // 这样当你刚开启“强制 HTTP”，内存里的 🔒 就会立刻被替换为真实的链接
+                    if (typeof loadNodesList === 'function') {
+                        loadNodesList();
+                    }
+
                     setTimeout(() => indicator.style.opacity = '0', 2000);
                 } else {
                     indicator.innerHTML = '<span style="color:#ff3b30;">保存失败</span>';
