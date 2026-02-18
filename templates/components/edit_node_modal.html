@@ -160,12 +160,21 @@
     .btn-icon.delete.confirm svg { display: none; } /* 隐藏图标 */
     .btn-icon.delete.confirm::after { content: "确认删除?"; font-weight: 600; } /* 显示文字 */
 
-    /* 链接输入框 */
-    .link-input {
-        width: 100%; border: none; padding: 12px; box-sizing: border-box;
-        font-family: monospace; font-size: 12px; outline: none; background: #fff; display: block;
+    /* 协议内容折叠及多行文本框 */
+    .proto-header { cursor: pointer; user-select: none; }
+    .proto-chevron { transition: transform 0.2s; margin-right: 6px; color: #999; }
+    .protocol-card.expanded .proto-chevron { transform: rotate(90deg); color: #007aff; }
+    
+    .proto-body { display: none; padding: 12px; border-top: 1px dashed #f0f0f5; background: #fff; }
+    .protocol-card.expanded .proto-body { display: block; animation: fadeIn 0.2s; }
+
+    .link-textarea {
+        width: 100%; box-sizing: border-box; border: 1px solid #e5e5ea; border-radius: 8px;
+        padding: 8px 12px; font-family: monospace; font-size: 12px; outline: none; 
+        background: #fafbfc; resize: none; overflow: hidden; min-height: 36px; word-break: break-all;
+        color: #333; transition: border 0.2s; line-height: 1.5;
     }
-    .link-input:focus { background: #fff; }
+    .link-textarea:focus { border-color: #007aff; background: #fff; box-shadow: 0 0 0 2px rgba(0,122,255,0.1); }
 
     /* 顶部警告条 */
     .security-warning-bar {
@@ -306,13 +315,11 @@
                     <span><b>HTTP 安全模式：</b>仅允许写入、管理启停和删除协议。允许在安全证书界面强制开启忽略安全保护。</span>
                 </div>
             `;
-            // [修改点] 这里不再隐藏 addSection，允许用户添加新协议
             if(addSection) addSection.style.display = 'flex'; 
         } else {
             // HTTPS 模式
             if(addSection) addSection.style.display = 'flex';
         } 
-        // 👆👆👆 你之前就是少了这个大括号！
 
         // 5. 循环渲染协议卡片
         if (node.links && Object.keys(node.links).length > 0) {
@@ -347,10 +354,11 @@
         setTimeout(() => { isInitializingEdit = false; }, 100);
     }
 
-    // 渲染单行协议卡片
+    // 渲染多行协议卡片 (支持折叠)
     function renderProtocolCard(proto, link, isEnabled, isNew, isLocked = false) {
         const div = document.createElement('div');
         div.className = 'protocol-card';
+        if (isNew) div.classList.add('expanded'); // 新增的协议默认展开
         div.setAttribute('data-proto', proto);
         if (!isEnabled) div.classList.add('disabled');
         if (isLocked) div.classList.add('locked-mode'); // HTTP 模式专用样式类
@@ -365,15 +373,19 @@
             badgeColor = c.text;
         }
 
-        // 构建 HTML
+        // 如果是锁定模式，不显示折叠箭头
+        let chevronHtml = isLocked ? '' : `<svg class="proto-chevron" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>`;
+
+        // 构建 HTML (注意 actions 阻止冒泡，防止点击开关时触发折叠)
         let html = `
-            <div class="proto-header">
+            <div class="proto-header" onclick="toggleProtoBody(this)">
                 <div class="proto-title">
+                    ${chevronHtml}
                     <span class="proto-badge" style="color:${badgeColor}; border-color:${badgeColor}20; background:${badgeColor}10;">
                         ${proto.toUpperCase()}
                     </span>
                 </div>
-                <div class="proto-actions">
+                <div class="proto-actions" onclick="event.stopPropagation()">
                     <label class="switch-sm">
                         <input type="checkbox" class="proto-switch" ${checkedState} onchange="toggleProtocol(this)">
                         <span class="slider-sm"></span>
@@ -384,23 +396,44 @@
                 </div>
             </div>`;
 
-        // 仅在非锁定(HTTPS)模式下才渲染 Input
+        // 仅在非锁定(HTTPS)模式下才渲染 Textarea，并用 proto-body 容器包裹以实现折叠
         if (!isLocked) {
+            // ✨ 给 textarea 加上 oninput="autoResizeTextarea(this); markAsModified()"
             html += `
-            <input type="text" class="link-input" 
-                value="${link}" 
-                placeholder="${proto}://..." 
-                onchange="markAsModified()"
-            >`;
+            <div class="proto-body">
+                <textarea class="link-textarea" placeholder="${proto}://..." oninput="autoResizeTextarea(this); markAsModified()" onchange="markAsModified()">${link}</textarea>
+            </div>`;
         }
 
         div.innerHTML = html;
         
         const container = document.getElementById('protocolListContainer');
-        if (isNew) {
-            container.appendChild(div);
-        } else {
-            container.appendChild(div);
+        container.appendChild(div);
+
+        if (!isLocked && isNew) {
+            const textarea = div.querySelector('.link-textarea');
+            // 使用 setTimeout 确保 DOM 已经完全渲染
+            if (textarea) setTimeout(() => autoResizeTextarea(textarea), 10);
+        }
+    }
+    // 文本框高度自适应计算函数
+    function autoResizeTextarea(el) {
+        el.style.height = '1px'; 
+        let offset = -4.5; 
+        
+        el.style.height = (el.scrollHeight + offset) + 'px'; 
+    }
+    // 处理面板折叠的函数
+    function toggleProtoBody(headerEl) {
+        const card = headerEl.closest('.protocol-card');
+        if (card.classList.contains('locked-mode')) return; // HTTP锁定模式禁止交互
+        
+        const isExpanding = card.classList.toggle('expanded');
+        
+        // ✨ 新增：如果是展开动作，立即重算一次内部输入框的高度
+        if (isExpanding) {
+            const textarea = card.querySelector('.link-textarea');
+            if (textarea) autoResizeTextarea(textarea);
         }
     }
 

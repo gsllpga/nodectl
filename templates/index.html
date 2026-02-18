@@ -711,7 +711,10 @@
                 <div class="card-header">
                     <span class="card-title">⚙️ 快捷操作</span>
                     <div style="display: flex; gap: 10px;">
-                        <a href="javascript:void(0)" onclick="openSystemSettingsModal()" class="btn-custom-common btn-color-purple">系统设置</a>
+                        <a href="javascript:void(0)" onclick="openSystemSettingsModal()" class="btn-custom-common btn-color-blue">
+                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 4px;"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
+                            系统设置
+                        </a>
                     </div>
                 </div>
                 <div class="rule-actions">
@@ -951,7 +954,17 @@
                     </div>
                 `;
 
-                // 4. 组装 DOM 
+                let ipTagsHTML = '';
+                if (node.ipv4 && node.ipv4.trim() !== '') {
+                    ipTagsHTML += `<span style="font-size: 9px; font-weight: 600; background: #f5f5f7; color: #888; padding: 1px 4px; border-radius: 4px; margin-left: 6px; border: 1px solid #e5e5ea; line-height: 1.2;">IPV4</span>`;
+                }
+                if (node.ipv6 && node.ipv6.trim() !== '') {
+                    // 如果已经有 v4 标签了，左边距就稍微小一点 (4px)，否则大一点 (6px)
+                    const marginLeft = ipTagsHTML !== '' ? '4px' : '6px';
+                    ipTagsHTML += `<span style="font-size: 9px; font-weight: 600; background: #f5f5f7; color: #888; padding: 1px 4px; border-radius: 4px; margin-left: ${marginLeft}; border: 1px solid #e5e5ea; line-height: 1.2;">IPV6</span>`;
+                }
+
+                // 4. 组装 DOM (将 ipTagsHTML 加入到 node-name 后方)
                 item.innerHTML = `
                     <div style="display:flex; align-items:center;">
                         ${dragHandleHTML}
@@ -959,6 +972,7 @@
                             <div class="node-name-wrapper">
                                 ${flagHTML}
                                 <span class="node-name">${node.name}</span>
+                                ${ipTagsHTML}
                             </div>
                             <div class="node-tags">${tagsHTML}</div>
                         </div>
