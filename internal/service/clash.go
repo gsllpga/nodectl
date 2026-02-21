@@ -242,12 +242,53 @@ type CustomProxyRule struct {
 	Content string `json:"content"`
 }
 
+func getEmojiURL(icon string) string {
+	// Only convert if it's one of our known emojis, otherwise return as-is
+	// Twitter Emoji (Twemoji) SVG CDN is historically reliable
+	emojiMap := map[string]string{
+		"🎯":  "https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/svg/1f3af.svg",
+		"🤖":  "https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/svg/1f916.svg",
+		"🍎":  "https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/svg/1f34e.svg",
+		"📺":  "https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/svg/1f4fa.svg",
+		"🎮":  "https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/svg/1f3ae.svg",
+		"✈️": "https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/svg/2708.svg",
+		"🌍":  "https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/svg/1f30d.svg",
+		"🏠":  "https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/svg/1f3e0.svg",
+		"💬":  "https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/svg/1f4ac.svg",
+		"🎬":  "https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/svg/1f3ac.svg",
+		"📚":  "https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/svg/1f4da.svg",
+		"💼":  "https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/svg/1f4bc.svg",
+		"🛒":  "https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/svg/1f6d2.svg",
+		"💳":  "https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/svg/1f4b3.svg",
+		"🔒":  "https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/svg/1f512.svg",
+		"☁️": "https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/svg/2601.svg",
+		"⚡":  "https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/svg/26a1.svg",
+		"🔥":  "https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/svg/1f525.svg",
+		"🚀":  "https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/svg/1f680.svg",
+		"🐱":  "https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/svg/1f431.svg",
+		"🐶":  "https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/svg/1f436.svg",
+		"🐼":  "https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/svg/1f43c.svg",
+		"🌐":  "https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/svg/1f310.svg",
+	}
+
+	if url, ok := emojiMap[icon]; ok {
+		return url
+	}
+	return icon
+}
+
 func GetCustomProxyRules() []CustomProxyRule {
 	var conf database.SysConfig
 	database.DB.Where("key = ?", "clash_custom_proxy_rules").First(&conf)
 	var rules []CustomProxyRule
 	if conf.Value != "" {
 		json.Unmarshal([]byte(conf.Value), &rules)
+		// Set Clash-compatible Icon URL for rendering template output
+		for i := range rules {
+			if rules[i].Icon != "" {
+				rules[i].Icon = getEmojiURL(rules[i].Icon)
+			}
+		}
 	}
 	return rules
 }
