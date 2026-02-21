@@ -1311,31 +1311,7 @@
                         </label>
                     </div>
 
-                    <div class="sys-pref-row" style="flex-direction: column; align-items: flex-start; gap: 12px;">
-                        <div class="sys-pref-info"
-                            style="width: 100%; flex-direction: row; align-items: center; gap: 6px;">
-                            <span class="sys-pref-title">⚡ 节点测速模式</span>
-                            <div class="sys-info-tooltip-wrap" tabindex="0">
-                                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                                    stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                                    <circle cx="12" cy="12" r="10"></circle>
-                                    <line x1="12" y1="8" x2="12" y2="12"></line>
-                                    <line x1="12" y1="16" x2="12.01" y2="16"></line>
-                                </svg>
-                                <div class="sys-tooltip-content">
-                                    <div style="margin-bottom:6px; color:#cce4ff;">决定点击测速闪电图标时的执行内容：</div>
-                                    <div><b>仅 Ping:</b> 发送 HTTP 请求测试延迟，耗时极短</div>
-                                    <div><b>Ping + 带宽:</b> 先测延迟，延迟通了再测实际下载速度</div>
-                                    <div><b>全面测试:</b> 完整测试 Ping、TCP 延迟以及真实带宽</div>
-                                </div>
-                            </div>
-                        </div>
-                        <select id="sys_pref_speed_test_mode" class="sys-select" onchange="triggerSysAutoSave()">
-                            <option value="ping_only">仅 Ping 延迟</option>
-                            <option value="ping_speed">Ping + 真实带宽 (推荐)</option>
-                            <option value="all">全面测试 (Ping + TCP + 带宽)</option>
-                        </select>
-                    </div>
+
                 </div>
 
                 <div class="sys-form-section" id="sys-form-geo" style="display:none;">
@@ -1375,6 +1351,32 @@
                         <input type="number" id="sys_pref_speed_test_file_size" class="sys-input" placeholder="默认: 50"
                             min="1" max="1000" oninput="triggerSysAutoSave()">
                         <div class="sys-desc">控制全面测速或真实带宽测速时，所下载测试文件的体积大小。较大文件更能测出准确实时的峰值带宽，但会消耗更多流量和时间。</div>
+                    </div>
+
+                    <div class="sys-pref-row" style="flex-direction: column; align-items: flex-start; gap: 12px;">
+                        <div class="sys-pref-info"
+                            style="width: 100%; flex-direction: row; align-items: center; gap: 6px;">
+                            <span class="sys-pref-title">⚡ 节点测速模式</span>
+                            <div class="sys-info-tooltip-wrap" tabindex="0">
+                                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                    stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                    <circle cx="12" cy="12" r="10"></circle>
+                                    <line x1="12" y1="8" x2="12" y2="12"></line>
+                                    <line x1="12" y1="16" x2="12.01" y2="16"></line>
+                                </svg>
+                                <div class="sys-tooltip-content">
+                                    <div style="margin-bottom:6px; color:#cce4ff;">决定点击测速闪电图标时的执行内容：</div>
+                                    <div><b>仅 Ping:</b> 发送 HTTP 请求测试延迟，耗时极短</div>
+                                    <div><b>Ping + 带宽:</b> 先测延迟，延迟通了再测实际下载速度</div>
+                                    <div><b>全面测试:</b> 完整测试 Ping、TCP 延迟以及真实带宽</div>
+                                </div>
+                            </div>
+                        </div>
+                        <select id="sys_pref_speed_test_mode" class="sys-select" onchange="triggerSysAutoSave()">
+                            <option value="ping_only">仅 Ping 延迟</option>
+                            <option value="ping_speed">Ping + 真实带宽 (推荐)</option>
+                            <option value="all">全面测试 (Ping + TCP + 带宽)</option>
+                        </select>
                     </div>
 
                     <div class="sys-field">
