@@ -1094,14 +1094,16 @@ func apiGetCustomRules(w http.ResponseWriter, r *http.Request) {
 	}
 
 	directRaw := service.GetCustomDirectRules()
+	directIcon := service.GetCustomDirectIcon()
 	proxyRules := service.GetCustomProxyRules()
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"status": "success",
 		"data": map[string]interface{}{
-			"direct": directRaw,
-			"proxy":  proxyRules,
+			"direct":      directRaw,
+			"direct_icon": directIcon,
+			"proxy":       proxyRules,
 		},
 	})
 }
@@ -1118,6 +1120,7 @@ func apiSaveCustomRules(w http.ResponseWriter, r *http.Request) {
 
 	var req struct {
 		DirectRules string                    `json:"direct"`
+		DirectIcon  string                    `json:"direct_icon"`
 		ProxyRules  []service.CustomProxyRule `json:"proxy"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -1128,6 +1131,9 @@ func apiSaveCustomRules(w http.ResponseWriter, r *http.Request) {
 
 	if err := service.SaveCustomDirectRules(req.DirectRules); err != nil {
 		logger.Log.Error("保存自定义直连规则失败", "error", err, "ip", clientIP, "path", reqPath)
+	}
+	if err := service.SaveCustomDirectIcon(req.DirectIcon); err != nil {
+		logger.Log.Error("保存自定义直连图标失败", "error", err, "ip", clientIP, "path", reqPath)
 	}
 	if err := service.SaveCustomProxyRules(req.ProxyRules); err != nil {
 		logger.Log.Error("保存自定义分流规则失败", "error", err, "ip", clientIP, "path", reqPath)

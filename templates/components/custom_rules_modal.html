@@ -208,9 +208,76 @@
 
     .cr-group-name {
         flex: 1;
+        display: flex;
+        align-items: center;
+        min-width: 0;
+    }
+
+    .cr-group-name-text {
+        flex: 1;
         overflow: hidden;
         text-overflow: ellipsis;
         white-space: nowrap;
+    }
+
+    .cr-group-icon-picker {
+        position: relative;
+        cursor: pointer;
+        font-size: 14px;
+        margin-right: 6px;
+        user-select: none;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 24px;
+        height: 24px;
+        border-radius: 4px;
+        transition: 0.2s;
+    }
+
+    .cr-group-icon-picker:not(.active):hover {
+        background: #e0efff;
+        transform: scale(1.1);
+    }
+
+    .cr-group-icon-picker.active {
+        background: #e0efff;
+    }
+
+    .cr-emoji-popover {
+        position: absolute;
+        top: 100%;
+        left: 0;
+        margin-top: 4px;
+        background: #fff;
+        border: 1px solid #eee;
+        border-radius: 8px;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+        padding: 8px;
+        display: none;
+        grid-template-columns: repeat(6, 1fr);
+        gap: 4px;
+        z-index: 100;
+        width: max-content;
+        max-width: 240px;
+    }
+
+    .cr-emoji-popover.show {
+        display: grid;
+    }
+
+    .cr-emoji-item {
+        font-size: 16px;
+        cursor: pointer;
+        text-align: center;
+        padding: 4px;
+        border-radius: 4px;
+        transition: 0.2s;
+    }
+
+    .cr-emoji-item:hover {
+        background: #f0f0f5;
+        transform: scale(1.1);
     }
 
     .cr-group-input {
@@ -747,7 +814,11 @@
         indicator.style.opacity = '1';
 
         autoSaveTimer = setTimeout(async () => {
-            const payload = { direct: serializeItemsToContent(directItems), proxy: proxyRules };
+            const payload = {
+                direct: serializeItemsToContent(directItems),
+                direct_icon: directIcon,
+                proxy: proxyRules
+            };
             try {
                 const res = await fetch('/api/custom-rules/save', {
                     method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload)
@@ -770,6 +841,7 @@
             const result = await res.json();
             if (result.status === 'success') {
                 directItems = parseContentToItems(result.data.direct || '');
+                directIcon = result.data.direct_icon || '🌐';
                 proxyRules = result.data.proxy || [];
                 selectProxyGroup('direct');
             }
@@ -841,19 +913,42 @@
             document.getElementById('cr-tab-proxy').appendChild(editor);
         }
 
+        const proxyIcons = ['🎯', '🤖', '🍎', '📺', '🎮', '✈️', '🌍', '🏠', '💬', '🎬', '📚', '💼', '🛒', '💳', '🔒', '☁️', '⚡', '🔥', '🚀', '🐱', '🐶', '🐼', '🌐'];
+
+        const directIconOptions = proxyIcons.map(ic => `<div class="cr-emoji-item" onclick="updateGroupIcon(event, 'direct', '${ic}')">${ic}</div>`).join('');
         const directHtml = `
             <div class="cr-rule-item ${currentProxyId === 'direct' ? 'active' : ''}" id="rule_item_direct">
                 <div class="cr-rule-item-header" onclick="selectProxyGroup('direct')">
-                    <span class="cr-group-name" id="name_disp_direct">🌐 全局直连</span>
+                    <div class="cr-group-name" id="name_disp_direct">
+                        <div class="cr-group-icon-picker" id="picker_direct" onclick="toggleEmojiPicker(event, 'direct')">
+                            <span id="icon_disp_direct" style="pointer-events:none;">${directIcon}</span>
+                            <div class="cr-emoji-popover" id="emoji_popover_direct" onclick="event.stopPropagation()">
+                                ${directIconOptions}
+                            </div>
+                        </div>
+                        <span class="cr-group-name-text">全局直连</span>
+                    </div>
                 </div>
             </div>
         `;
 
         const listDiv = document.getElementById('proxyGroupList');
-        listDiv.innerHTML = directHtml + proxyRules.map(rule => `
+        listDiv.innerHTML = directHtml + proxyRules.map(rule => {
+            const currentIcon = rule.icon || '🎯';
+            const iconOptions = proxyIcons.map(ic => `<div class="cr-emoji-item" onclick="updateGroupIcon(event, '${rule.id}', '${ic}')">${ic}</div>`).join('');
+
+            return `
             <div class="cr-rule-item ${rule.id === currentProxyId ? 'active' : ''}" id="rule_item_${rule.id}">
                 <div class="cr-rule-item-header" onclick="selectProxyGroup('${rule.id}')">
-                    <span class="cr-group-name" id="name_disp_${rule.id}">🎯 ${rule.name || '未命名'}</span>
+                    <div class="cr-group-name" id="name_disp_${rule.id}">
+                        <div class="cr-group-icon-picker" onclick="toggleEmojiPicker(event, '${rule.id}')">
+                            <span id="icon_disp_${rule.id}" style="pointer-events:none;">${currentIcon}</span>
+                            <div class="cr-emoji-popover" id="emoji_popover_${rule.id}" onclick="event.stopPropagation()">
+                                ${iconOptions}
+                            </div>
+                        </div>
+                        <span class="cr-group-name-text">${rule.name || '未命名'}</span>
+                    </div>
                     
                     <input type="text" class="cr-group-input" id="name_input_${rule.id}" value="${rule.name || ''}" 
                            style="display:none;" onclick="event.stopPropagation()"
@@ -865,9 +960,63 @@
                     </div>
                 </div>
             </div>
-        `).join('');
+            `;
+        }).join('');
 
         adjustEditorPosition();
+    }
+
+    function toggleEmojiPicker(event, id) {
+        event.stopPropagation();
+        const popover = document.getElementById(`emoji_popover_${id}`);
+        const picker = event.currentTarget;
+        const isShowing = popover.classList.contains('show');
+
+        // Close all other open popovers and remove active class
+        document.querySelectorAll('.cr-emoji-popover').forEach(p => p.classList.remove('show'));
+        document.querySelectorAll('.cr-group-icon-picker').forEach(p => p.classList.remove('active'));
+
+        if (!isShowing) {
+            popover.classList.add('show');
+            picker.classList.add('active');
+        }
+    }
+
+    // Close popovers when clicking anywhere else
+    document.addEventListener('click', (event) => {
+        if (!event.target.closest('.cr-group-icon-picker')) {
+            document.querySelectorAll('.cr-emoji-popover').forEach(p => p.classList.remove('show'));
+            document.querySelectorAll('.cr-group-icon-picker').forEach(p => p.classList.remove('active'));
+        }
+    });
+
+    function updateGroupIcon(event, id, newIcon) {
+        if (event) event.stopPropagation();
+
+        if (id === 'direct') {
+            if (directIcon !== newIcon) {
+                directIcon = newIcon;
+                triggerAutoSave();
+                const iconDisp = document.getElementById(`icon_disp_direct`);
+                if (iconDisp) iconDisp.innerText = newIcon;
+            }
+        } else {
+            const rule = proxyRules.find(r => r.id === id);
+            if (rule && rule.icon !== newIcon) {
+                rule.icon = newIcon;
+                triggerAutoSave();
+                const iconDisp = document.getElementById(`icon_disp_${id}`);
+                if (iconDisp) iconDisp.innerText = newIcon;
+            }
+        }
+
+        // Close popover
+        const popover = document.getElementById(`emoji_popover_${id}`);
+        if (popover) {
+            popover.classList.remove('show');
+            const picker = popover.closest('.cr-group-icon-picker');
+            if (picker) picker.classList.remove('active');
+        }
     }
 
     // 重命名交互

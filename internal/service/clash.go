@@ -112,6 +112,7 @@ type ClashTemplateData struct {
 	BaseURL                 string
 	Token                   string
 	ActiveModules           []ClashModuleDef
+	GlobalDirectIcon        string
 	CustomProxies           []CustomProxyRule
 	NameserverPolicyRuleSet string // 用于存储动态生成的 DNS 策略字符串，例如 "CN_域,Apple_域"
 }
@@ -168,6 +169,7 @@ func RenderClashConfig(relayURL, exitURL, baseURL, token string) (string, error)
 		ActiveModules:           finalActiveMods,
 		BaseURL:                 baseURL,
 		Token:                   token,
+		GlobalDirectIcon:        GetCustomDirectIcon(),
 		CustomProxies:           validCustomProxies, // 替换为过滤后的有效分组
 		NameserverPolicyRuleSet: dnsPolicyStr,
 	}
@@ -236,6 +238,7 @@ func isIPOrCIDR(s string) bool {
 type CustomProxyRule struct {
 	ID      string `json:"id"`
 	Name    string `json:"name"`
+	Icon    string `json:"icon"`
 	Content string `json:"content"`
 }
 
@@ -267,4 +270,19 @@ func SaveCustomDirectRules(content string) error {
 	return database.DB.Model(&database.SysConfig{}).
 		Where("key = ?", "clash_custom_direct_raw").
 		Update("value", content).Error
+}
+
+func GetCustomDirectIcon() string {
+	var conf database.SysConfig
+	database.DB.Where("key = ?", "clash_custom_direct_icon").First(&conf)
+	if conf.Value == "" {
+		return "🌐"
+	}
+	return conf.Value
+}
+
+func SaveCustomDirectIcon(icon string) error {
+	return database.DB.Where(database.SysConfig{Key: "clash_custom_direct_icon"}).
+		Assign(database.SysConfig{Value: icon}).
+		FirstOrCreate(&database.SysConfig{}).Error
 }

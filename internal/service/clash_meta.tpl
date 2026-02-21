@@ -163,7 +163,7 @@ proxy-groups:
 
 {{range .CustomProxies}}
   - name: {{.Name}}
-    icon: "https://cdn.jsdelivr.net/gh/GitMetaio/Surfing@rm/Home/icon/User.svg"
+    icon: "{{if .Icon}}{{.Icon}}{{else}}https://cdn.jsdelivr.net/gh/GitMetaio/Surfing@rm/Home/icon/User.svg{{end}}"
     <<: *proxy_groups
 {{end}}
 
