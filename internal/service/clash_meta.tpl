@@ -6,7 +6,7 @@ mode: Rule
 allow-lan: true
 disable-keep-alive: true
 geodata-mode: true
-geo-auto-update: false
+geo-auto-update: true
 geo-update-interval: 24
 geox-url:
   asn: "https://github.com/MetaCubeX/meta-rules-dat/releases/download/latest/GeoLite2-ASN.mmdb"
@@ -31,7 +31,7 @@ proxy-providers:
     url: "{{.RelaySubURL}}"
     path: ./proxy_providers/clash-node.yaml
     health-check:
-      enable: false
+      enable: true
       url: https://www.gstatic.com/generate_204
       interval: 300
   落地机场:
@@ -40,7 +40,7 @@ proxy-providers:
     url: "{{.ExitSubURL}}"
     path: ./proxy_providers/exit.yaml
     health-check:
-      enable: false
+      enable: true
       url: https://www.gstatic.com/generate_204
       interval: 300
     override:
@@ -86,7 +86,7 @@ dns:
   enable: true
   ipv6: true
   listen: 0.0.0.0:1053
-  enhanced-mode: redir-host
+  enhanced-mode: fake-ip
   fake-ip-range: 172.20.0.1/16
   fake-ip-filter:
     - "RULE-SET:CN_域"
@@ -208,11 +208,6 @@ rule-providers:
     path: ./rules/CN_域.mrs
     url: "https://cdn.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@meta/geo/geosite/cn.mrs"
 
-  No-ads-all_域:
-    <<: *Domain
-    path: ./rules/No-ads-all.mrs
-    url: "https://anti-ad.net/mihomo.mrs"
-
   Private_域:
     <<: *Domain
     path: ./rules/LAN.mrs
@@ -247,6 +242,7 @@ rule-providers:
 # -------------------- 路由规则分发 --------------------
 rules:
   - RULE-SET,我的直连规则,🇨🇳 大陆
+  - RULE-SET,WebRTC_端/域,⛔️ 拒绝连接
 {{range .CustomProxies}}
   - RULE-SET,{{.Name}}_自定义分流,{{.Name}}
 {{end}}
