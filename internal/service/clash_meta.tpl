@@ -148,9 +148,11 @@ proxy-groups:
       - 总模式
 
 {{range .ActiveModules}}
+  {{if ne .Type "reject"}}
   - name: {{.Name}}
     {{if .Icon}}icon: "{{.Icon}}"{{end}}
     <<: *proxy_groups
+  {{end}}
 {{end}}
 
   - name: DNS连接
@@ -243,6 +245,23 @@ rule-providers:
 rules:
   - RULE-SET,我的直连规则,🇨🇳 大陆
   - RULE-SET,WebRTC_端/域,⛔️ 拒绝连接
+{{range .ActiveModules}}
+  {{if eq .Type "reject"}}
+  {{$target := "⛔️ 拒绝连接"}}
+  {{range .ExtraRules}}
+  - {{.}},{{$target}}
+  {{end}}
+  {{if .DomainURL}}
+  - RULE-SET,{{.Name}}_域,{{$target}}
+  {{end}}
+  {{if .IPURL}}
+  - RULE-SET,{{.Name}}_IP,{{$target}}
+  {{end}}
+  {{if .URL}}
+  - RULE-SET,{{.Name}}_用户自定义,{{$target}}
+  {{end}}
+  {{end}}
+{{end}}
 {{range .CustomProxies}}
   - RULE-SET,{{.Name}}_自定义分流,{{.Name}}
 {{end}}
@@ -250,18 +269,20 @@ rules:
   - DST-PORT,853,DNS连接
 
 {{range .ActiveModules}}
-  {{$modName := .Name}}
+  {{if ne .Type "reject"}}
+  {{$target := .Name}}
   {{range .ExtraRules}}
-  - {{.}},{{$modName}}
+  - {{.}},{{$target}}
   {{end}}
   {{if .DomainURL}}
-  - RULE-SET,{{.Name}}_域,{{.Name}}
+  - RULE-SET,{{.Name}}_域,{{$target}}
   {{end}}
   {{if .IPURL}}
-  - RULE-SET,{{.Name}}_IP,{{.Name}}
+  - RULE-SET,{{.Name}}_IP,{{$target}}
   {{end}}
   {{if .URL}}
-  - RULE-SET,{{.Name}}_用户自定义,{{.Name}}
+  - RULE-SET,{{.Name}}_用户自定义,{{$target}}
+  {{end}}
   {{end}}
 {{end}}
 

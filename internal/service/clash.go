@@ -32,6 +32,7 @@ type ClashModuleDef struct {
 	DomainURL  string   `json:"domain_url,omitempty"`  // 用于 GitMetaio 的 Domain.mrs
 	IPURL      string   `json:"ip_url,omitempty"`      // 用于 GitMetaio 的 IP.mrs
 	ExtraRules []string `json:"extra_rules,omitempty"` // 用于挂载 PROCESS-PATH 等附加规则
+	Type       string   `json:"type,omitempty"`        // 模块类型，如 "reject" (不再生成单独的策略组，直接路由到 ⛔️ 拒绝连接)
 }
 
 type ClashPresetDef struct {

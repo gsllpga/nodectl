@@ -146,9 +146,9 @@
 
     .btn-add-custom {
         width: 100%;
-        background: #007aff;
-        border: none;
-        color: white;
+        background: #eff6ff;
+        border: 1px dashed #007aff;
+        color: #007aff;
         font-weight: 600;
         padding: 12px;
         border-radius: 8px;
@@ -156,10 +156,28 @@
         font-size: 13px;
         transition: 0.2s;
         margin-top: 5px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 6px;
     }
 
     .btn-add-custom:hover {
-        background: #0062cc;
+        background: #e0efff;
+        transform: translateY(-1px);
+    }
+
+    .add-ip-link {
+        font-size: 12px;
+        color: #007aff;
+        cursor: pointer;
+        display: inline-block;
+        margin-top: 6px;
+        font-weight: 500;
+    }
+
+    .add-ip-link:hover {
+        text-decoration: underline;
     }
 
     /* ================= 右侧：规则展示区 ================= */
@@ -575,9 +593,19 @@
                         添加自定义规则集
                     </div>
 
-                    <div class="custom-input-group">
-                        <label>标识名 (必填)</label>
-                        <input type="text" id="customModName" class="custom-input" placeholder="如: 私人网盘">
+                    <!-- 名称与类型同行 -->
+                    <div style="display: flex; gap: 12px; margin-bottom: 15px;">
+                        <div class="custom-input-group" style="flex: 1; margin-bottom: 0;">
+                            <label>标识名 (必填)</label>
+                            <input type="text" id="customModName" class="custom-input" placeholder="如: 私人网盘">
+                        </div>
+                        <div class="custom-input-group" style="flex: 1; margin-bottom: 0;">
+                            <label>行为类型</label>
+                            <select id="customModType" class="custom-input" style="appearance: auto;">
+                                <option value="">分流组</option>
+                                <option value="reject">拒绝组</option>
+                            </select>
+                        </div>
                     </div>
 
                     <div class="custom-input-group">
@@ -586,24 +614,43 @@
                     </div>
 
                     <div class="custom-input-group">
-                        <label>Domain 规则集 (.mrs)</label>
+                        <label style="display: flex; align-items: center;">
+                            Domain 规则集 (.mrs)
+                            <div class="info-tooltip-wrap" tabindex="0" style="margin-left: 6px;">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                    stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                    <circle cx="12" cy="12" r="10"></circle>
+                                    <line x1="12" y1="8" x2="12" y2="12"></line>
+                                    <line x1="12" y1="16" x2="12.01" y2="16"></line>
+                                </svg>
+                                <div class="tooltip-content" style="white-space: normal; width: 200px;">
+                                    三种规则集地址至少需填写一项。推荐填写 Domain + IP 组合，或填写单条 Classical 链接。
+                                </div>
+                            </div>
+                        </label>
                         <input type="text" id="customModDomain" class="custom-input" placeholder="Domain 链接地址">
+                        <div style="display: flex; gap: 15px;">
+                            <span class="add-ip-link"
+                                onclick="document.getElementById('editCustomModIPGroup').style.display='block'; this.style.display='none';">+
+                                IP 规则集</span>
+                            <span class="add-ip-link"
+                                onclick="document.getElementById('editCustomModUrlGroup').style.display='block'; this.style.display='none';">+
+                                Classical 规则集</span>
+                        </div>
                     </div>
 
-                    <div class="custom-input-group">
+                    <div class="custom-input-group" id="editCustomModIPGroup" style="display: none;">
                         <label>IP 规则集 (.mrs)</label>
                         <input type="text" id="customModIP" class="custom-input" placeholder="IP 链接地址">
                     </div>
 
-                    <div class="custom-input-group">
+                    <div class="custom-input-group" id="editCustomModUrlGroup" style="display: none;">
                         <label>Classical 规则集 (.yaml)</label>
                         <input type="text" id="customModUrl" class="custom-input" placeholder="Classical 链接地址">
                     </div>
 
-                    <p style="font-size: 11px; color: #888; margin-bottom: 15px; line-height: 1.4;">
-                        提示：三种规则集地址至少需填写一项。推荐填写 Domain + IP 组合，或填写单条 Classical 链接。</p>
-
-                    <button id="btnAddCustom" class="btn-add-custom" onclick="addCustomModule()">添加并应用配置</button>
+                    <button id="btnAddCustom" class="btn-add-custom" onclick="addCustomModule()"><span>+</span>
+                        <span>添加并应用配置</span></button>
                 </div>
             </div>
 
@@ -874,10 +921,20 @@
         document.getElementById('customModDomain').value = '';
         document.getElementById('customModIP').value = '';
         document.getElementById('customModUrl').value = '';
+        document.getElementById('customModType').value = '';
+
+        document.getElementById('editCustomModIPGroup').style.display = 'none';
+        document.getElementById('editCustomModUrlGroup').style.display = 'none';
+
+        // 恢复添加链接的按钮
+        document.querySelectorAll('.add-ip-link').forEach(link => {
+            link.style.display = 'inline-block';
+        });
 
         const btn = document.getElementById('btnAddCustom');
-        btn.innerText = '添加并应用配置';
-        btn.style.backgroundColor = '#007aff';
+        btn.innerHTML = '<span>+</span> <span>添加并应用配置</span>';
+        btn.style.backgroundColor = '';
+        btn.classList.remove('editing'); // Reset style appropriately
     }
 
     function editCustomModule(name, event) {
@@ -897,11 +954,31 @@
         document.getElementById('customModDomain').value = mod.domain_url || '';
         document.getElementById('customModIP').value = mod.ip_url || '';
         document.getElementById('customModUrl').value = mod.url || '';
+        document.getElementById('customModType').value = mod.type || '';
+
+        // 根据是否有值展开隐藏组
+        if (mod.ip_url) {
+            document.getElementById('editCustomModIPGroup').style.display = 'block';
+            document.querySelector('.add-ip-link[onclick*="IPGroup"]').style.display = 'none';
+        } else {
+            document.getElementById('editCustomModIPGroup').style.display = 'none';
+            document.querySelector('.add-ip-link[onclick*="IPGroup"]').style.display = 'inline-block';
+        }
+
+        if (mod.url) {
+            document.getElementById('editCustomModUrlGroup').style.display = 'block';
+            document.querySelector('.add-ip-link[onclick*="UrlGroup"]').style.display = 'none';
+        } else {
+            document.getElementById('editCustomModUrlGroup').style.display = 'none';
+            document.querySelector('.add-ip-link[onclick*="UrlGroup"]').style.display = 'inline-block';
+        }
 
         editingCustomName = name;
         const btn = document.getElementById('btnAddCustom');
-        btn.innerText = '保存修改并应用';
+        btn.innerHTML = '<span>✏️</span> <span>保存修改并应用</span>';
         btn.style.backgroundColor = '#f5a623';
+        btn.style.borderColor = '#f5a623';
+        btn.style.color = '#fff';
     }
 
     async function addCustomModule() {
@@ -910,6 +987,7 @@
         const domain_url = document.getElementById('customModDomain').value.trim();
         const ip_url = document.getElementById('customModIP').value.trim();
         const url = document.getElementById('customModUrl').value.trim();
+        const type = document.getElementById('customModType').value;
 
         if (!name) return alert('标识名为必填项！');
         if (!domain_url && !ip_url && !url) return alert('请至少填写一种规则集的下载地址！');
@@ -921,7 +999,7 @@
 
             const idx = cacheCustom.findIndex(m => m.name === editingCustomName);
             if (idx !== -1) {
-                cacheCustom[idx] = { name, icon, domain_url, ip_url, url };
+                cacheCustom[idx] = { name, icon, domain_url, ip_url, url, type };
             }
 
             if (name !== editingCustomName && activeSet.has(editingCustomName)) {
@@ -933,7 +1011,7 @@
 
         } else {
             if (cacheBuiltin.find(m => m.name === name) || cacheCustom.find(m => m.name === name)) return alert('该名称已存在，请更换！');
-            cacheCustom.push({ name, icon, domain_url, ip_url, url });
+            cacheCustom.push({ name, icon, domain_url, ip_url, url, type });
             activeSet.add(name);
         }
 
@@ -948,6 +1026,12 @@
         if (window.innerWidth <= 768) {
             document.getElementById('clashLeftCol').classList.remove('expanded');
         }
+
+        const btn = document.getElementById('btnAddCustom');
+        // Reset specific inline styles set by editCustomModule back to CSS class defaults
+        btn.style.backgroundColor = '';
+        btn.style.borderColor = '';
+        btn.style.color = '';
     }
 
     async function deleteCustomModule(name, btnElement, event) {

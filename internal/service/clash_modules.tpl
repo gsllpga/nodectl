@@ -121,6 +121,12 @@
       "icon": "https://cdn.jsdelivr.net/gh/GitMetaio/Surfing@rm/Home/icon/Twitter.svg",
       "domain_url": "https://cdn.jsdelivr.net/gh/GitMetaio/rule@master/rule/Clash/Twitter/Twitter_OCD_Domain.mrs",
       "ip_url": "https://cdn.jsdelivr.net/gh/GitMetaio/rule@master/rule/Clash/Twitter/Twitter_OCD_IP.mrs"
+    },
+    {
+      "name": "秋风去广告",
+      "icon": "https://awavenue.top/logo.png",
+      "domain_url": "https://raw.githubusercontent.com/TG-Twilight/AWAvenue-Ads-Rule/main/Filters/AWAvenue-Ads-Rule-Clash.mrs",
+      "type": "reject"
     }
   ]
 }
