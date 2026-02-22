@@ -1397,23 +1397,37 @@
     // ================= CRUD 逻辑 =================
 
     function startEdit(id, name, url, event) {
-        event.stopPropagation(); airState.editingSubId = id;
-        document.getElementById('airNewName').value = name; document.getElementById('airNewLink').value = url;
+        event.stopPropagation();
+        airState.editingSubId = id;
+        document.getElementById('airNewName').value = name;
+        document.getElementById('airNewLink').value = url;
         toggleAirAddForm(true);
     }
 
     async function submitSub() {
-        const name = document.getElementById('airNewName').value.trim(); const url = document.getElementById('airNewLink').value.trim();
-        if (!url) { showAirSaveStatus("请填写订阅链接", true); return; }
+        const name = document.getElementById('airNewName').value.trim();
+        const url = document.getElementById('airNewLink').value.trim();
+        if (!url) {
+            showAirSaveStatus("请填写订阅链接", true);
+            return;
+        }
+
         const isEdit = !!airState.editingSubId;
         const apiPath = isEdit ? '/api/airport/edit' : '/api/airport/add';
         const payload = isEdit ? { id: airState.editingSubId, name, url } : { name, url };
 
-        const btn = document.getElementById('airSubmitBtn'); btn.innerText = '处理中...'; btn.disabled = true;
+        const btn = document.getElementById('airSubmitBtn');
+        btn.innerText = '处理中...';
+        btn.disabled = true;
 
         try {
-            const res = await fetch(apiPath, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+            const res = await fetch(apiPath, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
             const data = await res.json();
+
             if (res.ok && data.status === 'success') {
                 resetForm();
                 await loadAirSubs();
@@ -1425,30 +1439,63 @@
                 } else {
                     showAirSaveStatus("修改成功");
                 }
-            } else { showAirSaveStatus((isEdit ? "修改失败: " : "添加失败: ") + (data.message || "未知错误"), true); }
-        } catch (e) { showAirSaveStatus("网络错误", true); } finally { btn.innerText = '确认'; btn.disabled = false; }
+            } else {
+                showAirSaveStatus((isEdit ? "修改失败: " : "添加失败: ") + (data.message || "未知错误"), true);
+            }
+        } catch (e) {
+            showAirSaveStatus("网络错误", true);
+        } finally {
+            btn.innerText = '确认';
+            btn.disabled = false;
+        }
     }
 
     async function updateAirSub(id, btn, event) {
-        event.stopPropagation(); const icon = btn.querySelector('.icon-refresh');
-        icon.classList.add('spin'); btn.disabled = true;
+        event.stopPropagation();
+        const icon = btn.querySelector('.icon-refresh');
+        icon.classList.add('spin');
+        btn.disabled = true;
+
         try {
-            const res = await fetch('/api/airport/update', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: id }) });
-            if (res.ok) { showAirSaveStatus("更新成功"); if (airState.currentSubId === id) selectAirSub(id); }
-            else { showAirSaveStatus("更新失败", true); }
-        } catch (e) { showAirSaveStatus("网络错误", true); } finally { icon.classList.remove('spin'); btn.disabled = false; }
+            const res = await fetch('/api/airport/update', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ id: id })
+            });
+
+            if (res.ok) {
+                showAirSaveStatus("更新成功");
+                if (airState.currentSubId === id) selectAirSub(id);
+            } else {
+                showAirSaveStatus("更新失败", true);
+            }
+        } catch (e) {
+            showAirSaveStatus("网络错误", true);
+        } finally {
+            icon.classList.remove('spin');
+            btn.disabled = false;
+        }
     }
 
     async function deleteAirSub(id, btn, event) {
         event.stopPropagation();
+
         if (btn.classList.contains('confirm-state')) {
             clearTimeout(airState.deleteTimers[id]);
             try {
-                const res = await fetch('/api/airport/delete', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: id }) });
+                const res = await fetch('/api/airport/delete', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ id: id })
+                });
                 const json = await res.json();
+
                 if (res.ok && json.status === 'success') {
                     showAirSaveStatus("已删除");
-                    if (airState.currentSubId === id) { airState.currentSubId = null; document.getElementById(airState.isMobile ? `mobile-nodes-${id}` : 'airDesktopNodesList').innerHTML = ''; }
+                    if (airState.currentSubId === id) {
+                        airState.currentSubId = null;
+                        document.getElementById(airState.isMobile ? `mobile-nodes-${id}` : 'airDesktopNodesList').innerHTML = '';
+                    }
                     if (airState.editingSubId === id) resetForm();
                     loadAirSubs();
                 } else {
@@ -1458,8 +1505,16 @@
                 showAirSaveStatus("网络错误", true);
             }
         } else {
-            btn.classList.add('confirm-state'); const originHtml = btn.innerHTML; btn.innerHTML = '确定?';
-            airState.deleteTimers[id] = setTimeout(() => { if (btn) { btn.classList.remove('confirm-state'); btn.innerHTML = originHtml; } }, 3000);
+            btn.classList.add('confirm-state');
+            const originHtml = btn.innerHTML;
+            btn.innerHTML = '确定?';
+
+            airState.deleteTimers[id] = setTimeout(() => {
+                if (btn) {
+                    btn.classList.remove('confirm-state');
+                    btn.innerHTML = originHtml;
+                }
+            }, 3000);
         }
     }
 
@@ -1481,7 +1536,9 @@
     }
 
     function filterAirNodes(mode) {
-        const input = document.getElementById(mode === 'desktop' ? 'airNodeSearch' : ''); if (!input) return;
+        const input = document.getElementById(mode === 'desktop' ? 'airNodeSearch' : '');
+        if (!input) return;
+
         const key = input.value.toLowerCase();
         const filtered = airState.nodes.filter(n => n.name.toLowerCase().includes(key));
         renderAirNodes(filtered, 'airDesktopNodesList');

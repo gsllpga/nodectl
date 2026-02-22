@@ -1,7 +1,4 @@
 {{define "edit_node_modal.html"}}
-<script>
-    const GLOBAL_SUPPORTED_PROTOCOLS = {{.Protocols }};
-</script>
 
 <style>
     /* ================= 统一弹窗基础框架 ================= */
@@ -764,7 +761,13 @@
     </div>
 </div>
 
+<script id="global-protocols-data" type="application/json">
+    {{.Protocols}}
+</script>
+
 <script>
+    const GLOBAL_SUPPORTED_PROTOCOLS = JSON.parse(document.getElementById('global-protocols-data').textContent);
+
     const editModalEl = document.getElementById('editNodeModal');
     const editModalCard = document.getElementById('editModalCard');
 
