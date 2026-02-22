@@ -1,0 +1,204 @@
+{{define "add_node_modal.html"}}
+<style>
+    /* ================= 统一弹窗基础框架 ================= */
+    .add-modal-overlay {
+        display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+        background: rgba(0, 0, 0, 0.4); backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px);
+        z-index: 2000; align-items: center; justify-content: center;
+        opacity: 0; transition: opacity 0.3s ease;
+    }
+    .add-modal-overlay.active { display: flex; opacity: 1; }
+    
+    /* 极简卡片：定宽 420px */
+    .add-modal-card {
+        background: #ffffff; width: 100%; max-width: 420px; border-radius: 12px; 
+        box-shadow: 0 20px 40px rgba(0,0,0,0.15); display: flex; flex-direction: column; overflow: hidden;
+        transform: scale(0.95); transition: all 0.3s cubic-bezier(0.2, 0.8, 0.2, 1);
+    }
+    .add-modal-overlay.active .add-modal-card { transform: scale(1); }
+
+    /* 统一 Header 样式与指示器 */
+    .add-header { 
+        background: #f5f5f7; border-bottom: 1px solid #e5e5ea; 
+        padding: 15px 25px; display: flex; align-items: center; justify-content: space-between; 
+    }
+    .add-title { font-size: 15px; font-weight: 600; color: #333; margin: 0; }
+    
+    /* 统一的右上角状态指示器 */
+    .add-save-indicator {
+        font-size: 12px; font-weight: 600; color: #34c759; opacity: 0; transition: opacity 0.3s;
+        display: flex; align-items: center; gap: 4px;
+    }
+
+    /* 主内容区：单行并排布局 */
+    .add-body { padding: 30px 25px; background: #fff; }
+    
+    .add-row {
+        display: flex; gap: 12px; align-items: center; height: 38px;
+    }
+
+    /* 路由类型分段控制器 (已添加 add- 前缀隔离样式防冲突) */
+    .add-segmented-control {
+        background: #f5f5f7; padding: 3px; border-radius: 8px; border: 1px solid #e5e5ea;
+        display: flex; gap: 3px; height: 100%; width: 130px; flex-shrink: 0; box-sizing: border-box;
+    }
+    .add-segment-option {
+        flex: 1; display: flex; align-items: center; justify-content: center;
+        font-size: 13px; color: #666; cursor: pointer; 
+        border-radius: 6px; transition: all 0.2s; font-weight: 600;
+    }
+    .add-segment-option:hover { color: #333; }
+    .add-segment-option.active { background: #fff; box-shadow: 0 2px 4px rgba(0,0,0,0.05); color: #1d1d1f; }
+    .add-segment-option.active[data-type="1"] { color: #34c759; } /* 直连绿 */
+    .add-segment-option.active[data-type="2"] { color: #f5a623; } /* 落地黄 */
+
+    /* 名称输入框 */
+    .add-input {
+        flex: 1; min-width: 0; height: 100%; padding: 0 12px; border: 1px solid #d1d1d6; border-radius: 8px;
+        font-size: 13px; color: #1d1d1f; outline: none; transition: 0.2s; background: #fafbfc; box-sizing: border-box;
+    }
+    .add-input:focus { border-color: #007aff; background: #fff; box-shadow: 0 0 0 2px rgba(0,122,255,0.1); }
+    .add-input::placeholder { color: #bbb; }
+
+    /* 统一 Footer 样式 */
+    .add-footer { 
+        padding: 15px 25px; border-top: 1px solid #eee; display: flex; justify-content: flex-end; gap: 12px; background: #fff;
+    }
+    .btn-add-cancel { 
+        background: #f5f5f7; border: none; color: #333; padding: 8px 22px; border-radius: 8px; 
+        cursor: pointer; font-size: 13px; font-weight: 600; transition: 0.2s;
+    }
+    .btn-add-cancel:hover { background: #e5e5ea; }
+    .btn-add-submit { 
+        background: #007aff; border: none; color: white; padding: 8px 22px; border-radius: 8px; 
+        cursor: pointer; font-size: 13px; font-weight: 600; transition: 0.2s;
+    }
+    .btn-add-submit:hover { background: #0062cc; }
+    .btn-add-submit:disabled { background: #aacdfa; cursor: not-allowed; }
+
+    /* ✨ 移动端适配：统一弹窗宽度留白 */
+    @media (max-width: 768px) {
+        .add-modal-card { 
+            max-width: 95%; /* 强制两边留出 2.5% 的呼吸空间 */
+        }
+    }
+</style>
+
+<div class="add-modal-overlay" id="addNodeModal">
+    <div class="add-modal-card">
+        <div class="add-header">
+            <div class="add-title">添加节点</div>
+            <div class="add-save-indicator" id="addNodeIndicator">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"></path></svg>
+                添加成功
+            </div>
+        </div>
+        
+        <form id="addNodeForm" onsubmit="submitAddNode(event)">
+            <div class="add-body">
+                <div class="add-row">
+                    <div class="add-segmented-control">
+                        <div class="add-segment-option active" data-type="1" onclick="selectAddGroup(1, this)">直连</div>
+                        <div class="add-segment-option" data-type="2" onclick="selectAddGroup(2, this)">落地</div>
+                    </div>
+                    <input type="hidden" id="nodeGroupVal" value="1">
+                    
+                    <input type="text" id="nodeNameInput" class="add-input" placeholder="节点名称 (可选)">
+                </div>
+                <div class="add-row" style="margin-top: 15px;">
+                    <label style="font-size: 13px; color: #666; font-weight: 600; white-space: nowrap;">流量重置日（每月）</label>
+                    <input type="number" id="nodeResetDayInput" class="add-input" placeholder="1-31 (0为不重置)" value="1" min="0" max="31" style="text-align: center;">
+                </div>
+            </div>
+
+            <div class="add-footer">
+                <button type="button" class="btn-add-cancel" onclick="closeAddNodeModal()">取消</button>
+                <button type="submit" class="btn-add-submit" id="addNodeSubmitBtn">确认添加</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<script>
+    const addNodeModalEl = document.getElementById('addNodeModal');
+    
+    // 点击遮罩层关闭
+    addNodeModalEl.addEventListener('click', function(e) {
+        if (e.target === addNodeModalEl) closeAddNodeModal();
+    });
+
+    function openAddNodeModal() {
+        addNodeModalEl.classList.add('active');
+        document.getElementById('addNodeForm').reset();
+        
+        // 重置提示器状态
+        document.getElementById('addNodeIndicator').style.opacity = '0';
+        
+        // 重置分组选择，默认选中直连
+        document.querySelectorAll('#addNodeModal .add-segment-option').forEach(b => b.classList.remove('active'));
+        document.querySelector('#addNodeModal .add-segment-option[data-type="1"]').classList.add('active');
+        document.getElementById('nodeGroupVal').value = '1';
+
+        const btn = document.getElementById('addNodeSubmitBtn');
+        btn.disabled = false;
+        btn.innerText = '确认添加';
+        
+        // 自动聚焦输入框，提升体验
+        setTimeout(() => document.getElementById('nodeNameInput').focus(), 100);
+    }
+
+    function closeAddNodeModal() {
+        addNodeModalEl.classList.remove('active');
+    }
+
+    function selectAddGroup(val, el) {
+        document.querySelectorAll('#addNodeModal .add-segment-option').forEach(b => b.classList.remove('active'));
+        el.classList.add('active');
+        document.getElementById('nodeGroupVal').value = val;
+    }
+
+    async function submitAddNode(e) {
+        e.preventDefault();
+        const btn = document.getElementById('addNodeSubmitBtn');
+        const indicator = document.getElementById('addNodeIndicator');
+        const nodeName = document.getElementById('nodeNameInput').value.trim();
+        const routingType = parseInt(document.getElementById('nodeGroupVal').value);
+        const resetDay = parseInt(document.getElementById('nodeResetDayInput').value) || 0; // 新增获取重置日
+
+        btn.disabled = true;
+        btn.innerText = '处理中...';
+        indicator.style.opacity = '0'; // 请求前重置状态
+
+        try {
+            const response = await fetch('/api/add-node', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                // 新增传递 reset_day 参数
+                body: JSON.stringify({ name: nodeName, routing_type: routingType, reset_day: resetDay }) 
+            });
+            const data = await response.json();
+            
+            if (data.status === 'success') {
+                // 成功时显示绿色打勾并延迟关闭
+                indicator.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"></path></svg> 添加成功`;
+                indicator.style.opacity = '1';
+                setTimeout(() => { 
+                    closeAddNodeModal(); 
+                    loadNodesList();     
+                }, 600);
+            } else {
+                // 失败时直接在右上角显示红色错误文字
+                indicator.innerHTML = `<span style="color:#ff3b30;">${data.message || '添加失败'}</span>`;
+                indicator.style.opacity = '1';
+                btn.disabled = false;
+                btn.innerText = '确认添加';
+            }
+        } catch (err) {
+            indicator.innerHTML = `<span style="color:#ff3b30;">网络请求失败</span>`;
+            indicator.style.opacity = '1';
+            btn.disabled = false;
+            btn.innerText = '确认添加';
+        }
+    }
+</script>
+{{end}}

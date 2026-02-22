@@ -1,0 +1,348 @@
+{{define "install_script_modal.html"}}
+<style>
+    .script-modal-overlay {
+        display: none;
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: rgba(0, 0, 0, 0.4);
+        backdrop-filter: blur(4px);
+        -webkit-backdrop-filter: blur(4px);
+        z-index: 3000;
+        align-items: center;
+        justify-content: center;
+        opacity: 0;
+        transition: opacity 0.2s ease;
+    }
+
+    .script-modal-overlay.active {
+        display: flex;
+        opacity: 1;
+    }
+
+    .script-modal-card {
+        background: #ffffff;
+        width: 100%;
+        max-width: 600px;
+        padding: 0;
+        border-radius: 12px;
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
+        transform: scale(0.95);
+        transition: all 0.3s cubic-bezier(0.2, 0.8, 0.2, 1);
+        overflow: hidden;
+        border: 1px solid #e5e5ea;
+    }
+
+    .script-modal-overlay.active .script-modal-card {
+        transform: scale(1);
+    }
+
+    .script-header {
+        padding: 16px 20px;
+        border-bottom: 1px solid #f0f0f5;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        background: #fafbfc;
+    }
+
+    .script-title {
+        font-size: 16px;
+        color: #1d1d1f;
+        font-weight: 600;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+    }
+
+    .script-body {
+        padding: 24px 20px;
+        background: #ffffff;
+    }
+
+    /* 协议选择区样式 */
+    .protocol-selector {
+        display: flex;
+        gap: 10px;
+        margin-bottom: 20px;
+        flex-wrap: wrap;
+    }
+
+    .protocol-selector label {
+        display: inline-block;
+        cursor: pointer;
+        user-select: none;
+    }
+
+    .protocol-selector input[type="checkbox"] {
+        display: none;
+    }
+
+    .protocol-label-btn {
+        background: #f4f5f7;
+        color: #555;
+        padding: 6px 14px;
+        border-radius: 6px;
+        font-size: 13px;
+        font-weight: 500;
+        border: 1px solid #e1e4e8;
+        transition: all 0.2s ease;
+    }
+
+    .protocol-selector input[type="checkbox"]:checked+.protocol-label-btn {
+        background: #f0f7ff;
+        color: #007aff;
+        border-color: #007aff;
+    }
+
+    .protocol-selector input[type="checkbox"]:hover+.protocol-label-btn {
+        border-color: #c6cbd1;
+    }
+
+    .protocol-selector input[type="checkbox"]:checked:hover+.protocol-label-btn {
+        border-color: #0062cc;
+        color: #0062cc;
+    }
+
+    /* 代码框样式 */
+    .cmd-box {
+        background: #f6f8fa;
+        border-radius: 8px;
+        padding: 18px;
+        border: 1px solid #e1e4e8;
+        position: relative;
+    }
+
+    .cmd-text {
+        font-family: "JetBrains Mono", Consolas, Monaco, monospace;
+        font-size: 13px;
+        line-height: 1.6;
+        color: #24292e;
+        word-break: break-all;
+        white-space: pre-wrap;
+    }
+
+    /* 浅色主题语法高亮 */
+    .hl-cmd {
+        color: #d73a49;
+        font-weight: 600;
+    }
+
+    /* 命令 bash/curl */
+    .hl-string {
+        color: #032f62;
+    }
+
+    /* 字符串 */
+    .hl-param {
+        color: #005cc5;
+    }
+
+    /* 参数 -c --report */
+    .hl-proto {
+        color: #22863a;
+    }
+
+    /* 协议名 */
+    .hl-id {
+        color: #032f62;
+        font-weight: 600;
+    }
+
+    /* Install ID */
+
+    .script-footer {
+        padding: 16px 20px;
+        border-top: 1px solid #f0f0f5;
+        display: flex;
+        justify-content: flex-end;
+        gap: 12px;
+        background: #fafbfc;
+    }
+
+    .btn-script-copy {
+        background: #007aff;
+        color: #fff;
+        border: none;
+        padding: 8px 20px;
+        border-radius: 6px;
+        font-size: 13px;
+        font-weight: 500;
+        cursor: pointer;
+        transition: 0.2s;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+    }
+
+    .btn-script-copy:hover {
+        background: #0062cc;
+    }
+
+    .btn-script-cancel {
+        background: #fff;
+        color: #555;
+        border: 1px solid #d1d5da;
+        padding: 8px 20px;
+        border-radius: 6px;
+        font-size: 13px;
+        cursor: pointer;
+        transition: 0.2s;
+    }
+
+    .btn-script-cancel:hover {
+        background: #f6f8fa;
+        color: #333;
+    }
+
+    /* ✨ 移动端适配：统一弹窗宽度留白与代码框内边距 */
+    @media (max-width: 768px) {
+        .script-modal-card {
+            max-width: 95%;
+            /* 强制两边留出 2.5% 的呼吸空间 */
+        }
+
+        .cmd-box {
+            padding: 12px;
+            /* 手机端适当缩减代码框的内边距，让出更多显示空间 */
+        }
+
+        .protocol-selector {
+            gap: 8px;
+            /* 手机端协议按钮间距微调 */
+        }
+    }
+</style>
+
+<div class="script-modal-overlay" id="installScriptModal">
+    <div class="script-modal-card">
+        <div class="script-header">
+            <div class="script-title">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                    stroke-linecap="round" stroke-linejoin="round" style="color: #007aff;">
+                    <polyline points="4 17 10 11 4 5"></polyline>
+                    <line x1="12" y1="19" x2="20" y2="19"></line>
+                </svg>
+                部署命令生成
+            </div>
+        </div>
+
+        <div class="script-body">
+            <div class="protocol-selector" id="protocolCheckboxes"></div>
+
+            <div class="cmd-box">
+                <div class="cmd-text" id="installCmdDisplay"></div>
+            </div>
+        </div>
+
+        <div class="script-footer">
+            <button class="btn-script-cancel" onclick="closeScriptModal()">关闭</button>
+            <button class="btn-script-copy" onclick="copyScriptCmd()">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                    <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+                </svg>
+                一键复制
+            </button>
+        </div>
+    </div>
+</div>
+
+<script>
+    const scriptModal = document.getElementById('installScriptModal');
+    const cmdDisplay = document.getElementById('installCmdDisplay');
+    const checkboxContainer = document.getElementById('protocolCheckboxes');
+    let currentScriptNode = null;
+
+    // 协议名称映射与展示名
+    const protocolArgMap = {
+        "vless": { arg: "vless", label: "VLESS Reality" },
+        "ss": { arg: "shadowsocks", label: "Shadowsocks" },
+        "hy2": { arg: "hysteria2", label: "Hysteria2" },
+        "tuic": { arg: "tuic", label: "TUIC" },
+        "socks": { arg: "socks5", label: "SOCKS5" }
+    };
+
+    function openScriptModal(uuid) {
+        currentScriptNode = window.allNodesData[uuid];
+        if (!currentScriptNode) return;
+
+        if (!currentScriptNode.install_id) {
+            alert("该节点未生成 InstallID，请先编辑保存一次");
+            return;
+        }
+
+        // 解析当前节点已开启的协议，默认勾选
+        let activeProtocols = [];
+        if (currentScriptNode.links) {
+            const allProtos = Object.keys(currentScriptNode.links);
+            const disabledSet = new Set(currentScriptNode.disabled_links || []);
+            activeProtocols = allProtos.filter(p => !disabledSet.has(p));
+        }
+
+        // 渲染复选框
+        checkboxContainer.innerHTML = '';
+        for (const [key, info] of Object.entries(protocolArgMap)) {
+            const isChecked = activeProtocols.includes(key) ? 'checked' : '';
+            checkboxContainer.innerHTML += `
+                <label>
+                    <input type="checkbox" value="${info.arg}" ${isChecked} onchange="updateScriptCmd()">
+                    <div class="protocol-label-btn">${info.label}</div>
+                </label>
+            `;
+        }
+
+        // 初始化命令内容
+        updateScriptCmd();
+        scriptModal.classList.add('active');
+    }
+
+    function updateScriptCmd() {
+        if (!currentScriptNode) return;
+
+        let host = window.panelUrl || window.location.origin;
+        host = host.replace(/\/+$/, "");
+
+        const checkedBoxes = checkboxContainer.querySelectorAll('input[type="checkbox"]:checked');
+        const selectedArgs = Array.from(checkedBoxes).map(cb => cb.value);
+
+        const protocolsArgHtml = selectedArgs.map(p => `<span class="hl-proto">${p}</span>`).join(" ");
+        const protocolsArgRaw = selectedArgs.join(" ");
+
+        // URL 已经包含了 id 参数，后端可通过它获取该节点所有信息
+        const scriptUrl = `${host}/api/public/install-script?id=${currentScriptNode.install_id}`;
+
+        // 构建带有高亮的 HTML 命令展示 (极致精简，仅传协议参数)
+        const cmdHtml =
+            `<span class="hl-cmd">bash</span> <span class="hl-param">-c</span> <span class="hl-string">"$(curl -fsSL ${scriptUrl})"</span> <span class="hl-param">--</span> ${protocolsArgHtml}`;
+
+        // 构建纯文本用于剪贴板 (极致精简)
+        const rawCmd = `bash -c "$(curl -fsSL ${scriptUrl})" -- ${protocolsArgRaw}`;
+
+        cmdDisplay.innerHTML = cmdHtml;
+        cmdDisplay.setAttribute('data-clipboard-text', rawCmd);
+    }
+
+    function closeScriptModal() {
+        scriptModal.classList.remove('active');
+    }
+
+    function copyScriptCmd() {
+        const text = cmdDisplay.getAttribute('data-clipboard-text');
+        navigator.clipboard.writeText(text).then(() => {
+            const btn = document.querySelector('.btn-script-copy');
+            const originalHtml = btn.innerHTML;
+            btn.style.background = '#34c759'; // 浅色UI中更柔和的绿色
+            btn.style.borderColor = '#34c759';
+            btn.innerHTML = '复制成功!';
+            setTimeout(() => {
+                btn.style.background = '#007aff';
+                btn.style.borderColor = 'transparent';
+                btn.innerHTML = originalHtml;
+            }, 1500);
+        });
+    }
+</script>
+{{end}}

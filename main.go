@@ -8,7 +8,7 @@ import (
 	"nodectl/internal/version"
 )
 
-//go:embed templates
+//go:embed templates/*
 var templatesFS embed.FS
 
 func main() {

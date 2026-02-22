@@ -1,0 +1,813 @@
+{{define "global_settings_modal.html"}}
+<style>
+    /* ================= 统一弹窗基础框架 ================= */
+    .gs-modal-overlay {
+        display: none;
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: rgba(0, 0, 0, 0.4);
+        backdrop-filter: blur(4px);
+        -webkit-backdrop-filter: blur(4px);
+        z-index: 3000;
+        align-items: center;
+        justify-content: center;
+        opacity: 0;
+        transition: opacity 0.3s ease;
+    }
+
+    .gs-modal-overlay.active {
+        display: flex;
+        opacity: 1;
+    }
+
+    /* 默认窄模式 420px，展开后 800px */
+    .gs-modal-card {
+        background: #ffffff;
+        width: 100%;
+        max-width: 900px;
+        height: 85vh;
+        border-radius: 12px;
+        box-shadow: 0 20px 40px rgba(0, 0, 0, 0.15);
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+    }
+
+    .gs-modal-card.has-content {
+        max-width: 900px;
+    }
+
+    /* 统一 Header 样式 */
+    .gs-header {
+        background: #f5f5f7;
+        border-bottom: 1px solid #e5e5ea;
+        padding: 15px 20px 15px 25px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+    }
+
+    .gs-title-area {
+        display: flex;
+        flex-direction: column;
+    }
+
+    .gs-title {
+        font-size: 15px;
+        font-weight: 600;
+        color: #333;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin: 0;
+    }
+
+    .gs-save-indicator {
+        font-size: 12px;
+        font-weight: 600;
+        color: #34c759;
+        opacity: 0;
+        transition: opacity 0.3s;
+        display: flex;
+        align-items: center;
+        gap: 4px;
+    }
+
+    /* 主内容区 */
+    .gs-body {
+        flex: 1;
+        display: flex;
+        flex-direction: row;
+        background: #fff;
+        overflow: hidden;
+    }
+
+    .no-scrollbar {
+        overflow-y: auto;
+        scrollbar-width: none;
+        -ms-overflow-style: none;
+    }
+
+    .no-scrollbar::-webkit-scrollbar {
+        display: none;
+    }
+
+    /* ================= 左侧协议面板 ================= */
+    .gs-left-col {
+        width: 420px;
+        flex-shrink: 0;
+        padding: 20px 25px;
+        border-right: 1px solid transparent;
+        transition: border-color 0.3s;
+    }
+
+    .gs-modal-card.has-content .gs-left-col {
+        border-right-color: #f5f5f7;
+    }
+
+    /* ================= 右侧详情面板 ================= */
+    .gs-right-col {
+        flex: 1;
+        padding: 20px 25px;
+        display: none;
+        background: #fff;
+    }
+
+    .gs-modal-card.has-content .gs-right-col {
+        display: block;
+        animation: fadeIn 0.3s ease;
+    }
+
+    @keyframes fadeIn {
+        from {
+            opacity: 0;
+        }
+
+        to {
+            opacity: 1;
+        }
+    }
+
+    .gs-section-label {
+        display: block;
+        font-size: 13px;
+        font-weight: 600;
+        color: #888;
+        margin-bottom: 12px;
+    }
+
+    /* 协议选择卡片 */
+    .proto-nav-card {
+        border: 1px solid #e5e5ea;
+        border-radius: 10px;
+        background: #fff;
+        margin-bottom: 10px;
+        padding: 10px 14px;
+        user-select: none;
+        cursor: pointer;
+        transition: all 0.2s;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+    }
+
+    .proto-nav-card:hover {
+        border-color: #d1d1d6;
+        background: #fafafa;
+    }
+
+    .proto-nav-card.active {
+        border-color: #007aff;
+        background: #f0f7ff;
+    }
+
+    .proto-name {
+        font-size: 14px;
+        font-weight: 600;
+        color: #1d1d1f;
+        transition: color 0.2s;
+    }
+
+    .proto-nav-card.active .proto-name {
+        color: #007aff;
+    }
+
+    .proto-actions {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+    }
+
+    .proto-chip {
+        font-size: 11px;
+        font-weight: 800;
+        padding: 2px 6px;
+        border-radius: 6px;
+        display: inline-flex;
+        align-items: center;
+        height: 22px;
+        line-height: 1;
+    }
+
+    .proto-chip.tcp {
+        color: #007aff;
+        background: #e0f0ff;
+    }
+
+    .proto-chip.udp {
+        color: #f5a623;
+        background: #fff4e0;
+    }
+
+    .port-input {
+        width: 58px;
+        padding: 4px;
+        border: 1px solid #e5e5ea;
+        border-radius: 6px;
+        font-size: 13px;
+        text-align: center;
+        color: #1d1d1f;
+        font-weight: 600;
+        font-family: monospace;
+        outline: none;
+        transition: all 0.2s;
+        background: #f9f9fc;
+    }
+
+    .port-input:focus {
+        border-color: #007aff;
+        background: #fff;
+        box-shadow: 0 0 0 2px rgba(0, 122, 255, 0.1);
+    }
+
+    .port-input::-webkit-outer-spin-button,
+    .port-input::-webkit-inner-spin-button {
+        -webkit-appearance: none;
+        margin: 0;
+    }
+
+    .port-input[type=number] {
+        -moz-appearance: textfield;
+    }
+
+    .expand-indicator {
+        color: #ccc;
+        transition: all 0.2s;
+        display: flex;
+        align-items: center;
+        margin-left: 2px;
+    }
+
+    .proto-nav-card:hover .expand-indicator {
+        color: #86868b;
+        transform: translateX(2px);
+    }
+
+    .proto-nav-card.active .expand-indicator {
+        color: #007aff;
+    }
+
+    /* ✨ 终极修复版：极致自适应悬浮提示框 (Tooltip) */
+    .gs-info-tooltip-wrap {
+        position: relative;
+        display: inline-flex;
+        align-items: center;
+        cursor: pointer;
+        margin-left: 4px;
+        outline: none;
+    }
+
+    .gs-info-tooltip-wrap svg {
+        color: #a1a1aa;
+        transition: color 0.2s;
+    }
+
+    .gs-info-tooltip-wrap:hover svg,
+    .gs-info-tooltip-wrap:focus svg {
+        color: #007aff;
+    }
+
+    .gs-tooltip-content {
+        /* 取消居中偏移！锚定图标基准点，向右下方展开，彻底避免被左栏遮挡 */
+        position: absolute;
+        top: calc(100% + 8px);
+        left: -12px;
+        background: rgba(29, 29, 31, 0.9);
+        color: #fff;
+        padding: 10px 14px;
+        border-radius: 8px;
+        font-size: 12px;
+        font-weight: 500;
+        letter-spacing: 0.5px;
+        opacity: 0;
+        visibility: hidden;
+        transition: all 0.2s;
+        pointer-events: none;
+        z-index: 9999;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+        line-height: 1.6;
+        text-align: left;
+
+        /* 智能响应式宽度：内容自适应，但绝不超过 280px 或【屏幕总宽-60px】 */
+        width: max-content;
+        max-width: min(280px, calc(100vw - 60px));
+        white-space: normal;
+        /* 允许换行防溢出 */
+        word-wrap: break-word;
+    }
+
+    /* 向上指的小三角，固定在对应感叹号的中心位置 */
+    .gs-tooltip-content::after {
+        content: '';
+        position: absolute;
+        bottom: 100%;
+        left: 19px;
+        margin-left: -4px;
+        border-width: 5px;
+        border-style: solid;
+        border-color: transparent transparent rgba(29, 29, 31, 0.9) transparent;
+    }
+
+    .gs-info-tooltip-wrap:hover .gs-tooltip-content,
+    .gs-info-tooltip-wrap:focus .gs-tooltip-content {
+        opacity: 1;
+        visibility: visible;
+    }
+
+    /* 右侧/内联详情表单 */
+    .gs-field {
+        margin-bottom: 16px;
+    }
+
+    .gs-label {
+        display: block;
+        font-size: 12px;
+        font-weight: 600;
+        color: #86868b;
+        margin-bottom: 8px;
+    }
+
+    .gs-input,
+    .gs-select {
+        width: 100%;
+        padding: 10px 12px;
+        border: 1px solid #d1d1d6;
+        border-radius: 8px;
+        font-size: 13px;
+        color: #1d1d1f;
+        outline: none;
+        transition: border 0.2s;
+        background: #fafbfc;
+        font-family: monospace;
+    }
+
+    .gs-input:focus,
+    .gs-select:focus {
+        border-color: #007aff;
+        background: #fff;
+        box-shadow: 0 0 0 2px rgba(0, 122, 255, 0.1);
+    }
+
+    .socks5-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 12px;
+    }
+
+    .gs-empty-state {
+        font-size: 13px;
+        color: #86868b;
+        text-align: center;
+        padding: 50px 0;
+        line-height: 1.6;
+    }
+
+    .gs-footer {
+        padding: 15px 25px;
+        border-top: 1px solid #eee;
+        display: flex;
+        justify-content: flex-end;
+        background: #fff;
+    }
+
+    .btn-gs-cancel {
+        background: #f5f5f7;
+        border: none;
+        color: #333;
+        padding: 8px 25px;
+        border-radius: 8px;
+        cursor: pointer;
+        font-size: 13px;
+        font-weight: 600;
+        transition: 0.2s;
+    }
+
+    .btn-gs-cancel:hover {
+        background: #e5e5ea;
+    }
+
+    /* ================= 移动端适配：内联展开模式 ================= */
+    .mobile-inline-form {
+        padding: 15px;
+        background: #fdfdfd;
+        border: 1px solid #cce4ff;
+        border-top: none;
+        border-radius: 0 0 10px 10px;
+        margin-top: -10px;
+        margin-bottom: 10px;
+        box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.02);
+        animation: slideDown 0.2s ease-out;
+        transform-origin: top center;
+    }
+
+    @keyframes slideDown {
+        from {
+            opacity: 0;
+            transform: scaleY(0.95);
+        }
+
+        to {
+            opacity: 1;
+            transform: scaleY(1);
+        }
+    }
+
+    .proto-nav-card.mobile-expanded {
+        border-radius: 10px 10px 0 0;
+        margin-bottom: 0;
+        border-bottom-color: transparent;
+    }
+
+    @media (max-width: 768px) {
+        .gs-modal-card {
+            max-width: 95%;
+            height: 85vh;
+        }
+
+        .gs-modal-card.has-content {
+            max-width: 95%;
+        }
+
+        .gs-body {
+            flex-direction: column;
+            overflow-y: auto;
+            display: block;
+        }
+
+        .gs-left-col {
+            width: 100%;
+            height: auto;
+            border-right: none;
+            padding: 15px;
+            overflow: visible;
+        }
+
+        .gs-right-col {
+            display: none !important;
+        }
+
+        .socks5-grid {
+            grid-template-columns: 1fr;
+        }
+
+        .gs-empty-state {
+            padding: 20px 0;
+        }
+    }
+</style>
+
+<div class="gs-modal-overlay" id="globalSettingsModal">
+    <div class="gs-modal-card" id="gsModalCard">
+
+        <div class="gs-header">
+            <div class="gs-title-area">
+                <div class="gs-title">⚙️ 全局默认参数</div>
+            </div>
+            <div class="gs-save-indicator" id="gsSaveIndicator">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                    stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M20 6L9 17l-5-5"></path>
+                </svg>
+                已保存
+            </div>
+        </div>
+
+        <div class="gs-body no-scrollbar">
+            <div class="gs-left-col no-scrollbar">
+                <label class="gs-section-label">选择协议以配置默认安装参数</label>
+
+                <div class="proto-nav-card" data-proto-id="reality" onclick="selectGsProto('reality', this)">
+                    <div class="proto-name">VLESS Reality</div>
+                    <div class="proto-actions">
+                        <span class="proto-chip tcp">TCP</span>
+                        <input type="number" id="gs_proxy_port_reality" class="port-input" placeholder="端口"
+                            onclick="event.stopPropagation()" oninput="triggerGsAutoSave()">
+                        <div class="expand-indicator"><svg viewBox="0 0 24 24" width="16" height="16" fill="none"
+                                stroke="currentColor" stroke-width="2">
+                                <polyline points="9 18 15 12 9 6"></polyline>
+                            </svg></div>
+                    </div>
+                </div>
+
+                <div class="proto-nav-card" data-proto-id="ss" onclick="selectGsProto('ss', this)">
+                    <div class="proto-name">Shadowsocks</div>
+                    <div class="proto-actions">
+                        <span class="proto-chip tcp">TCP</span>
+                        <span class="proto-chip udp">UDP</span>
+                        <input type="number" id="gs_proxy_port_ss" class="port-input" placeholder="端口"
+                            onclick="event.stopPropagation()" oninput="triggerGsAutoSave()">
+                        <div class="expand-indicator"><svg viewBox="0 0 24 24" width="16" height="16" fill="none"
+                                stroke="currentColor" stroke-width="2">
+                                <polyline points="9 18 15 12 9 6"></polyline>
+                            </svg></div>
+                    </div>
+                </div>
+
+                <div class="proto-nav-card" data-proto-id="hy2" onclick="selectGsProto('hy2', this)">
+                    <div class="proto-name">Hysteria2</div>
+                    <div class="proto-actions">
+                        <span class="proto-chip udp">UDP</span>
+                        <input type="number" id="gs_proxy_port_hy2" class="port-input" placeholder="端口"
+                            onclick="event.stopPropagation()" oninput="triggerGsAutoSave()">
+                        <div class="expand-indicator"><svg viewBox="0 0 24 24" width="16" height="16" fill="none"
+                                stroke="currentColor" stroke-width="2">
+                                <polyline points="9 18 15 12 9 6"></polyline>
+                            </svg></div>
+                    </div>
+                </div>
+
+                <div class="proto-nav-card" data-proto-id="tuic" onclick="selectGsProto('tuic', this)">
+                    <div class="proto-name">TUIC</div>
+                    <div class="proto-actions">
+                        <span class="proto-chip udp">UDP</span>
+                        <input type="number" id="gs_proxy_port_tuic" class="port-input" placeholder="端口"
+                            onclick="event.stopPropagation()" oninput="triggerGsAutoSave()">
+                        <div class="expand-indicator"><svg viewBox="0 0 24 24" width="16" height="16" fill="none"
+                                stroke="currentColor" stroke-width="2">
+                                <polyline points="9 18 15 12 9 6"></polyline>
+                            </svg></div>
+                    </div>
+                </div>
+
+                <div class="proto-nav-card" data-proto-id="socks5" onclick="selectGsProto('socks5', this)">
+                    <div class="proto-name">Socks5</div>
+                    <div class="proto-actions">
+                        <span class="proto-chip tcp">TCP</span>
+                        <span class="proto-chip udp">UDP</span>
+                        <input type="number" id="gs_proxy_port_socks5" class="port-input" placeholder="端口"
+                            onclick="event.stopPropagation()" oninput="triggerGsAutoSave()">
+                        <div class="expand-indicator"><svg viewBox="0 0 24 24" width="16" height="16" fill="none"
+                                stroke="currentColor" stroke-width="2">
+                                <polyline points="9 18 15 12 9 6"></polyline>
+                            </svg></div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="gs-right-col no-scrollbar" id="gsRightCol">
+                <label class="gs-section-label" id="gsRightTitle">协议配置</label>
+
+                <div class="proto-form" id="gs-form-reality" style="display:none;">
+                    <div class="gs-field">
+                        <label class="gs-label">目标伪装域名 (SNI)</label>
+                        <input type="text" id="gs_proxy_reality_sni" class="gs-input" placeholder="www.bing.com"
+                            oninput="triggerGsAutoSave()">
+                    </div>
+                </div>
+
+                <div class="proto-form" id="gs-form-ss" style="display:none;">
+                    <div class="gs-field">
+                        <label class="gs-label" style="display: flex; align-items: center;">
+                            加密方式
+                            <div class="gs-info-tooltip-wrap" tabindex="0">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                    stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                    <circle cx="12" cy="12" r="10"></circle>
+                                    <line x1="12" y1="8" x2="12" y2="12"></line>
+                                    <line x1="12" y1="16" x2="12.01" y2="16"></line>
+                                </svg>
+                                <div class="gs-tooltip-content">
+                                    <span style="color:#60a5fa">AES-128-GCM:</span> 性能强，适合低端设备<br>
+                                    <span style="color:#60a5fa">2022-blake3:</span> 极强抗封锁与兼容性
+                                </div>
+                            </div>
+                        </label>
+                        <select id="gs_proxy_ss_method" class="gs-select" onchange="triggerGsAutoSave()">
+                            <option value="aes-128-gcm">AES-128-GCM</option>
+                            <option value="2022-blake3-aes-128-gcm">2022-blake3-aes-128-gcm</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="proto-form" id="gs-form-hy2" style="display:none;">
+                    <div class="gs-empty-state">
+                        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"
+                            style="opacity: 0.5; margin-bottom: 10px;">
+                            <circle cx="12" cy="12" r="10"></circle>
+                            <line x1="12" y1="8" x2="12" y2="12"></line>
+                            <line x1="12" y1="16" x2="12.01" y2="16"></line>
+                        </svg>
+                        <br>该协议暂无额外参数配置
+                    </div>
+                </div>
+
+                <div class="proto-form" id="gs-form-tuic" style="display:none;">
+                    <div class="gs-empty-state">
+                        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"
+                            style="opacity: 0.5; margin-bottom: 10px;">
+                            <circle cx="12" cy="12" r="10"></circle>
+                            <line x1="12" y1="8" x2="12" y2="12"></line>
+                            <line x1="12" y1="16" x2="12.01" y2="16"></line>
+                        </svg>
+                        <br>该协议暂无额外参数配置
+                    </div>
+                </div>
+
+                <div class="proto-form" id="gs-form-socks5" style="display:none;">
+                    <div class="socks5-grid">
+                        <div class="gs-field" style="margin: 0;">
+                            <label class="gs-label">默认账号 (留空无密码)</label>
+                            <input type="text" id="gs_proxy_socks5_user" class="gs-input" placeholder=""
+                                oninput="triggerGsAutoSave()">
+                        </div>
+                        <div class="gs-field" style="margin: 0;">
+                            <label class="gs-label">默认密码 (留空无密码)</label>
+                            <input type="text" id="gs_proxy_socks5_pass" class="gs-input" placeholder=""
+                                oninput="triggerGsAutoSave()">
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="gs-footer">
+            <button class="btn-gs-cancel" onclick="closeGlobalSettingsModal()">关闭</button>
+        </div>
+    </div>
+</div>
+
+<script>
+    const gsModal = document.getElementById('globalSettingsModal');
+    const gsModalCard = document.getElementById('gsModalCard');
+
+    function selectGsProto(protoId, cardElement) {
+        const isAlreadyActive = cardElement.classList.contains('active');
+        const isMobile = window.innerWidth <= 768;
+
+        document.querySelectorAll('.proto-nav-card').forEach(c => {
+            c.classList.remove('active', 'mobile-expanded');
+        });
+        document.querySelectorAll('.proto-form').forEach(f => {
+            f.style.display = 'none';
+            f.classList.remove('mobile-inline-form');
+            document.getElementById('gsRightCol').appendChild(f);
+        });
+
+        if (isAlreadyActive && isMobile) {
+            gsModalCard.classList.remove('has-content');
+            return;
+        }
+
+        cardElement.classList.add('active');
+        const protoName = cardElement.querySelector('.proto-name').innerText;
+        document.getElementById('gsRightTitle').innerText = protoName + ' 额外配置';
+
+        const formEl = document.getElementById('gs-form-' + protoId);
+
+        if (isMobile) {
+            cardElement.classList.add('mobile-expanded');
+            formEl.classList.add('mobile-inline-form');
+            cardElement.parentNode.insertBefore(formEl, cardElement.nextSibling);
+            gsModalCard.classList.remove('has-content');
+        } else {
+            document.getElementById('gsRightCol').appendChild(formEl);
+            gsModalCard.classList.add('has-content');
+        }
+
+        formEl.style.display = 'block';
+
+        if (isMobile) {
+            setTimeout(() => {
+                cardElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            }, 100);
+        }
+    }
+
+    function adjustGsLayout() {
+        const isMobile = window.innerWidth <= 768;
+        const activeCard = document.querySelector('.proto-nav-card.active');
+
+        if (!activeCard) {
+            if (!isMobile) {
+                const firstCard = document.querySelector('.proto-nav-card');
+                if (firstCard) selectGsProto(firstCard.getAttribute('data-proto-id'), firstCard);
+            }
+            return;
+        }
+
+        const protoId = activeCard.getAttribute('data-proto-id');
+        const formEl = document.getElementById('gs-form-' + protoId);
+
+        if (isMobile) {
+            activeCard.classList.add('mobile-expanded');
+            formEl.classList.add('mobile-inline-form');
+            activeCard.parentNode.insertBefore(formEl, activeCard.nextSibling);
+            gsModalCard.classList.remove('has-content');
+        } else {
+            activeCard.classList.remove('mobile-expanded');
+            formEl.classList.remove('mobile-inline-form');
+            document.getElementById('gsRightCol').appendChild(formEl);
+            gsModalCard.classList.add('has-content');
+        }
+    }
+
+    let gsLastIsMobile = window.innerWidth <= 768;
+    window.addEventListener('resize', () => {
+        const currentIsMobile = window.innerWidth <= 768;
+        if (currentIsMobile !== gsLastIsMobile) {
+            gsLastIsMobile = currentIsMobile;
+            if (gsModal.classList.contains('active')) {
+                adjustGsLayout();
+            }
+        }
+    });
+
+    async function openGlobalSettingsModal() {
+        document.querySelectorAll('.proto-nav-card').forEach(c => c.classList.remove('active', 'mobile-expanded'));
+        document.querySelectorAll('.proto-form').forEach(f => {
+            f.style.display = 'none';
+            f.classList.remove('mobile-inline-form');
+            document.getElementById('gsRightCol').appendChild(f);
+        });
+
+        if (window.innerWidth > 768) {
+            gsModalCard.classList.add('has-content');
+            const firstCard = document.querySelector('.proto-nav-card');
+            firstCard.classList.add('active');
+            document.getElementById('gsRightTitle').innerText = 'VLESS Reality 额外配置';
+            document.getElementById('gs-form-reality').style.display = 'block';
+        } else {
+            gsModalCard.classList.remove('has-content');
+        }
+
+        gsModal.classList.add('active');
+        document.getElementById('gsSaveIndicator').style.opacity = '0';
+
+        try {
+            const res = await fetch('/api/get-settings');
+            const result = await res.json();
+            if (result.status === 'success') {
+                const data = result.data;
+                document.getElementById('gs_proxy_port_ss').value = data.proxy_port_ss || '';
+
+                const ssMethodSelect = document.getElementById('gs_proxy_ss_method');
+                if (data.proxy_ss_method) {
+                    const optionExists = Array.from(ssMethodSelect.options).some(opt => opt.value === data.proxy_ss_method);
+                    if (!optionExists) {
+                        ssMethodSelect.add(new Option(data.proxy_ss_method, data.proxy_ss_method));
+                    }
+                    ssMethodSelect.value = data.proxy_ss_method;
+                }
+
+                document.getElementById('gs_proxy_port_hy2').value = data.proxy_port_hy2 || '';
+                document.getElementById('gs_proxy_port_tuic').value = data.proxy_port_tuic || '';
+                document.getElementById('gs_proxy_port_reality').value = data.proxy_port_reality || '';
+                document.getElementById('gs_proxy_reality_sni').value = data.proxy_reality_sni || '';
+                document.getElementById('gs_proxy_port_socks5').value = data.proxy_port_socks5 || '';
+                document.getElementById('gs_proxy_socks5_user').value = data.proxy_socks5_user || '';
+                document.getElementById('gs_proxy_socks5_pass').value = data.proxy_socks5_pass || '';
+            }
+        } catch (e) { console.error("加载配置失败", e); }
+    }
+
+    function closeGlobalSettingsModal() {
+        gsModal.classList.remove('active');
+        setTimeout(() => gsModalCard.classList.remove('has-content'), 300);
+    }
+
+    let gsAutoSaveTimer = null;
+    function triggerGsAutoSave() {
+        if (!document.getElementById('globalSettingsModal').classList.contains('active')) {
+            return;
+        }
+
+        clearTimeout(gsAutoSaveTimer);
+        const indicator = document.getElementById('gsSaveIndicator');
+        indicator.innerHTML = '<span style="color:#888;">保存中...</span>';
+        indicator.style.opacity = '1';
+
+        gsAutoSaveTimer = setTimeout(async () => {
+            const payload = {
+                "proxy_port_ss": document.getElementById('gs_proxy_port_ss').value,
+                "proxy_ss_method": document.getElementById('gs_proxy_ss_method').value,
+                "proxy_port_hy2": document.getElementById('gs_proxy_port_hy2').value,
+                "proxy_port_tuic": document.getElementById('gs_proxy_port_tuic').value,
+                "proxy_port_reality": document.getElementById('gs_proxy_port_reality').value,
+                "proxy_reality_sni": document.getElementById('gs_proxy_reality_sni').value,
+                "proxy_port_socks5": document.getElementById('gs_proxy_port_socks5').value,
+                "proxy_socks5_user": document.getElementById('gs_proxy_socks5_user').value,
+                "proxy_socks5_pass": document.getElementById('gs_proxy_socks5_pass').value
+            };
+
+            try {
+                const response = await fetch('/api/update-settings', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                if (response.ok) {
+                    indicator.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"></path></svg> 已保存`;
+                    setTimeout(() => indicator.style.opacity = '0', 2000);
+                }
+            } catch (error) {
+                indicator.innerHTML = '<span style="color:#ff3b30;">保存失败</span>';
+            }
+        }, 600);
+    }
+</script>
+{{end}}

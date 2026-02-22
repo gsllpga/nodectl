@@ -1,17 +1,152 @@
 <!DOCTYPE html>
 <html lang="zh-CN">
-
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>登录 - Nodectl</title>
+    
+    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23007aff' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><rect x='2' y='2' width='20' height='8' rx='2' ry='2'></rect><rect x='2' y='14' width='20' height='8' rx='2' ry='2'></rect><line x1='6' y1='6' x2='6.01' y2='6'></line><line x1='6' y1='18' x2='6.01' y2='18'></line></svg>">
+    
+    <style>
+        :root {
+            --apple-bg: #f5f5f7;          /* 苹果经典的高级灰背景 */
+            --apple-card: #ffffff;
+            --apple-text: #1d1d1f;        /* 苹果标准的深灰色非纯黑字体 */
+            --apple-text-sec: #86868b;
+            --apple-blue: #0071e3;        /* 经典的 Apple Blue */
+            --apple-blue-hover: #0077ed;
+            --apple-input-bg: rgba(0, 0, 0, 0.04);
+            --apple-error-bg: #fff0f0;
+            --apple-error-text: #e30000;
+        }
 
-    <link rel="icon" type="image/svg+xml"
-        href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23007aff' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><rect x='2' y='2' width='20' height='8' rx='2' ry='2'></rect><rect x='2' y='14' width='20' height='8' rx='2' ry='2'></rect><line x1='6' y1='6' x2='6.01' y2='6'></line><line x1='6' y1='18' x2='6.01' y2='18'></line></svg>">
-    <link rel="stylesheet" href="/static/css/app.css">
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            /* 强制开启苹果设备的字体抗锯齿，让文字更平滑 */
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
+        }
+
+        body {
+            /* 优先调用苹果系统原生的 SF Pro 字体 */
+            font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", Helvetica, Arial, sans-serif;
+            background-color: var(--apple-bg);
+            color: var(--apple-text);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+        }
+
+        .login-card {
+            background: var(--apple-card);
+            width: 100%;
+            max-width: 380px;
+            padding: 48px 40px;
+            border-radius: 24px;
+            /* 极度细腻的多层阴影，模拟真实物理光源 */
+            box-shadow: 0 4px 24px rgba(0, 0, 0, 0.04), 0 1px 2px rgba(0, 0, 0, 0.04);
+            text-align: center;
+        }
+
+        .header {
+            margin-bottom: 36px;
+        }
+
+        .header h1 {
+            font-size: 28px;
+            font-weight: 600;
+            letter-spacing: -0.01em;
+            margin-bottom: 8px;
+        }
+
+        .header p {
+            font-size: 15px;
+            color: var(--apple-text-sec);
+            font-weight: 400;
+        }
+
+        .input-group {
+            margin-bottom: 16px;
+        }
+
+        /* 苹果风输入框：无边框，浅灰底，聚焦时变白并带蓝色光晕 */
+        .input-group input {
+            width: 100%;
+            padding: 16px 18px;
+            font-size: 17px;
+            background-color: var(--apple-input-bg);
+            border: 1px solid transparent;
+            border-radius: 14px;
+            color: var(--apple-text);
+            transition: all 0.25s ease;
+            outline: none;
+        }
+
+        .input-group input::placeholder {
+            color: var(--apple-text-sec);
+        }
+
+        .input-group input:focus {
+            background-color: #ffffff;
+            border-color: var(--apple-blue);
+            box-shadow: 0 0 0 4px rgba(0, 113, 227, 0.15);
+        }
+
+        .btn-submit {
+            width: 100%;
+            padding: 16px;
+            font-size: 17px;
+            font-weight: 500;
+            background-color: var(--apple-blue);
+            color: white;
+            border: none;
+            border-radius: 14px;
+            cursor: pointer;
+            margin-top: 12px;
+            transition: background-color 0.2s ease, transform 0.1s ease;
+        }
+
+        .btn-submit:hover {
+            background-color: var(--apple-blue-hover);
+        }
+
+        .btn-submit:active {
+            transform: scale(0.98); /* 点击时的微小回弹效果 */
+        }
+
+        .error-msg {
+            background-color: var(--apple-error-bg);
+            color: var(--apple-error-text);
+            padding: 14px;
+            border-radius: 12px;
+            font-size: 15px;
+            font-weight: 500;
+            margin-bottom: 24px;
+            animation: shake 0.4s ease-in-out;
+        }
+
+        /* 密码错误时的苹果式经典左右抖动动画 */
+        @keyframes shake {
+            0%, 100% { transform: translateX(0); }
+            20% { transform: translateX(-6px); }
+            40% { transform: translateX(6px); }
+            60% { transform: translateX(-4px); }
+            80% { transform: translateX(4px); }
+        }
+
+        /* ✨ 移动端适配：统一弹窗宽度留白 */
+        @media (max-width: 768px) {
+            .login-card { 
+                max-width: 95%; /* 强制两边留出 2.5% 的呼吸空间 */
+                padding: 40px 24px; /* 移动端适当减小内边距，防止内容过于拥挤 */
+            }
+        }
+    </style>
 </head>
-
-<body class="login-page">
+<body>
     <div class="login-card">
         <div class="header">
             <h1>Nodectl</h1>
@@ -29,12 +164,10 @@
                 <input type="text" id="username" name="username" placeholder="用户名" required autocomplete="username">
             </div>
             <div class="input-group">
-                <input type="password" id="password" name="password" placeholder="密码" required
-                    autocomplete="current-password">
+                <input type="password" id="password" name="password" placeholder="密码" required autocomplete="current-password">
             </div>
             <button type="submit" class="btn-submit">继续</button>
         </form>
     </div>
 </body>
-
 </html>

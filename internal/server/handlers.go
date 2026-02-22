@@ -780,7 +780,7 @@ func apiUpdateSettings(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	var req map[string]interface{}
+	var req map[string]string
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		logger.Log.Warn("解析 JSON 失败", "error", err, "ip", clientIP, "path", reqPath)
 		sendJSON(w, "error", "请求格式错误")
@@ -800,9 +800,8 @@ func apiUpdateSettings(w http.ResponseWriter, r *http.Request) {
 
 	needRestartTgBot := false
 
-	for k, vAny := range req {
+	for k, v := range req {
 		if validKeys[k] {
-			v := fmt.Sprintf("%v", vAny)
 			if (k == "cf_api_key" || k == "tg_bot_token") && v == "********" {
 				continue
 			}

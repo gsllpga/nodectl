@@ -5,7 +5,6 @@ import (
 	"crypto/tls"
 	"embed"
 	"html/template"
-	"io/fs"
 	"net/http"
 	"time"
 
@@ -50,14 +49,10 @@ func Start(tmplFS embed.FS) {
 	//避免空指针报错
 	service.InitMihomo()
 	// 2. 预编译解析模板
-	tmpl = template.Must(template.ParseFS(tmplFS, "templates/*.html"))
+	tmpl = template.Must(template.ParseFS(tmplFS, "templates/*.html", "templates/components/*.html"))
 
 	// 3. 创建路由器并注册所有路由 (只需执行一次，避免重复注册引发 panic)
 	mux := http.NewServeMux()
-
-	// ========== 静态资源 (CSS / JS, 浏览器可缓存) ==========
-	staticFS, _ := fs.Sub(tmplFS, "templates/static")
-	mux.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.FS(staticFS))))
 
 	// ========== A. 页面路由 (Page Routes) ==========
 	mux.HandleFunc("/login", withSecure(loginHandler))   // 登录页
