@@ -228,8 +228,10 @@ func apiUpdateNode(w http.ResponseWriter, r *http.Request) {
 	clientIP := r.RemoteAddr
 	reqPath := r.URL.Path
 
-	// 1. 解析前端发来的 JSON 数据
-	var req database.NodePool
+	var req struct {
+		database.NodePool
+		// Add backwards compatibility explicitly if needed, but since we embedded NodePool, it has IPMode and LinkIPModes
+	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		sendJSON(w, "error", "无效的数据格式")
 		return
@@ -285,6 +287,7 @@ func apiUpdateNode(w http.ResponseWriter, r *http.Request) {
 	targetNode.DisabledLinks = req.DisabledLinks
 	targetNode.IPV4 = req.IPV4
 	targetNode.IPV6 = req.IPV6
+	targetNode.IPMode = req.IPMode
 	targetNode.ResetDay = req.ResetDay
 	targetNode.TrafficLimit = req.TrafficLimit
 
@@ -301,10 +304,16 @@ func apiUpdateNode(w http.ResponseWriter, r *http.Request) {
 	// 5. 根据安全状态执行智能合并或全量覆盖
 	if !isSecure {
 		safeLinks := make(map[string]string)
+		safeLinkIPModes := make(map[string]int)
+
 		for k, v := range req.Links {
 			if v == "__KEEP_EXISTING__" {
 				if oldVal, ok := targetNode.Links[k]; ok {
 					safeLinks[k] = oldVal
+					// also keep existing ip mode
+					if oldMode, mok := targetNode.LinkIPModes[k]; mok {
+						safeLinkIPModes[k] = oldMode
+					}
 				}
 			} else {
 				if _, exists := targetNode.Links[k]; exists {
@@ -312,21 +321,35 @@ func apiUpdateNode(w http.ResponseWriter, r *http.Request) {
 				} else {
 					safeLinks[k] = v
 				}
+				// allow updating link ip mode even if link value is safe-guarded
+				if newMode, ok := req.LinkIPModes[k]; ok {
+					safeLinkIPModes[k] = newMode
+				}
 			}
 		}
 		targetNode.Links = safeLinks
+		targetNode.LinkIPModes = safeLinkIPModes
 	} else {
 		safeLinks := make(map[string]string)
+		safeLinkIPModes := make(map[string]int)
+
 		for k, v := range req.Links {
 			if v == "__KEEP_EXISTING__" {
 				if oldVal, ok := targetNode.Links[k]; ok {
 					safeLinks[k] = oldVal
+					if oldMode, mok := targetNode.LinkIPModes[k]; mok {
+						safeLinkIPModes[k] = oldMode
+					}
 				}
 			} else {
 				safeLinks[k] = v
+				if newMode, ok := req.LinkIPModes[k]; ok {
+					safeLinkIPModes[k] = newMode
+				}
 			}
 		}
 		targetNode.Links = safeLinks
+		targetNode.LinkIPModes = safeLinkIPModes
 	}
 
 	// 6. 保存更新

@@ -42,12 +42,17 @@ func GenerateRawNodesYAML(routingType int, useFlag bool) (string, error) {
 	var proxyList []*ClashNode
 
 	for _, node := range nodes {
-		ipOptions := determineIPs(node, ipStrategy)
-
 		for proto, link := range node.Links {
 			if contains(node.DisabledLinks, proto) {
 				continue
 			}
+
+			// Get protocol-level IP mode (default 3: dual-stack if not mapped)
+			protoIPMode := 3
+			if m, ok := node.LinkIPModes[proto]; ok && m != 0 {
+				protoIPMode = m
+			}
+			ipOptions := determineIPs(node, ipStrategy, protoIPMode)
 
 			// 根据 IP 策略可能生成 1 个，也可能生成 2 个(双栈)，也可能跳过(0个)
 			for _, ipOpt := range ipOptions {
@@ -159,12 +164,17 @@ func GenerateV2RaySubBase64(useFlag bool) (string, error) {
 	var lines []string
 
 	for _, node := range nodes {
-		ipOptions := determineIPs(node, ipStrategy)
-
 		for proto, link := range node.Links {
 			if contains(node.DisabledLinks, proto) {
 				continue
 			}
+
+			// Get protocol-level IP mode (default 3: dual-stack if not mapped)
+			protoIPMode := 3
+			if m, ok := node.LinkIPModes[proto]; ok && m != 0 {
+				protoIPMode = m
+			}
+			ipOptions := determineIPs(node, ipStrategy, protoIPMode)
 
 			for _, ipOpt := range ipOptions {
 				baseName := fmt.Sprintf("%s-%s%s", strings.ToLower(proto), node.Name, ipOpt.Suffix)
@@ -215,8 +225,12 @@ type IPOption struct {
 	Suffix string // 用于双栈分离时给节点名加后缀
 }
 
+func DetermineIPsForTest(node database.NodePool, strategy string, protoIPMode int) []IPOption {
+	return determineIPs(node, strategy, protoIPMode)
+}
+
 // determineIPs 根据策略计算应该生成哪些 IP
-func determineIPs(node database.NodePool, strategy string) []IPOption {
+func determineIPs(node database.NodePool, strategy string, protoIPMode int) []IPOption {
 	hasV4 := node.IPV4 != ""
 	hasV6 := node.IPV6 != ""
 
@@ -224,38 +238,103 @@ func determineIPs(node database.NodePool, strategy string) []IPOption {
 		return []IPOption{{IP: "", Suffix: ""}} // 无IP记录，使用原链接IP
 	}
 
+	// 1: IPv4, 2: IPv6, 3: Dual
+	effectiveNodeMode := 0
+
+	// Node IPMode: 0: Follow System, 1: IPv4 Only, 2: IPv6 Only, 3: Dual Stack
+	switch node.IPMode {
+	case 1:
+		effectiveNodeMode = 1
+	case 2:
+		effectiveNodeMode = 2
+	case 3:
+		effectiveNodeMode = 3
+	default: // 0 Follow System
+		switch strategy {
+		case "ipv4_only":
+			effectiveNodeMode = 1
+		case "ipv6_only":
+			effectiveNodeMode = 2
+		case "dual_stack":
+			effectiveNodeMode = 3
+		case "ipv4_prefer":
+			effectiveNodeMode = 4
+		case "ipv6_prefer":
+			effectiveNodeMode = 5
+		default:
+			effectiveNodeMode = 4 // Default to ipv4_prefer
+		}
+	}
+
+	// Now apply the matrix based on effectiveNodeMode and protoIPMode
+	genV4 := false
+	genV6 := false
+
+	switch effectiveNodeMode {
+	case 1: // Node Effect: IPv4 Only
+		if protoIPMode == 1 || protoIPMode == 3 {
+			genV4 = true
+		}
+	case 2: // Node Effect: IPv6 Only
+		if protoIPMode == 2 || protoIPMode == 3 {
+			genV6 = true
+		}
+	case 3: // Node Effect: Dual Stack
+		if protoIPMode == 1 || protoIPMode == 3 {
+			genV4 = true
+		}
+		if protoIPMode == 2 || protoIPMode == 3 {
+			genV6 = true
+		}
+	case 4: // Node Effect: System IPv4 Prefer
+		if protoIPMode == 1 || protoIPMode == 3 {
+			genV4 = true
+		} else if protoIPMode == 2 {
+			genV6 = true
+		}
+	case 5: // Node Effect: System IPv6 Prefer
+		if protoIPMode == 1 {
+			genV4 = true
+		} else if protoIPMode == 2 || protoIPMode == 3 {
+			genV6 = true
+		}
+	}
+
 	var ips []IPOption
-	switch strategy {
-	case "ipv4_only":
-		if hasV4 {
-			ips = append(ips, IPOption{IP: node.IPV4, Suffix: ""})
-		}
-	case "ipv6_only":
-		if hasV6 {
-			ips = append(ips, IPOption{IP: node.IPV6, Suffix: ""})
-		}
-	case "dual_stack":
+	if genV4 && genV6 {
 		if hasV4 && hasV6 {
 			ips = append(ips, IPOption{IP: node.IPV4, Suffix: "-V4"})
 			ips = append(ips, IPOption{IP: node.IPV6, Suffix: "-V6"})
-		} else if hasV4 {
+		} else if len(ips) == 0 && hasV4 {
 			ips = append(ips, IPOption{IP: node.IPV4, Suffix: ""})
-		} else if hasV6 {
+		} else if len(ips) == 0 && hasV6 {
 			ips = append(ips, IPOption{IP: node.IPV6, Suffix: ""})
 		}
-	case "ipv6_prefer":
-		if hasV6 {
-			ips = append(ips, IPOption{IP: node.IPV6, Suffix: ""})
-		} else if hasV4 {
-			ips = append(ips, IPOption{IP: node.IPV4, Suffix: ""})
-		}
-	default: // ipv4_prefer
-		if hasV4 {
-			ips = append(ips, IPOption{IP: node.IPV4, Suffix: ""})
-		} else if hasV6 {
-			ips = append(ips, IPOption{IP: node.IPV6, Suffix: ""})
+	} else if genV4 && hasV4 {
+		ips = append(ips, IPOption{IP: node.IPV4, Suffix: ""})
+	} else if genV6 && hasV6 {
+		ips = append(ips, IPOption{IP: node.IPV6, Suffix: ""})
+	}
+
+	// Falls through to empty if gen requirements are not met and strict matching fails.
+	// Do NOT enforce fallback if proto IP generation strictly failed the check.
+	// We only fallback if gen rules permitted it but literal IP was missing.
+	if len(ips) == 0 && (genV4 || genV6) {
+		if effectiveNodeMode == 5 || effectiveNodeMode == 2 { // prefer v6 fallback
+			if hasV6 {
+				ips = append(ips, IPOption{IP: node.IPV6, Suffix: ""})
+			} else if hasV4 {
+				ips = append(ips, IPOption{IP: node.IPV4, Suffix: ""})
+			}
+		} else { // prefer v4 fallback
+			if hasV4 {
+				ips = append(ips, IPOption{IP: node.IPV4, Suffix: ""})
+			} else if hasV6 {
+				ips = append(ips, IPOption{IP: node.IPV6, Suffix: ""})
+			}
 		}
 	}
+
 	return ips
 }
 

@@ -27,10 +27,12 @@ type NodePool struct {
 	RoutingType     int               `gorm:"column:routing_type;default:1" json:"routing_type"` //路由类型
 	IsBlocked       bool              `gorm:"column:is_blocked;default:false" json:"is_blocked"` // 是否屏蔽
 	Links           map[string]string `gorm:"column:links;serializer:json" json:"links"`
+	LinkIPModes     map[string]int    `gorm:"column:link_ip_modes;serializer:json" json:"link_ip_modes"` //协议级别的IP生成模式
 	DisabledLinks   []string          `gorm:"column:disabled_links;serializer:json" json:"disabled_links"`
 	IPV4            string            `gorm:"column:ipv4;type:varchar(15)" json:"ipv4"`
 	IPV6            string            `gorm:"column:ipv6;type:varchar(45)" json:"ipv6"`
 	Region          string            `gorm:"column:region" json:"region"`                         //存储国家信息
+	IPMode          int               `gorm:"column:ip_mode;default:0" json:"ip_mode"`             // 0: 跟随系统, 1: 仅IPv4, 2: 仅IPv6, 3: 双栈
 	SortIndex       int               `gorm:"column:sort_index;default:0" json:"sort_index"`       //排序
 	Remark          string            `gorm:"column:remark" json:"remark"`                         //备注
 	TrafficUp       int64             `gorm:"column:traffic_up;default:0" json:"traffic_up"`       // 本周期上传流量 (Bytes)

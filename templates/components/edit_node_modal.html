@@ -266,6 +266,27 @@
         background: #d74242;
     }
 
+    /* IP 模式分段控制器特定颜色 (节点级) */
+    .segment-option.active[data-ipmode="0"] {
+        background: #8e8e93;
+        /* 跟随系统 */
+    }
+
+    .segment-option.active[data-ipmode="1"] {
+        background: #007aff;
+        /* 仅IPv4 */
+    }
+
+    .segment-option.active[data-ipmode="2"] {
+        background: #af52de;
+        /* 仅IPv6 */
+    }
+
+    .segment-option.active[data-ipmode="3"] {
+        background: #34c759;
+        /* 双栈 */
+    }
+
     /* IP 输入 */
     .ip-input {
         width: 100%;
@@ -406,6 +427,80 @@
         display: flex;
         align-items: center;
         gap: 10px;
+    }
+
+    /* 仅双栈节点才显示 IP 模式选择设置 */
+    #editNodeModal:not(.dual-stack-available) #editNodeIPModeSection,
+    #editNodeModal:not(.dual-stack-available) .proto-ipmode-capsule {
+        display: none !important;
+    }
+
+    /* 协议级 IP 模式胶囊按钮组样式 */
+    .proto-ipmode-capsule {
+        display: flex;
+        align-items: center;
+        border-radius: 20px;
+        padding: 2px;
+        margin-right: 6px;
+        transition: background-color 0.3s;
+        cursor: pointer;
+    }
+
+    .proto-ipmode-capsule.expanded {
+        background: #f5f5f7;
+    }
+
+    .proto-ipmode-item {
+        border: none;
+        background: transparent;
+        font-size: 11px;
+        font-weight: 600;
+        border-radius: 16px;
+        cursor: pointer;
+        white-space: nowrap;
+        color: #86868b;
+        transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+
+        max-width: 0;
+        padding: 0;
+        opacity: 0;
+        overflow: hidden;
+        margin: 0;
+    }
+
+    .proto-ipmode-item.active {
+        max-width: 65px;
+        padding: 4px 10px;
+        opacity: 1;
+    }
+
+    .proto-ipmode-capsule.expanded .proto-ipmode-item {
+        max-width: 65px;
+        padding: 4px 10px;
+        opacity: 1;
+    }
+
+    .proto-ipmode-item:hover {
+        background: #e5e5ea;
+        color: #333;
+    }
+
+    .proto-ipmode-item.active[data-val="1"] {
+        background: #e0f2fe;
+        /* 仅IPv4: 蓝色系 */
+        color: #0284c7;
+    }
+
+    .proto-ipmode-item.active[data-val="2"] {
+        background: #f3e8ff;
+        /* 仅IPv6: 紫色系 */
+        color: #7e22ce;
+    }
+
+    .proto-ipmode-item.active[data-val="3"] {
+        background: #dcfce7;
+        /* 双栈: 绿色系 */
+        color: #15803d;
     }
 
     /* 小号开关 */
@@ -655,6 +750,17 @@
                             oninput="triggerNodeAutoSave()" style="flex: 1;">
                     </div>
 
+                    <div class="edit-section" id="editNodeIPModeSection">
+                        <label class="section-label">IP 生成模式</label>
+                        <div class="segmented-control" id="editNodeIPModeControl">
+                            <div class="segment-option" data-ipmode="0" onclick="selectEditNodeIPMode(0)">跟随系统</div>
+                            <div class="segment-option" data-ipmode="1" onclick="selectEditNodeIPMode(1)">仅IPv4</div>
+                            <div class="segment-option" data-ipmode="2" onclick="selectEditNodeIPMode(2)">仅IPv6</div>
+                            <div class="segment-option" data-ipmode="3" onclick="selectEditNodeIPMode(3)">双栈</div>
+                        </div>
+                        <input type="hidden" id="editNodeIPMode" value="0">
+                    </div>
+
                     <div class="edit-section">
                         <div style="display: flex; gap: 15px; margin-bottom: 8px;">
                             <label class="section-label" style="flex: 1; margin: 0;">重置日 (每月)</label>
@@ -859,6 +965,10 @@
         let uiState = node.is_blocked ? 3 : node.routing_type;
         selectEditGroup(uiState, true);
 
+        // [新增] 节点级 IP 生成模式
+        const ipMode = node.ip_mode || 0;
+        selectEditNodeIPMode(ipMode, true);
+
         // 3. IP 信息渲染
         renderIPInputs(node.ipv4, node.ipv6);
 
@@ -903,8 +1013,9 @@
             for (const proto of sortedProtos) {
                 const link = node.links[proto];
                 const isEnabled = !disabledSet.has(proto);
+                const protoIPMode = node.link_ip_modes && node.link_ip_modes[proto] ? node.link_ip_modes[proto] : 3;
                 // 核心：传入 isLinksLocked 状态
-                renderProtocolCard(proto, link, isEnabled, false, isLinksLocked);
+                renderProtocolCard(proto, link, isEnabled, false, isLinksLocked, protoIPMode);
             }
         } else if (!isLinksLocked) {
             // 如果不是锁定模式且无数据，显示提示
@@ -924,7 +1035,7 @@
     }
 
     // 渲染多行协议卡片 (支持折叠)
-    function renderProtocolCard(proto, link, isEnabled, isNew, isLocked = false) {
+    function renderProtocolCard(proto, link, isEnabled, isNew, isLocked = false, protoIPMode = 3) {
         const div = document.createElement('div');
         div.className = 'protocol-card';
         if (isNew) div.classList.add('expanded'); // 新增的协议默认展开
@@ -955,6 +1066,11 @@
                     </span>
                 </div>
                 <div class="proto-actions" onclick="event.stopPropagation()">
+                    <div class="proto-ipmode-capsule" data-proto="${proto}" onclick="toggleProtoIPModeCapsule(this, event)">
+                        <button type="button" class="proto-ipmode-item ${protoIPMode === 1 ? 'active' : ''}" data-val="1" onclick="selectProtoIPMode(this, 1, event)">仅IPv4</button>
+                        <button type="button" class="proto-ipmode-item ${protoIPMode === 2 ? 'active' : ''}" data-val="2" onclick="selectProtoIPMode(this, 2, event)">仅IPv6</button>
+                        <button type="button" class="proto-ipmode-item ${protoIPMode === 3 ? 'active' : ''}" data-val="3" onclick="selectProtoIPMode(this, 3, event)">双栈</button>
+                    </div>
                     <label class="switch-sm">
                         <input type="checkbox" class="proto-switch" ${checkedState} onchange="toggleProtocol(this)">
                         <span class="slider-sm"></span>
@@ -1040,9 +1156,65 @@
         }
     }
 
+    function selectEditNodeIPMode(val, skipSave = false) {
+        document.getElementById('editNodeIPMode').value = val;
+        const container = document.getElementById('editNodeIPModeControl');
+        if (container) {
+            container.querySelectorAll('.segment-option').forEach(el => {
+                el.classList.remove('active');
+                if (parseInt(el.getAttribute('data-ipmode')) === val) el.classList.add('active');
+            });
+        }
+        if (!skipSave) triggerNodeAutoSave(true);
+    }
+
+    function updateIPModeVisibility() {
+        const v4Input = document.getElementById('editNodeIPV4');
+        const v6Input = document.getElementById('editNodeIPV6');
+        const hasV4 = v4Input && v4Input.value.trim() !== '';
+        const hasV6 = v6Input && v6Input.value.trim() !== '';
+        const hasBoth = hasV4 && hasV6;
+
+        const modal = document.getElementById('editNodeModal');
+        if (modal) {
+            if (hasBoth) {
+                modal.classList.add('dual-stack-available');
+            } else {
+                modal.classList.remove('dual-stack-available');
+            }
+        }
+    }
+
+    function selectProtoIPMode(btn, val, event) {
+        if (event) event.stopPropagation();
+        const capsule = btn.closest('.proto-ipmode-capsule');
+
+        // 如果胶囊未被展开，此时点击内部按钮实际意图是展开（交互修正）
+        if (capsule && !capsule.classList.contains('expanded')) {
+            capsule.classList.add('expanded');
+            return;
+        }
+
+        if (capsule) {
+            capsule.querySelectorAll('.proto-ipmode-item').forEach(el => {
+                el.classList.remove('active');
+            });
+            capsule.classList.remove('expanded');
+        }
+        btn.classList.add('active');
+        triggerNodeAutoSave(true);
+    }
+
+    function toggleProtoIPModeCapsule(element, event) {
+        if (event) event.stopPropagation();
+        element.classList.toggle('expanded');
+    }
+
     // 自动保存函数 (适配 HTTPS 和 HTTP 模式)
     let editNodeAutoSaveTimer = null;
     function triggerNodeAutoSave(immediate = false) {
+        updateIPModeVisibility();
+
         if (!document.getElementById('editNodeModal').classList.contains('active')) {
             return;
         }
@@ -1063,6 +1235,7 @@
             const name = document.getElementById('editNodeName').value;
             const uiState = parseInt(document.getElementById('editNodeUIState').value);
             const resetDay = parseInt(document.getElementById('editNodeResetDay').value) || 0;
+            const ipMode = parseInt(document.getElementById('editNodeIPMode').value) || 0;
 
             // [新增] 获取流量限额并转为 Bytes
             const limitInput = parseFloat(document.getElementById('editNodeTrafficLimit').value) || 0;
@@ -1090,6 +1263,7 @@
 
             const links = {};
             const disabledLinks = [];
+            const linkIPModes = {};
 
             const listContainer = document.getElementById('protocolListContainer');
             const cards = listContainer.querySelectorAll('.protocol-card');
@@ -1100,8 +1274,19 @@
                 const input = card.querySelector('.link-textarea');
                 const toggle = card.querySelector('.proto-switch');
 
+                // Get proto-level IP mode
+                const capsule = card.querySelector('.proto-ipmode-capsule');
+                let pIpMode = 3; // Default dual stack
+                if (capsule) {
+                    const activeBtn = capsule.querySelector('.proto-ipmode-item.active');
+                    if (activeBtn) {
+                        pIpMode = parseInt(activeBtn.getAttribute('data-val')) || 3;
+                    }
+                }
+
                 // 只要开关存在，就说明协议卡片存在
                 if (toggle) { // 只要开关存在，说明卡片未被删除
+                    linkIPModes[proto] = pIpMode;
                     if (input) {
                         // 1. 如果有输入框 (HTTPS模式 或 新添加的协议)，正常取值
                         const linkVal = input.value.trim();
@@ -1129,6 +1314,8 @@
                         is_blocked: finalIsBlocked,
                         disabled_links: disabledLinks,
                         ipv4, ipv6,
+                        ip_mode: ipMode,
+                        link_ip_modes: linkIPModes,
                         reset_day: resetDay,
                         traffic_limit: trafficLimit // [新增] 提交限额 (Bytes)
                     })
@@ -1181,6 +1368,7 @@
             html = v6Html + `<div style="text-align:right; margin-top:-5px; margin-bottom: 15px;"><a class="add-ip-link" onclick="appendIPField('v4')">+ 补充 IPv4</a></div>`;
         }
         ipContainer.innerHTML = html;
+        updateIPModeVisibility();
     }
 
     function appendIPField(type) {
