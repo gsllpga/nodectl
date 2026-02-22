@@ -56,7 +56,6 @@ func runTelegramBot(ctx context.Context) {
 	registerCommands := strings.TrimSpace(registerConfig.Value) == "true"
 
 	if !botEnabled {
-		logger.Log.Info("Telegram Bot 已通过面板开关关闭，Bot 服务处于闲置状态")
 		return
 	}
 
