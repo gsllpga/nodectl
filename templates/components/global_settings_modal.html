@@ -659,13 +659,7 @@
                             <div class="variant-section-hd-title"><span class="proto-chip tcp">TCP</span> VLESS Reality</div>
                             <input type="number" id="gs_proxy_port_reality" class="variant-port-input" placeholder="20004" oninput="triggerGsAutoSave()">
                         </div>
-                        <div class="variant-section-bd">
-                            
-                            <div class="gs-field variant-field-sni">
-                                <label class="gs-label">目标伪装域名 (SNI)</label>
-                                <input type="text" id="gs_proxy_reality_sni" class="gs-input" placeholder="www.bing.com" oninput="triggerGsAutoSave()">
-                            </div>
-                        </div>
+                        
                     </div>
                     <div class="variant-section">
                         <div class="variant-section-hd">
@@ -862,13 +856,7 @@
                             <div class="variant-section-hd-title"><span class="proto-chip tcp">TCP</span> Trojan</div>
                             <input type="number" id="gs_proxy_port_trojan" class="variant-port-input" placeholder="20006" oninput="triggerGsAutoSave()">
                         </div>
-                        <div class="variant-section-bd">
-                            
-                            <div class="gs-field variant-field-sni">
-                                <label class="gs-label">客户端 SNI 伪装域名</label>
-                                <input type="text" id="gs_proxy_trojan_sni" class="gs-input" placeholder="www.bing.com" oninput="triggerGsAutoSave()">
-                            </div>
-                        </div>
+                        
                     </div>
                     <div class="variant-section">
                         <div class="variant-section-hd">
@@ -1035,7 +1023,6 @@
                 const d = result.data;
                 // VLESS 族
                 document.getElementById('gs_proxy_port_reality').value   = d.proxy_port_reality   || '';
-                document.getElementById('gs_proxy_reality_sni').value    = d.proxy_reality_sni    || '';
                 document.getElementById('gs_proxy_port_vless_h2').value  = d.proxy_port_vless_h2  || '';
                 document.getElementById('gs_proxy_port_vless_wst').value = d.proxy_port_vless_wst || '';
                 document.getElementById('gs_proxy_port_vless_h2t').value = d.proxy_port_vless_h2t || '';
@@ -1068,7 +1055,6 @@
                 document.getElementById('gs_proxy_socks5_pass').value  = d.proxy_socks5_pass || '';
                 // Trojan 族
                 document.getElementById('gs_proxy_port_trojan').value     = d.proxy_port_trojan     || '';
-                document.getElementById('gs_proxy_trojan_sni').value      = d.proxy_trojan_sni      || '';
                 document.getElementById('gs_proxy_port_trojan_wst').value = d.proxy_port_trojan_wst || '';
                 document.getElementById('gs_proxy_port_trojan_h2t').value = d.proxy_port_trojan_h2t || '';
                 document.getElementById('gs_proxy_port_trojan_hut').value = d.proxy_port_trojan_hut || '';
@@ -1103,7 +1089,6 @@
             const payload = {
                 // VLESS 族
                 "proxy_port_reality":   document.getElementById('gs_proxy_port_reality').value,
-                "proxy_reality_sni":    document.getElementById('gs_proxy_reality_sni').value,
                 "proxy_port_vless_h2":  document.getElementById('gs_proxy_port_vless_h2').value,
                 "proxy_port_vless_wst": document.getElementById('gs_proxy_port_vless_wst').value,
                 "proxy_port_vless_h2t": document.getElementById('gs_proxy_port_vless_h2t').value,
@@ -1131,7 +1116,6 @@
                 "proxy_socks5_pass": document.getElementById('gs_proxy_socks5_pass').value,
                 // Trojan 族
                 "proxy_port_trojan":     document.getElementById('gs_proxy_port_trojan').value,
-                "proxy_trojan_sni":      document.getElementById('gs_proxy_trojan_sni').value,
                 "proxy_port_trojan_wst": document.getElementById('gs_proxy_port_trojan_wst').value,
                 "proxy_port_trojan_h2t": document.getElementById('gs_proxy_port_trojan_h2t').value,
                 "proxy_port_trojan_hut": document.getElementById('gs_proxy_port_trojan_hut').value,

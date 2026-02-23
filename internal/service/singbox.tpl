@@ -6,7 +6,7 @@ FIXED_PORT_SS={{.PortSS}}
 FIXED_PORT_HY2={{.PortHY2}}
 FIXED_PORT_TUIC={{.PortTUIC}}
 FIXED_PORT_REALITY={{.PortReality}}
-FIXED_REALITY_SNI="{{.RealitySNI}}"
+FIXED_REALITY_SNI="{{.VlessTLSSNI}}"
 FIXED_SS_METHOD="{{.SSMethod}}"
 FIXED_PORT_SOCKS5={{.PortSocks5}}
 FIXED_SOCKS5_USER="{{.Socks5User}}"
@@ -17,7 +17,7 @@ FIXED_PORT_VLESS_H2={{.PortVlessH2}}
 # 可配置 SNI（各协议客户端伪装域名）
 FIXED_HY2_SNI="{{.HY2SNI}}"
 FIXED_TUIC_SNI="{{.TUICSNI}}"
-FIXED_TROJAN_SNI="{{.TrojanSNI}}"
+FIXED_TROJAN_SNI="{{.TrojanTLSSNI}}"
 # 系统优化
 FIXED_ENABLE_BBR="{{.EnableBBR}}"
 # VMess 协议族端口

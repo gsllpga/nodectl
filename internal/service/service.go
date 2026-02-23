@@ -157,10 +157,6 @@ func RenderInstallScript(node database.NodePool) (string, error) {
 	if tuicSNI == "" {
 		tuicSNI = "www.bing.com"
 	}
-	trojanSNI := configMap["proxy_trojan_sni"]
-	if trojanSNI == "" {
-		trojanSNI = "www.bing.com"
-	}
 	enableBBR := configMap["proxy_enable_bbr"]
 	if enableBBR == "" {
 		enableBBR = "true"
@@ -247,7 +243,7 @@ func RenderInstallScript(node database.NodePool) (string, error) {
 		"PortHY2":     configMap["proxy_port_hy2"],
 		"PortTUIC":    configMap["proxy_port_tuic"],
 		"PortReality": configMap["proxy_port_reality"],
-		"RealitySNI":  configMap["proxy_reality_sni"],
+		"RealitySNI":  vlessTLSSNI,
 		"SSMethod":    configMap["proxy_ss_method"],
 		"PortSocks5":  configMap["proxy_port_socks5"],
 		"Socks5User":  configMap["proxy_socks5_user"],
@@ -258,7 +254,7 @@ func RenderInstallScript(node database.NodePool) (string, error) {
 		// 可配置 SNI
 		"HY2SNI":    hy2SNI,
 		"TUICSNI":   tuicSNI,
-		"TrojanSNI": trojanSNI,
+		"TrojanSNI": trojanTLSSNI,
 		// 系统优化
 		"EnableBBR": enableBBR,
 		// VMess 族端口

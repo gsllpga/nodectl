@@ -124,7 +124,6 @@ func initProxySettings() {
 		{Key: "proxy_port_hy2", Value: "20002", Description: "HY2 默认监听端口"},
 		{Key: "proxy_port_tuic", Value: "20003", Description: "TUIC 默认监听端口"},
 		{Key: "proxy_port_reality", Value: "20004", Description: "Reality 默认监听端口"},
-		{Key: "proxy_reality_sni", Value: "learn.microsoft.com", Description: "Reality 默认 SNI 域名"},
 		{Key: "proxy_ss_method", Value: "aes-128-gcm", Description: "SS 默认加密方式"},
 		{Key: "proxy_port_socks5", Value: "20005", Description: "Socks5 默认监听端口"},
 		{Key: "proxy_socks5_user", Value: "admin", Description: "Socks5 默认用户名"},
@@ -135,7 +134,6 @@ func initProxySettings() {
 		// 可配置 SNI（原先硬编码 www.bing.com）
 		{Key: "proxy_hy2_sni", Value: "www.bing.com", Description: "HY2 客户端 SNI 伪装域名"},
 		{Key: "proxy_tuic_sni", Value: "www.bing.com", Description: "TUIC 客户端 SNI 伪装域名"},
-		{Key: "proxy_trojan_sni", Value: "www.bing.com", Description: "Trojan 客户端 SNI 伪装域名"},
 		// 系统优化选项
 		{Key: "proxy_enable_bbr", Value: "true", Description: "是否在安装时启用 BBR 内核加速"},
 		// VMess 协议族端口
@@ -166,5 +164,10 @@ func initProxySettings() {
 		if err := DB.Where(SysConfig{Key: config.Key}).FirstOrCreate(&config).Error; err != nil {
 			logger.Log.Error("初始化代理配置失败", "key", config.Key, "err", err.Error())
 		}
+	}
+
+	// 清理已废弃配置项（改为复用 TLS 传输族默认 SNI）
+	if err := DB.Where("key IN ?", []string{"proxy_reality_sni", "proxy_trojan_sni"}).Delete(&SysConfig{}).Error; err != nil {
+		logger.Log.Error("清理废弃代理配置失败", "err", err.Error())
 	}
 }

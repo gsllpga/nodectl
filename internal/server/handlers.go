@@ -796,12 +796,12 @@ func apiGetSettings(w http.ResponseWriter, r *http.Request) {
 	var configs []database.SysConfig
 	if err := database.DB.Where("key IN ?", []string{
 		"panel_url", "sub_token", "proxy_port_ss", "proxy_port_hy2", "proxy_port_tuic",
-		"proxy_port_reality", "proxy_reality_sni", "proxy_ss_method",
+		"proxy_port_reality", "proxy_ss_method",
 		"proxy_port_socks5", "proxy_socks5_user", "proxy_socks5_pass", "pref_use_emoji_flag", "sub_custom_name", "pref_ip_strategy",
 		"sys_force_http", "cf_email", "cf_api_key", "cf_domain", "cf_auto_renew", "airport_filter_invalid", "pref_speed_test_mode", "pref_speed_test_file_size",
 		"tg_bot_enabled", "tg_bot_token", "tg_bot_whitelist", "tg_bot_register_commands", "clash_proxies_update_interval", "clash_rules_update_interval", "clash_public_rules_update_interval",
 		// 新增协议与内核优化配置
-		"proxy_port_trojan", "proxy_port_vless_h2", "proxy_hy2_sni", "proxy_tuic_sni", "proxy_trojan_sni", "proxy_enable_bbr",
+		"proxy_port_trojan", "proxy_port_vless_h2", "proxy_hy2_sni", "proxy_tuic_sni", "proxy_enable_bbr",
 		// VMess 族
 		"proxy_port_vmess_tcp", "proxy_port_vmess_ws", "proxy_port_vmess_http", "proxy_port_vmess_quic",
 		"proxy_port_vmess_wst", "proxy_port_vmess_h2t", "proxy_port_vmess_hut",
@@ -852,7 +852,7 @@ func apiUpdateSettings(w http.ResponseWriter, r *http.Request) {
 
 	validKeys := map[string]bool{
 		"panel_url": true, "sub_token": true, "proxy_port_ss": true, "proxy_port_hy2": true,
-		"proxy_port_tuic": true, "proxy_port_reality": true, "proxy_reality_sni": true,
+		"proxy_port_tuic": true, "proxy_port_reality": true,
 		"proxy_ss_method": true, "proxy_port_socks5": true, "proxy_socks5_user": true, "proxy_socks5_pass": true, "pref_use_emoji_flag": true,
 		"sub_custom_name": true, "pref_ip_strategy": true,
 		"sys_force_http": true, "cf_email": true, "cf_api_key": true, "cf_domain": true, "cf_auto_renew": true,
@@ -861,7 +861,7 @@ func apiUpdateSettings(w http.ResponseWriter, r *http.Request) {
 		"clash_proxies_update_interval": true, "clash_rules_update_interval": true, "clash_public_rules_update_interval": true,
 		// 新增协议与内核优化配置
 		"proxy_port_trojan": true, "proxy_port_vless_h2": true,
-		"proxy_hy2_sni": true, "proxy_tuic_sni": true, "proxy_trojan_sni": true, "proxy_enable_bbr": true,
+		"proxy_hy2_sni": true, "proxy_tuic_sni": true, "proxy_enable_bbr": true,
 		// VMess 族
 		"proxy_port_vmess_tcp": true, "proxy_port_vmess_ws": true, "proxy_port_vmess_http": true, "proxy_port_vmess_quic": true,
 		"proxy_port_vmess_wst": true, "proxy_port_vmess_h2t": true, "proxy_port_vmess_hut": true,
