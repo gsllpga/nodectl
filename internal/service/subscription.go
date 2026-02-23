@@ -185,13 +185,19 @@ func GenerateV2RaySubBase64(useFlag bool) (string, error) {
 					finalName = fmt.Sprintf("%s %s", flag, strings.ReplaceAll(baseName, flag, ""))
 				}
 				finalName = strings.TrimSpace(finalName)
-				safeName := strings.ReplaceAll(url.QueryEscape(finalName), "+", "%20")
 
 				cleanLink := strings.Split(link, "#")[0]
 
 				// 核心：使用刚才写的替换引擎，重构链接
 				targetLink := ReplaceLinkIP(cleanLink, ipOpt.IP)
 
+				// VMess 命名必须写回 JSON 的 ps 字段，避免部分 V2Ray 客户端对 #fragment 兼容性差
+				if strings.HasPrefix(strings.ToLower(targetLink), "vmess://") {
+					lines = append(lines, RenameNodeLink(targetLink, finalName))
+					continue
+				}
+
+				safeName := strings.ReplaceAll(url.QueryEscape(finalName), "+", "%20")
 				lines = append(lines, fmt.Sprintf("%s#%s", targetLink, safeName))
 			}
 		}
