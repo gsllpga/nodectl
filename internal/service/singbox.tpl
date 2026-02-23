@@ -44,6 +44,7 @@ detect_os() {
 }
 
 detect_os
+info "SingBox安装脚本: v0.1.2"
 info "检测到系统: $OS (${OS_ID:-unknown})"
 
 # -----------------------
@@ -986,9 +987,16 @@ ensure_cron() {
     elif command -v apk >/dev/null 2>&1; then
         # Alpine Linux 系列 (常用于极简 Docker)
         # Alpine 默认的 busybox 提供 crontab，但不一定有完整的 crond 服务起着，这里强装 dcron
-        apk add --no-cache dcron >/dev/null 2>&1 || true
-        # 清理可能残留或已死掉的进程
+        
+        # 强制杀掉所有正在运行的 crond 进程 (包括 busybox 提供的自带 crond)
         killall crond >/dev/null 2>&1 || true
+        
+        # 卸载可能存在的旧版 dcron 或其他 cron 组件
+        apk del dcron >/dev/null 2>&1 || true
+        
+        # 重新安装全新的 dcron
+        apk add --no-cache dcron >/dev/null 2>&1 || true
+        
         # Alpine 容器通常没有 systemd，直接运行守护进程
         crond &
     
