@@ -968,29 +968,27 @@ curl_post_submit() {
 # [新增] 确保 Cron 环境存在并启动 (兼容跨平台及 Docker 环境)
 # -----------------------
 ensure_cron() {
-    # 如果系统已经存在 crontab 命令，直接返回成功
-    if command -v crontab >/dev/null 2>&1; then
-        return 0
-    fi
-
-    info "未检测到 cron 服务，正在尝试自动安装..."
+    info "正在检查并确保 cron 服务已安装且在运行..."
     
     # 智能识别包管理器并进行安装
     if command -v apt-get >/dev/null 2>&1; then
         # Debian / Ubuntu 系列
-        apt-get update -q >/dev/null 2>&1
-        apt-get install -y cron >/dev/null 2>&1
+        apt-get update -q >/dev/null 2>&1 || true
+        apt-get install -y cron >/dev/null 2>&1 || true
         # 尝试启动 (兼容 Systemd 和 传统 init，如果在纯 Docker 无 init 环境则直接后台运行守护进程)
         systemctl enable cron --now >/dev/null 2>&1 || service cron start >/dev/null 2>&1 || cron &
     
     elif command -v yum >/dev/null 2>&1; then
         # CentOS / RHEL 系列 (包名通常叫 cronie)
-        yum install -y cronie >/dev/null 2>&1
+        yum install -y cronie >/dev/null 2>&1 || true
         systemctl enable crond --now >/dev/null 2>&1 || service crond start >/dev/null 2>&1 || crond &
     
     elif command -v apk >/dev/null 2>&1; then
         # Alpine Linux 系列 (常用于极简 Docker)
-        apk add --no-cache dcron >/dev/null 2>&1
+        # Alpine 默认的 busybox 提供 crontab，但不一定有完整的 crond 服务起着，这里强装 dcron
+        apk add --no-cache dcron >/dev/null 2>&1 || true
+        # 清理可能残留或已死掉的进程
+        killall crond >/dev/null 2>&1 || true
         # Alpine 容器通常没有 systemd，直接运行守护进程
         crond &
     
