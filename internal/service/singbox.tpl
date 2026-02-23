@@ -11,6 +11,34 @@ FIXED_SS_METHOD="{{.SSMethod}}"
 FIXED_PORT_SOCKS5={{.PortSocks5}}
 FIXED_SOCKS5_USER="{{.Socks5User}}"
 FIXED_SOCKS5_PASS="{{.Socks5Pass}}"
+# 新增协议端口
+FIXED_PORT_TROJAN={{.PortTrojan}}
+FIXED_PORT_VLESS_H2={{.PortVlessH2}}
+# 可配置 SNI（各协议客户端伪装域名）
+FIXED_HY2_SNI="{{.HY2SNI}}"
+FIXED_TUIC_SNI="{{.TUICSNI}}"
+FIXED_TROJAN_SNI="{{.TrojanSNI}}"
+# 系统优化
+FIXED_ENABLE_BBR="{{.EnableBBR}}"
+# VMess 协议族端口
+FIXED_PORT_VMESS_TCP={{.PortVmessTCP}}
+FIXED_PORT_VMESS_WS={{.PortVmessWS}}
+FIXED_PORT_VMESS_HTTP={{.PortVmessHTTP}}
+FIXED_PORT_VMESS_QUIC={{.PortVmessQUIC}}
+# VMess+TLS 传输族端口
+FIXED_PORT_VMESS_WST={{.PortVmessWST}}
+FIXED_PORT_VMESS_H2T={{.PortVmessH2T}}
+FIXED_PORT_VMESS_HUT={{.PortVmessHUT}}
+# VLESS+TLS 传输族端口
+FIXED_PORT_VLESS_WST={{.PortVlessWST}}
+FIXED_PORT_VLESS_H2T={{.PortVlessH2T}}
+FIXED_PORT_VLESS_HUT={{.PortVlessHUT}}
+# Trojan+TLS 传输族端口
+FIXED_PORT_TROJAN_WST={{.PortTrojanWST}}
+FIXED_PORT_TROJAN_H2T={{.PortTrojanH2T}}
+FIXED_PORT_TROJAN_HUT={{.PortTrojanHUT}}
+# TLS 传输协议共用路径
+FIXED_TLS_TRANSPORT_PATH="{{.TLSTransportPath}}"
 REPORT_URL="{{.ReportURL}}"
 INSTALL_ID="{{.InstallID}}" # 直接由后端渲染注入
 RESET_DAY="{{.ResetDay}}"
@@ -98,13 +126,6 @@ install_deps
 
 # -----------------------
 # 工具函数
-# 生成随机端口
-rand_port() {
-    local port
-    port=$(shuf -i 10000-60000 -n 1 2>/dev/null) || port=$((RANDOM % 50001 + 10000))
-    echo "$port"
-}
-
 # 生成随机密码
 rand_pass() {
     local pass
@@ -118,7 +139,7 @@ rand_uuid() {
     if [ -f /proc/sys/kernel/random/uuid ]; then
         uuid=$(cat /proc/sys/kernel/random/uuid)
     else
-        uuid=$(openssl rand -hex 16 | sed 's/\(..\)\(..\)\(..\)\(..\)\(..\)\(..\)\(..\)\(..\)\(..\)\(..\)\(..\)\(..\)\(..\)\(..\)\(..\)\(..\)/\1\2\3\4-\5\6-\7\8-\9\10-\11\12\13\14\15\16/')
+        uuid=$(openssl rand -hex 16 | awk '{print substr($0,1,8)"-"substr($0,9,4)"-"substr($0,13,4)"-"substr($0,17,4)"-"substr($0,21,12)}')
     fi
     echo "$uuid"
 }
@@ -140,135 +161,87 @@ fi
 info "节点名称后缀已自动设置为: $suffix"
 
 # -----------------------
-# 选择要部署的协议 (修改版：支持 --report 参数)
+# 选择要部署的协议
 select_protocols() {
-    # 初始化变量
-    ENABLE_SS=false
-    ENABLE_HY2=false
-    ENABLE_TUIC=false
-    ENABLE_REALITY=false
-    ENABLE_SOCKS5=false
-    
-    # 判断是否有传入参数（参数大于0个）
-    if [ $# -gt 0 ]; then
-        info "=== 检测到命令行参数，启动自动安装模式 ==="
-        
-        # 使用 while 循环处理参数，方便提取 --report 的值
-        while [[ $# -gt 0 ]]; do
-            arg="$1"
-            # 转小写
-            arg_lower=$(echo "$arg" | tr '[:upper:]' '[:lower:]')
-            
-            case "$arg_lower" in
-                --report)
-                    if [[ -n "${2:-}" ]]; then
-                        REPORT_URL="$2"
-                        info "-> 启用自动上报: $REPORT_URL"
-                        shift # 移除 --report
-                    else
-                        warn "--report 参数后面必须跟 URL 地址"
-                    fi
-                    ;;
-                
-                # 处理 token 参数
-                --token|--id|-t)
-                    if [[ -n "${2:-}" ]]; then
-                        INSTALL_ID="$2"
-                        info "-> 指定安装ID: $INSTALL_ID"
-                        shift 
-                    else
-                        warn "-t/--token 参数后面必须跟 ID 字符串"
-                    fi
-                    ;;
-                --reset-day)
-                    if [[ -n "${2:-}" ]]; then
-                        RESET_DAY="$2"
-                        info "-> 设定流量重置日: 每月 $RESET_DAY 号"
-                        shift 
-                    else
-                        warn "--reset-day 参数后面必须跟日期数字"
-                    fi
-                    ;;
+    # 初始化所有协议开关
+    ENABLE_SS=false; ENABLE_HY2=false; ENABLE_TUIC=false; ENABLE_REALITY=false; ENABLE_SOCKS5=false
+    ENABLE_TROJAN=false; ENABLE_VLESS_H2=false
+    # VMess 族
+    ENABLE_VMESS_TCP=false; ENABLE_VMESS_WS=false; ENABLE_VMESS_HTTP=false; ENABLE_VMESS_QUIC=false
+    # VMess+TLS 传输族
+    ENABLE_VMESS_WST=false; ENABLE_VMESS_H2T=false; ENABLE_VMESS_HUT=false
+    # VLESS+TLS 传输族
+    ENABLE_VLESS_WST=false; ENABLE_VLESS_H2T=false; ENABLE_VLESS_HUT=false
+    # Trojan+TLS 传输族
+    ENABLE_TROJAN_WST=false; ENABLE_TROJAN_H2T=false; ENABLE_TROJAN_HUT=false
 
-                --uuid|-u)
-                    if [[ -n "${2:-}" ]]; then
-                        NODE_UUID="$2"
-                        info "-> 指定节点UUID: $NODE_UUID"
-                        shift 
-                    else
-                        warn "--uuid 参数后面必须跟 UUID 字符串"
-                    fi
-                    ;;
-                ss|shadowsocks) 
-                    ENABLE_SS=true 
-                    info "-> 启用 Shadowsocks"
-                    ;;
-                hy2|hysteria2)  
-                    ENABLE_HY2=true 
-                    info "-> 启用 Hysteria2"
-                    ;;
-                tuic)           
-                    ENABLE_TUIC=true 
-                    info "-> 启用 TUIC"
-                    ;;
-                vless|reality)  
-                    ENABLE_REALITY=true 
-                    info "-> 启用 VLESS Reality"
-                    ;;
-                socks5|socks)
-                    ENABLE_SOCKS5=true
-                    info "-> 启用 SOCKS5"
-                    ;;
-                *) 
-                    warn "忽略未知参数: $arg" 
-                    ;;
-            esac
-            shift # 移动到下一个参数
-        done
-        
-        # 检查是否命中至少一个协议
-        if ! $ENABLE_SS && ! $ENABLE_HY2 && ! $ENABLE_TUIC && ! $ENABLE_REALITY && ! $ENABLE_SOCKS5; then
-            err "提供的参数无效，未选中任何协议！"
-            exit 1
-        fi
+    _any_enabled() {
+        $ENABLE_SS || $ENABLE_HY2 || $ENABLE_TUIC || $ENABLE_REALITY || $ENABLE_SOCKS5 || \
+        $ENABLE_TROJAN || $ENABLE_VLESS_H2 || \
+        $ENABLE_VMESS_TCP || $ENABLE_VMESS_WS || $ENABLE_VMESS_HTTP || $ENABLE_VMESS_QUIC || \
+        $ENABLE_VMESS_WST || $ENABLE_VMESS_H2T || $ENABLE_VMESS_HUT || \
+        $ENABLE_VLESS_WST || $ENABLE_VLESS_H2T || $ENABLE_VLESS_HUT || \
+        $ENABLE_TROJAN_WST || $ENABLE_TROJAN_H2T || $ENABLE_TROJAN_HUT
+    }
 
-    else
-        # --- (交互逻辑保持不变，为了节省篇幅省略，请保留原脚本这部分代码) ---
-        info "=== 选择要部署的协议 ==="
-        echo "1) Shadowsocks (SS)"
-        echo "2) Hysteria2 (HY2)"
-        echo "3) TUIC"
-        echo "4) VLESS Reality"
-        echo "5) SOCKS5"
-        echo ""
-        echo "请输入要部署的协议编号(多个用空格分隔,如: 1 2 4):"
-        read -r protocol_input
-        
-        for num in $protocol_input; do
-            case "$num" in
-                1) ENABLE_SS=true ;;
-                2) ENABLE_HY2=true ;;
-                3) ENABLE_TUIC=true ;;
-                4) ENABLE_REALITY=true ;;
-                5) ENABLE_SOCKS5=true ;;
-                *) warn "无效选项: $num" ;;
-            esac
-        done
-        
-        if ! $ENABLE_SS && ! $ENABLE_HY2 && ! $ENABLE_TUIC && ! $ENABLE_REALITY && ! $ENABLE_SOCKS5; then
-            err "未选择任何协议,退出安装"
-            exit 1
-        fi
-        
-        info "已选择协议:"
-        $ENABLE_SS && echo "  - Shadowsocks"
-        $ENABLE_HY2 && echo "  - Hysteria2"
-        $ENABLE_TUIC && echo "  - TUIC"
-        $ENABLE_REALITY && echo "  - VLESS Reality"
-        $ENABLE_SOCKS5 && echo "  - SOCKS5"
+    while [[ $# -gt 0 ]]; do
+        arg="$1"
+        arg_lower=$(echo "$arg" | tr '[:upper:]' '[:lower:]')
+        case "$arg_lower" in
+            --reset-day)
+                if [[ -n "${2:-}" ]]; then RESET_DAY="$2"; info "-> 设定流量重置日: 每月 $RESET_DAY 号"; shift
+                else warn "--reset-day 参数后面必须跟日期数字"; fi ;;
+            ss|shadowsocks)         ENABLE_SS=true;         info "-> 启用 Shadowsocks" ;;
+            hy2|hysteria2)          ENABLE_HY2=true;        info "-> 启用 Hysteria2" ;;
+            tuic)                   ENABLE_TUIC=true;       info "-> 启用 TUIC" ;;
+            vless|reality)          ENABLE_REALITY=true;    info "-> 启用 VLESS Reality" ;;
+            socks5|socks)           ENABLE_SOCKS5=true;     info "-> 启用 SOCKS5" ;;
+            trojan)                 ENABLE_TROJAN=true;     info "-> 启用 Trojan" ;;
+            vless-h2|vless_h2|vlessh2) ENABLE_VLESS_H2=true; info "-> 启用 VLESS-H2-Reality" ;;
+            vmess-tcp|vmess_tcp)    ENABLE_VMESS_TCP=true;  info "-> 启用 VMess-TCP" ;;
+            vmess-ws|vmess_ws)      ENABLE_VMESS_WS=true;   info "-> 启用 VMess-WS" ;;
+            vmess-http|vmess_http)  ENABLE_VMESS_HTTP=true; info "-> 启用 VMess-HTTP" ;;
+            vmess-quic|vmess_quic)  ENABLE_VMESS_QUIC=true; info "-> 启用 VMess-QUIC" ;;
+            vmess-wst|vmess_wst|vmess-ws-tls)   ENABLE_VMESS_WST=true;  info "-> 启用 VMess-WS-TLS" ;;
+            vmess-h2t|vmess_h2t|vmess-h2-tls)   ENABLE_VMESS_H2T=true;  info "-> 启用 VMess-H2-TLS" ;;
+            vmess-hut|vmess_hut|vmess-httpupgrade-tls) ENABLE_VMESS_HUT=true; info "-> 启用 VMess-HTTPUpgrade-TLS" ;;
+            vless-wst|vless_wst|vless-ws-tls)   ENABLE_VLESS_WST=true;  info "-> 启用 VLESS-WS-TLS" ;;
+            vless-h2t|vless_h2t|vless-h2-tls)   ENABLE_VLESS_H2T=true;  info "-> 启用 VLESS-H2-TLS" ;;
+            vless-hut|vless_hut|vless-httpupgrade-tls) ENABLE_VLESS_HUT=true; info "-> 启用 VLESS-HTTPUpgrade-TLS" ;;
+            trojan-wst|trojan_wst|trojan-ws-tls) ENABLE_TROJAN_WST=true; info "-> 启用 Trojan-WS-TLS" ;;
+            trojan-h2t|trojan_h2t|trojan-h2-tls) ENABLE_TROJAN_H2T=true; info "-> 启用 Trojan-H2-TLS" ;;
+            trojan-hut|trojan_hut|trojan-httpupgrade-tls) ENABLE_TROJAN_HUT=true; info "-> 启用 Trojan-HTTPUpgrade-TLS" ;;
+            *) warn "忽略未知参数: $arg" ;;
+        esac
+        shift
+    done
+
+    if ! _any_enabled; then
+        err "未选择任何协议,退出安装"; exit 1
     fi
-    
-    # --- 持久化保持不变 ---
+
+    info "已选择协议:"
+    $ENABLE_SS         && echo "  - Shadowsocks"
+    $ENABLE_HY2        && echo "  - Hysteria2"
+    $ENABLE_TUIC       && echo "  - TUIC"
+    $ENABLE_REALITY    && echo "  - VLESS Reality"
+    $ENABLE_SOCKS5     && echo "  - SOCKS5"
+    $ENABLE_TROJAN     && echo "  - Trojan"
+    $ENABLE_VLESS_H2   && echo "  - VLESS-H2-Reality"
+    $ENABLE_VMESS_TCP  && echo "  - VMess-TCP"
+    $ENABLE_VMESS_WS   && echo "  - VMess-WS"
+    $ENABLE_VMESS_HTTP && echo "  - VMess-HTTP"
+    $ENABLE_VMESS_QUIC && echo "  - VMess-QUIC"
+    $ENABLE_VMESS_WST  && echo "  - VMess-WS-TLS"
+    $ENABLE_VMESS_H2T  && echo "  - VMess-H2-TLS"
+    $ENABLE_VMESS_HUT  && echo "  - VMess-HTTPUpgrade-TLS"
+    $ENABLE_VLESS_WST  && echo "  - VLESS-WS-TLS"
+    $ENABLE_VLESS_H2T  && echo "  - VLESS-H2-TLS"
+    $ENABLE_VLESS_HUT  && echo "  - VLESS-HTTPUpgrade-TLS"
+    $ENABLE_TROJAN_WST && echo "  - Trojan-WS-TLS"
+    $ENABLE_TROJAN_H2T && echo "  - Trojan-H2-TLS"
+    $ENABLE_TROJAN_HUT && echo "  - Trojan-HTTPUpgrade-TLS"
+
     mkdir -p /etc/sing-box
     cat > /etc/sing-box/.protocols <<EOF
 ENABLE_SS=$ENABLE_SS
@@ -276,8 +249,28 @@ ENABLE_HY2=$ENABLE_HY2
 ENABLE_TUIC=$ENABLE_TUIC
 ENABLE_REALITY=$ENABLE_REALITY
 ENABLE_SOCKS5=$ENABLE_SOCKS5
+ENABLE_TROJAN=$ENABLE_TROJAN
+ENABLE_VLESS_H2=$ENABLE_VLESS_H2
+ENABLE_VMESS_TCP=$ENABLE_VMESS_TCP
+ENABLE_VMESS_WS=$ENABLE_VMESS_WS
+ENABLE_VMESS_HTTP=$ENABLE_VMESS_HTTP
+ENABLE_VMESS_QUIC=$ENABLE_VMESS_QUIC
+ENABLE_VMESS_WST=$ENABLE_VMESS_WST
+ENABLE_VMESS_H2T=$ENABLE_VMESS_H2T
+ENABLE_VMESS_HUT=$ENABLE_VMESS_HUT
+ENABLE_VLESS_WST=$ENABLE_VLESS_WST
+ENABLE_VLESS_H2T=$ENABLE_VLESS_H2T
+ENABLE_VLESS_HUT=$ENABLE_VLESS_HUT
+ENABLE_TROJAN_WST=$ENABLE_TROJAN_WST
+ENABLE_TROJAN_H2T=$ENABLE_TROJAN_H2T
+ENABLE_TROJAN_HUT=$ENABLE_TROJAN_HUT
 EOF
-    export ENABLE_SS ENABLE_HY2 ENABLE_TUIC ENABLE_REALITY
+    export ENABLE_SS ENABLE_HY2 ENABLE_TUIC ENABLE_REALITY ENABLE_SOCKS5 \
+           ENABLE_TROJAN ENABLE_VLESS_H2 \
+           ENABLE_VMESS_TCP ENABLE_VMESS_WS ENABLE_VMESS_HTTP ENABLE_VMESS_QUIC \
+           ENABLE_VMESS_WST ENABLE_VMESS_H2T ENABLE_VMESS_HUT \
+           ENABLE_VLESS_WST ENABLE_VLESS_H2T ENABLE_VLESS_HUT \
+           ENABLE_TROJAN_WST ENABLE_TROJAN_H2T ENABLE_TROJAN_HUT
 }
 
 # 创建配置目录
@@ -330,22 +323,6 @@ fi
 mv /etc/sing-box/.config_cache.tmp /etc/sing-box/.config_cache || true
 
 # -----------------------
-# 生成随机端口
-rand_port() {
-    shuf -i 10000-60000 -n 1 2>/dev/null || echo $((RANDOM % 50001 + 10000))
-}
-
-# 生成随机密码
-rand_pass() {
-    openssl rand -base64 16 | tr -d '\n\r' || head -c 16 /dev/urandom | base64 | tr -d '\n\r'
-}
-
-# 生成UUID
-rand_uuid() {
-    cat /proc/sys/kernel/random/uuid
-}
-
-# -----------------------
 # 配置端口和密码
 get_config() {
     info "开始配置端口和密码..."
@@ -387,6 +364,50 @@ get_config() {
         USER_SOCKS5="$FIXED_SOCKS5_USER"
         PASS_SOCKS5="$FIXED_SOCKS5_PASS"
     fi
+
+    # --- Trojan ---
+    if $ENABLE_TROJAN; then
+        PORT_TROJAN="$FIXED_PORT_TROJAN"
+        PSK_TROJAN=$(rand_pass)
+    fi
+
+    # --- VLESS-H2-Reality ---
+    if $ENABLE_VLESS_H2; then
+        PORT_VLESS_H2="$FIXED_PORT_VLESS_H2"
+        UUID_VLESS_H2=$(rand_uuid)
+    fi
+
+    # --- VMess 族 共用 UUID ---
+    if $ENABLE_VMESS_TCP || $ENABLE_VMESS_WS || $ENABLE_VMESS_HTTP || $ENABLE_VMESS_QUIC || \
+       $ENABLE_VMESS_WST || $ENABLE_VMESS_H2T || $ENABLE_VMESS_HUT; then
+        UUID_VMESS=$(rand_uuid)
+        PATH_TRANSPORT="${FIXED_TLS_TRANSPORT_PATH:-/ray}"
+    fi
+    $ENABLE_VMESS_TCP  && PORT_VMESS_TCP="$FIXED_PORT_VMESS_TCP"
+    $ENABLE_VMESS_WS   && PORT_VMESS_WS="$FIXED_PORT_VMESS_WS"
+    $ENABLE_VMESS_HTTP && PORT_VMESS_HTTP="$FIXED_PORT_VMESS_HTTP"
+    $ENABLE_VMESS_QUIC && PORT_VMESS_QUIC="$FIXED_PORT_VMESS_QUIC"
+    $ENABLE_VMESS_WST  && PORT_VMESS_WST="$FIXED_PORT_VMESS_WST"
+    $ENABLE_VMESS_H2T  && PORT_VMESS_H2T="$FIXED_PORT_VMESS_H2T"
+    $ENABLE_VMESS_HUT  && PORT_VMESS_HUT="$FIXED_PORT_VMESS_HUT"
+
+    # --- VLESS-TLS 传输族 共用 UUID ---
+    if $ENABLE_VLESS_WST || $ENABLE_VLESS_H2T || $ENABLE_VLESS_HUT; then
+        UUID_VLESS_TLS=$(rand_uuid)
+        PATH_TRANSPORT="${FIXED_TLS_TRANSPORT_PATH:-/ray}"
+    fi
+    $ENABLE_VLESS_WST  && PORT_VLESS_WST="$FIXED_PORT_VLESS_WST"
+    $ENABLE_VLESS_H2T  && PORT_VLESS_H2T="$FIXED_PORT_VLESS_H2T"
+    $ENABLE_VLESS_HUT  && PORT_VLESS_HUT="$FIXED_PORT_VLESS_HUT"
+
+    # --- Trojan-TLS 传输族 共用 PSK ---
+    if $ENABLE_TROJAN_WST || $ENABLE_TROJAN_H2T || $ENABLE_TROJAN_HUT; then
+        PSK_TROJAN_TLS=$(rand_pass)
+        PATH_TRANSPORT="${FIXED_TLS_TRANSPORT_PATH:-/ray}"
+    fi
+    $ENABLE_TROJAN_WST && PORT_TROJAN_WST="$FIXED_PORT_TROJAN_WST"
+    $ENABLE_TROJAN_H2T && PORT_TROJAN_H2T="$FIXED_PORT_TROJAN_H2T"
+    $ENABLE_TROJAN_HUT && PORT_TROJAN_HUT="$FIXED_PORT_TROJAN_HUT"
 }
 
 get_config
@@ -441,8 +462,8 @@ install_singbox
 # -----------------------
 # 生成 Reality 密钥对（必须在 sing-box 安装之后）
 generate_reality_keys() {
-    if ! $ENABLE_REALITY; then
-        info "跳过 Reality 密钥生成（未选择 Reality 协议）"
+    if ! $ENABLE_REALITY && ! $ENABLE_VLESS_H2; then
+        info "跳过 Reality 密钥生成（未选择 Reality 或 VLESS-H2-Reality 协议）"
         return 0
     fi
     
@@ -482,12 +503,15 @@ generate_reality_keys
 # -----------------------
 # 生成 HY2/TUIC 自签证书(仅在需要时)
 generate_cert() {
-    if ! $ENABLE_HY2 && ! $ENABLE_TUIC; then
-        info "跳过证书生成(未选择 HY2 或 TUIC)"
+    if ! $ENABLE_HY2 && ! $ENABLE_TUIC && ! $ENABLE_TROJAN && \
+       ! $ENABLE_VMESS_QUIC && ! $ENABLE_VMESS_WST && ! $ENABLE_VMESS_H2T && ! $ENABLE_VMESS_HUT && \
+       ! $ENABLE_VLESS_WST && ! $ENABLE_VLESS_H2T && ! $ENABLE_VLESS_HUT && \
+       ! $ENABLE_TROJAN_WST && ! $ENABLE_TROJAN_H2T && ! $ENABLE_TROJAN_HUT; then
+        info "跳过证书生成(未选择需要 TLS 证书的协议)"
         return 0
     fi
     
-    info "生成 HY2/TUIC 自签证书..."
+    info "生成内置应用自签证书(HY2/TUIC/Trojan)..."
     mkdir -p /etc/sing-box/certs
     
     if [ ! -f /etc/sing-box/certs/fullchain.pem ] || [ ! -f /etc/sing-box/certs/privkey.pem ]; then
@@ -517,7 +541,7 @@ create_config() {
     mkdir -p "$(dirname "$CONFIG_PATH")"
 
     # 构建 inbounds 内容（使用临时文件避免字符串处理问题）
-    local TEMP_INBOUNDS="/tmp/singbox_inbounds_$.json"
+    local TEMP_INBOUNDS="/tmp/singbox_inbounds_$$.json"
     > "$TEMP_INBOUNDS"
     
     local need_comma=false
@@ -629,6 +653,7 @@ INBOUND_REALITY
         sed -i "s|REALITY_PK_PLACEHOLDER|$REALITY_PK|g" "$TEMP_INBOUNDS"
         sed -i "s|REALITY_SID_PLACEHOLDER|$REALITY_SID|g" "$TEMP_INBOUNDS"
         sed -i "s|REALITY_SNI_PLACEHOLDER|$REALITY_SNI|g" "$TEMP_INBOUNDS"
+        need_comma=true
     fi
 
     if $ENABLE_SOCKS5; then
@@ -654,7 +679,293 @@ INBOUND_SOCKS5
         need_comma=true
     fi
 
-    # 生成最终配置
+    if $ENABLE_TROJAN; then
+        $need_comma && echo "," >> "$TEMP_INBOUNDS"
+        cat >> "$TEMP_INBOUNDS" <<'INBOUND_TROJAN'
+    {
+      "type": "trojan",
+      "tag": "trojan-in",
+      "listen": "::",
+      "listen_port": PORT_TROJAN_PLACEHOLDER,
+      "users": [
+        {
+          "password": "PSK_TROJAN_PLACEHOLDER"
+        }
+      ],
+      "tls": {
+        "enabled": true,
+        "certificate_path": "/etc/sing-box/certs/fullchain.pem",
+        "key_path": "/etc/sing-box/certs/privkey.pem"
+      }
+    }
+INBOUND_TROJAN
+        sed -i "s|PORT_TROJAN_PLACEHOLDER|$PORT_TROJAN|g" "$TEMP_INBOUNDS"
+        sed -i "s|PSK_TROJAN_PLACEHOLDER|$PSK_TROJAN|g" "$TEMP_INBOUNDS"
+        need_comma=true
+    fi
+
+    if $ENABLE_VLESS_H2; then
+        $need_comma && echo "," >> "$TEMP_INBOUNDS"
+        cat >> "$TEMP_INBOUNDS" <<'INBOUND_VLESS_H2'
+    {
+      "type": "vless",
+      "tag": "vless-h2-in",
+      "listen": "::",
+      "listen_port": PORT_VLESS_H2_PLACEHOLDER,
+      "users": [
+        {
+          "uuid": "UUID_VLESS_H2_PLACEHOLDER"
+        }
+      ],
+      "tls": {
+        "enabled": true,
+        "server_name": "VLESS_H2_SNI_PLACEHOLDER",
+        "reality": {
+          "enabled": true,
+          "handshake": {
+            "server": "VLESS_H2_SNI_PLACEHOLDER",
+            "server_port": 443
+          },
+          "private_key": "VLESS_H2_PK_PLACEHOLDER",
+          "short_id": ["VLESS_H2_SID_PLACEHOLDER"]
+        }
+      },
+      "transport": {
+        "type": "http"
+      }
+    }
+INBOUND_VLESS_H2
+        sed -i "s|PORT_VLESS_H2_PLACEHOLDER|$PORT_VLESS_H2|g" "$TEMP_INBOUNDS"
+        sed -i "s|UUID_VLESS_H2_PLACEHOLDER|$UUID_VLESS_H2|g" "$TEMP_INBOUNDS"
+        sed -i "s|VLESS_H2_PK_PLACEHOLDER|$REALITY_PK|g" "$TEMP_INBOUNDS"
+        sed -i "s|VLESS_H2_SID_PLACEHOLDER|$REALITY_SID|g" "$TEMP_INBOUNDS"
+        sed -i "s|VLESS_H2_SNI_PLACEHOLDER|$REALITY_SNI|g" "$TEMP_INBOUNDS"
+        need_comma=true
+    fi
+
+    # --- VMess-TCP ---
+    if $ENABLE_VMESS_TCP; then
+        $need_comma && echo "," >> "$TEMP_INBOUNDS"
+        cat >> "$TEMP_INBOUNDS" <<'INBOUND_VMESS_TCP'
+    {
+      "type": "vmess", "tag": "vmess-tcp-in",
+      "listen": "::", "listen_port": PORT_VMESS_TCP_PH,
+      "users": [{"uuid": "UUID_VMESS_PH", "alterId": 0}]
+    }
+INBOUND_VMESS_TCP
+        sed -i "s|PORT_VMESS_TCP_PH|$PORT_VMESS_TCP|g; s|UUID_VMESS_PH|$UUID_VMESS|g" "$TEMP_INBOUNDS"
+        need_comma=true
+    fi
+
+    # --- VMess-WS ---
+    if $ENABLE_VMESS_WS; then
+        $need_comma && echo "," >> "$TEMP_INBOUNDS"
+        cat >> "$TEMP_INBOUNDS" <<'INBOUND_VMESS_WS'
+    {
+      "type": "vmess", "tag": "vmess-ws-in",
+      "listen": "::", "listen_port": PORT_VMESS_WS_PH,
+      "users": [{"uuid": "UUID_VMESS_PH2", "alterId": 0}],
+      "transport": {"type": "ws", "path": "PATH_TP_PH", "early_data_header_name": "Sec-WebSocket-Protocol"}
+    }
+INBOUND_VMESS_WS
+        sed -i "s|PORT_VMESS_WS_PH|$PORT_VMESS_WS|g; s|UUID_VMESS_PH2|$UUID_VMESS|g; s|PATH_TP_PH|$PATH_TRANSPORT|g" "$TEMP_INBOUNDS"
+        need_comma=true
+    fi
+
+    # --- VMess-HTTP ---
+    if $ENABLE_VMESS_HTTP; then
+        $need_comma && echo "," >> "$TEMP_INBOUNDS"
+        cat >> "$TEMP_INBOUNDS" <<'INBOUND_VMESS_HTTP'
+    {
+      "type": "vmess", "tag": "vmess-http-in",
+      "listen": "::", "listen_port": PORT_VMESS_HTTP_PH,
+      "users": [{"uuid": "UUID_VMESS_PH3", "alterId": 0}],
+      "transport": {"type": "http", "path": "PATH_TP_PH2"}
+    }
+INBOUND_VMESS_HTTP
+        sed -i "s|PORT_VMESS_HTTP_PH|$PORT_VMESS_HTTP|g; s|UUID_VMESS_PH3|$UUID_VMESS|g; s|PATH_TP_PH2|$PATH_TRANSPORT|g" "$TEMP_INBOUNDS"
+        need_comma=true
+    fi
+
+    # --- VMess-QUIC (需要TLS) ---
+    if $ENABLE_VMESS_QUIC; then
+        $need_comma && echo "," >> "$TEMP_INBOUNDS"
+        cat >> "$TEMP_INBOUNDS" <<'INBOUND_VMESS_QUIC'
+    {
+      "type": "vmess", "tag": "vmess-quic-in",
+      "listen": "::", "listen_port": PORT_VMESS_QUIC_PH,
+      "users": [{"uuid": "UUID_VMESS_PH4", "alterId": 0}],
+      "tls": {"enabled": true, "alpn": ["h3"],
+        "certificate_path": "/etc/sing-box/certs/fullchain.pem",
+        "key_path": "/etc/sing-box/certs/privkey.pem"},
+      "transport": {"type": "quic"}
+    }
+INBOUND_VMESS_QUIC
+        sed -i "s|PORT_VMESS_QUIC_PH|$PORT_VMESS_QUIC|g; s|UUID_VMESS_PH4|$UUID_VMESS|g" "$TEMP_INBOUNDS"
+        need_comma=true
+    fi
+
+    # --- VMess-WS-TLS ---
+    if $ENABLE_VMESS_WST; then
+        $need_comma && echo "," >> "$TEMP_INBOUNDS"
+        cat >> "$TEMP_INBOUNDS" <<'INBOUND_VMESS_WST'
+    {
+      "type": "vmess", "tag": "vmess-wst-in",
+      "listen": "::", "listen_port": PORT_VMESS_WST_PH,
+      "users": [{"uuid": "UUID_VMESS_PH5", "alterId": 0}],
+      "tls": {"enabled": true,
+        "certificate_path": "/etc/sing-box/certs/fullchain.pem",
+        "key_path": "/etc/sing-box/certs/privkey.pem"},
+      "transport": {"type": "ws", "path": "PATH_TP_PH3", "early_data_header_name": "Sec-WebSocket-Protocol"}
+    }
+INBOUND_VMESS_WST
+        sed -i "s|PORT_VMESS_WST_PH|$PORT_VMESS_WST|g; s|UUID_VMESS_PH5|$UUID_VMESS|g; s|PATH_TP_PH3|$PATH_TRANSPORT|g" "$TEMP_INBOUNDS"
+        need_comma=true
+    fi
+
+    # --- VMess-H2-TLS ---
+    if $ENABLE_VMESS_H2T; then
+        $need_comma && echo "," >> "$TEMP_INBOUNDS"
+        cat >> "$TEMP_INBOUNDS" <<'INBOUND_VMESS_H2T'
+    {
+      "type": "vmess", "tag": "vmess-h2t-in",
+      "listen": "::", "listen_port": PORT_VMESS_H2T_PH,
+      "users": [{"uuid": "UUID_VMESS_PH6", "alterId": 0}],
+      "tls": {"enabled": true,
+        "certificate_path": "/etc/sing-box/certs/fullchain.pem",
+        "key_path": "/etc/sing-box/certs/privkey.pem"},
+      "transport": {"type": "http", "path": "PATH_TP_PH4"}
+    }
+INBOUND_VMESS_H2T
+        sed -i "s|PORT_VMESS_H2T_PH|$PORT_VMESS_H2T|g; s|UUID_VMESS_PH6|$UUID_VMESS|g; s|PATH_TP_PH4|$PATH_TRANSPORT|g" "$TEMP_INBOUNDS"
+        need_comma=true
+    fi
+
+    # --- VMess-HTTPUpgrade-TLS ---
+    if $ENABLE_VMESS_HUT; then
+        $need_comma && echo "," >> "$TEMP_INBOUNDS"
+        cat >> "$TEMP_INBOUNDS" <<'INBOUND_VMESS_HUT'
+    {
+      "type": "vmess", "tag": "vmess-hut-in",
+      "listen": "::", "listen_port": PORT_VMESS_HUT_PH,
+      "users": [{"uuid": "UUID_VMESS_PH7", "alterId": 0}],
+      "tls": {"enabled": true,
+        "certificate_path": "/etc/sing-box/certs/fullchain.pem",
+        "key_path": "/etc/sing-box/certs/privkey.pem"},
+      "transport": {"type": "httpupgrade", "path": "PATH_TP_PH5"}
+    }
+INBOUND_VMESS_HUT
+        sed -i "s|PORT_VMESS_HUT_PH|$PORT_VMESS_HUT|g; s|UUID_VMESS_PH7|$UUID_VMESS|g; s|PATH_TP_PH5|$PATH_TRANSPORT|g" "$TEMP_INBOUNDS"
+        need_comma=true
+    fi
+
+    # --- VLESS-WS-TLS ---
+    if $ENABLE_VLESS_WST; then
+        $need_comma && echo "," >> "$TEMP_INBOUNDS"
+        cat >> "$TEMP_INBOUNDS" <<'INBOUND_VLESS_WST'
+    {
+      "type": "vless", "tag": "vless-wst-in",
+      "listen": "::", "listen_port": PORT_VLESS_WST_PH,
+      "users": [{"uuid": "UUID_VLESS_TLS_PH"}],
+      "tls": {"enabled": true,
+        "certificate_path": "/etc/sing-box/certs/fullchain.pem",
+        "key_path": "/etc/sing-box/certs/privkey.pem"},
+      "transport": {"type": "ws", "path": "PATH_TP_PH6", "early_data_header_name": "Sec-WebSocket-Protocol"}
+    }
+INBOUND_VLESS_WST
+        sed -i "s|PORT_VLESS_WST_PH|$PORT_VLESS_WST|g; s|UUID_VLESS_TLS_PH|$UUID_VLESS_TLS|g; s|PATH_TP_PH6|$PATH_TRANSPORT|g" "$TEMP_INBOUNDS"
+        need_comma=true
+    fi
+
+    # --- VLESS-H2-TLS ---
+    if $ENABLE_VLESS_H2T; then
+        $need_comma && echo "," >> "$TEMP_INBOUNDS"
+        cat >> "$TEMP_INBOUNDS" <<'INBOUND_VLESS_H2T'
+    {
+      "type": "vless", "tag": "vless-h2t-in",
+      "listen": "::", "listen_port": PORT_VLESS_H2T_PH,
+      "users": [{"uuid": "UUID_VLESS_TLS_PH2"}],
+      "tls": {"enabled": true,
+        "certificate_path": "/etc/sing-box/certs/fullchain.pem",
+        "key_path": "/etc/sing-box/certs/privkey.pem"},
+      "transport": {"type": "http", "path": "PATH_TP_PH7"}
+    }
+INBOUND_VLESS_H2T
+        sed -i "s|PORT_VLESS_H2T_PH|$PORT_VLESS_H2T|g; s|UUID_VLESS_TLS_PH2|$UUID_VLESS_TLS|g; s|PATH_TP_PH7|$PATH_TRANSPORT|g" "$TEMP_INBOUNDS"
+        need_comma=true
+    fi
+
+    # --- VLESS-HTTPUpgrade-TLS ---
+    if $ENABLE_VLESS_HUT; then
+        $need_comma && echo "," >> "$TEMP_INBOUNDS"
+        cat >> "$TEMP_INBOUNDS" <<'INBOUND_VLESS_HUT'
+    {
+      "type": "vless", "tag": "vless-hut-in",
+      "listen": "::", "listen_port": PORT_VLESS_HUT_PH,
+      "users": [{"uuid": "UUID_VLESS_TLS_PH3"}],
+      "tls": {"enabled": true,
+        "certificate_path": "/etc/sing-box/certs/fullchain.pem",
+        "key_path": "/etc/sing-box/certs/privkey.pem"},
+      "transport": {"type": "httpupgrade", "path": "PATH_TP_PH8"}
+    }
+INBOUND_VLESS_HUT
+        sed -i "s|PORT_VLESS_HUT_PH|$PORT_VLESS_HUT|g; s|UUID_VLESS_TLS_PH3|$UUID_VLESS_TLS|g; s|PATH_TP_PH8|$PATH_TRANSPORT|g" "$TEMP_INBOUNDS"
+        need_comma=true
+    fi
+
+    # --- Trojan-WS-TLS ---
+    if $ENABLE_TROJAN_WST; then
+        $need_comma && echo "," >> "$TEMP_INBOUNDS"
+        cat >> "$TEMP_INBOUNDS" <<'INBOUND_TROJAN_WST'
+    {
+      "type": "trojan", "tag": "trojan-wst-in",
+      "listen": "::", "listen_port": PORT_TROJAN_WST_PH,
+      "users": [{"password": "PSK_TROJAN_TLS_PH"}],
+      "tls": {"enabled": true,
+        "certificate_path": "/etc/sing-box/certs/fullchain.pem",
+        "key_path": "/etc/sing-box/certs/privkey.pem"},
+      "transport": {"type": "ws", "path": "PATH_TP_PH9", "early_data_header_name": "Sec-WebSocket-Protocol"}
+    }
+INBOUND_TROJAN_WST
+        sed -i "s|PORT_TROJAN_WST_PH|$PORT_TROJAN_WST|g; s|PSK_TROJAN_TLS_PH|$PSK_TROJAN_TLS|g; s|PATH_TP_PH9|$PATH_TRANSPORT|g" "$TEMP_INBOUNDS"
+        need_comma=true
+    fi
+
+    # --- Trojan-H2-TLS ---
+    if $ENABLE_TROJAN_H2T; then
+        $need_comma && echo "," >> "$TEMP_INBOUNDS"
+        cat >> "$TEMP_INBOUNDS" <<'INBOUND_TROJAN_H2T'
+    {
+      "type": "trojan", "tag": "trojan-h2t-in",
+      "listen": "::", "listen_port": PORT_TROJAN_H2T_PH,
+      "users": [{"password": "PSK_TROJAN_TLS_PH2"}],
+      "tls": {"enabled": true,
+        "certificate_path": "/etc/sing-box/certs/fullchain.pem",
+        "key_path": "/etc/sing-box/certs/privkey.pem"},
+      "transport": {"type": "http", "path": "PATH_TP_PH10"}
+    }
+INBOUND_TROJAN_H2T
+        sed -i "s|PORT_TROJAN_H2T_PH|$PORT_TROJAN_H2T|g; s|PSK_TROJAN_TLS_PH2|$PSK_TROJAN_TLS|g; s|PATH_TP_PH10|$PATH_TRANSPORT|g" "$TEMP_INBOUNDS"
+        need_comma=true
+    fi
+
+    # --- Trojan-HTTPUpgrade-TLS ---
+    if $ENABLE_TROJAN_HUT; then
+        $need_comma && echo "," >> "$TEMP_INBOUNDS"
+        cat >> "$TEMP_INBOUNDS" <<'INBOUND_TROJAN_HUT'
+    {
+      "type": "trojan", "tag": "trojan-hut-in",
+      "listen": "::", "listen_port": PORT_TROJAN_HUT_PH,
+      "users": [{"password": "PSK_TROJAN_TLS_PH3"}],
+      "tls": {"enabled": true,
+        "certificate_path": "/etc/sing-box/certs/fullchain.pem",
+        "key_path": "/etc/sing-box/certs/privkey.pem"},
+      "transport": {"type": "httpupgrade", "path": "PATH_TP_PH11"}
+    }
+INBOUND_TROJAN_HUT
+        sed -i "s|PORT_TROJAN_HUT_PH|$PORT_TROJAN_HUT|g; s|PSK_TROJAN_TLS_PH3|$PSK_TROJAN_TLS|g; s|PATH_TP_PH11|$PATH_TRANSPORT|g" "$TEMP_INBOUNDS"
+        need_comma=true
+    fi
     cat > "$CONFIG_PATH" <<'CONFIG_HEAD'
 {
   "log": {
@@ -689,6 +1000,22 @@ ENABLE_SS=$ENABLE_SS
 ENABLE_HY2=$ENABLE_HY2
 ENABLE_TUIC=$ENABLE_TUIC
 ENABLE_REALITY=$ENABLE_REALITY
+ENABLE_SOCKS5=$ENABLE_SOCKS5
+ENABLE_TROJAN=$ENABLE_TROJAN
+ENABLE_VLESS_H2=$ENABLE_VLESS_H2
+ENABLE_VMESS_TCP=$ENABLE_VMESS_TCP
+ENABLE_VMESS_WS=$ENABLE_VMESS_WS
+ENABLE_VMESS_HTTP=$ENABLE_VMESS_HTTP
+ENABLE_VMESS_QUIC=$ENABLE_VMESS_QUIC
+ENABLE_VMESS_WST=$ENABLE_VMESS_WST
+ENABLE_VMESS_H2T=$ENABLE_VMESS_H2T
+ENABLE_VMESS_HUT=$ENABLE_VMESS_HUT
+ENABLE_VLESS_WST=$ENABLE_VLESS_WST
+ENABLE_VLESS_H2T=$ENABLE_VLESS_H2T
+ENABLE_VLESS_HUT=$ENABLE_VLESS_HUT
+ENABLE_TROJAN_WST=$ENABLE_TROJAN_WST
+ENABLE_TROJAN_H2T=$ENABLE_TROJAN_H2T
+ENABLE_TROJAN_HUT=$ENABLE_TROJAN_HUT
 CACHEEOF
 
     $ENABLE_SS && cat >> /etc/sing-box/.config_cache <<CACHEEOF
@@ -700,12 +1027,14 @@ CACHEEOF
     $ENABLE_HY2 && cat >> /etc/sing-box/.config_cache <<CACHEEOF
 HY2_PORT=$PORT_HY2
 HY2_PSK=$PSK_HY2
+HY2_SNI=$FIXED_HY2_SNI
 CACHEEOF
 
     $ENABLE_TUIC && cat >> /etc/sing-box/.config_cache <<CACHEEOF
 TUIC_PORT=$PORT_TUIC
 TUIC_UUID=$UUID_TUIC
 TUIC_PSK=$PSK_TUIC
+TUIC_SNI=$FIXED_TUIC_SNI
 CACHEEOF
 
     $ENABLE_REALITY && cat >> /etc/sing-box/.config_cache <<CACHEEOF
@@ -717,11 +1046,63 @@ REALITY_PUB=$REALITY_PUB
 REALITY_SNI=$REALITY_SNI
 CACHEEOF
 
-$ENABLE_SOCKS5 && cat >> /etc/sing-box/.config_cache <<CACHEEOF
-SOCKS5_PORT=$PORT_SOCKS5 
-SOCKS5_USER=$USER_SOCKS5 
+    $ENABLE_SOCKS5 && cat >> /etc/sing-box/.config_cache <<CACHEEOF
+SOCKS5_PORT=$PORT_SOCKS5
+SOCKS5_USER=$USER_SOCKS5
 SOCKS5_PASS=$PASS_SOCKS5
 CACHEEOF
+
+    $ENABLE_TROJAN && cat >> /etc/sing-box/.config_cache <<CACHEEOF
+TROJAN_PORT=$PORT_TROJAN
+TROJAN_PSK=$PSK_TROJAN
+TROJAN_SNI=$FIXED_TROJAN_SNI
+CACHEEOF
+
+    $ENABLE_VLESS_H2 && cat >> /etc/sing-box/.config_cache <<CACHEEOF
+VLESS_H2_PORT=$PORT_VLESS_H2
+VLESS_H2_UUID=$UUID_VLESS_H2
+VLESS_H2_PK=$REALITY_PK
+VLESS_H2_SID=$REALITY_SID
+VLESS_H2_PUB=$REALITY_PUB
+CACHEEOF
+
+    # VMess 族
+    if $ENABLE_VMESS_TCP || $ENABLE_VMESS_WS || $ENABLE_VMESS_HTTP || $ENABLE_VMESS_QUIC || \
+       $ENABLE_VMESS_WST || $ENABLE_VMESS_H2T || $ENABLE_VMESS_HUT; then
+        cat >> /etc/sing-box/.config_cache <<CACHEEOF
+VMESS_UUID=$UUID_VMESS
+PATH_TRANSPORT=$PATH_TRANSPORT
+CACHEEOF
+    fi
+    $ENABLE_VMESS_TCP  && echo "VMESS_TCP_PORT=$PORT_VMESS_TCP"   >> /etc/sing-box/.config_cache
+    $ENABLE_VMESS_WS   && echo "VMESS_WS_PORT=$PORT_VMESS_WS"     >> /etc/sing-box/.config_cache
+    $ENABLE_VMESS_HTTP && echo "VMESS_HTTP_PORT=$PORT_VMESS_HTTP"  >> /etc/sing-box/.config_cache
+    $ENABLE_VMESS_QUIC && echo "VMESS_QUIC_PORT=$PORT_VMESS_QUIC"  >> /etc/sing-box/.config_cache
+    $ENABLE_VMESS_WST  && echo "VMESS_WST_PORT=$PORT_VMESS_WST"   >> /etc/sing-box/.config_cache
+    $ENABLE_VMESS_H2T  && echo "VMESS_H2T_PORT=$PORT_VMESS_H2T"   >> /etc/sing-box/.config_cache
+    $ENABLE_VMESS_HUT  && echo "VMESS_HUT_PORT=$PORT_VMESS_HUT"   >> /etc/sing-box/.config_cache
+
+    # VLESS-TLS 族
+    if $ENABLE_VLESS_WST || $ENABLE_VLESS_H2T || $ENABLE_VLESS_HUT; then
+        cat >> /etc/sing-box/.config_cache <<CACHEEOF
+VLESS_TLS_UUID=$UUID_VLESS_TLS
+PATH_TRANSPORT=$PATH_TRANSPORT
+CACHEEOF
+    fi
+    $ENABLE_VLESS_WST  && echo "VLESS_WST_PORT=$PORT_VLESS_WST"   >> /etc/sing-box/.config_cache
+    $ENABLE_VLESS_H2T  && echo "VLESS_H2T_PORT=$PORT_VLESS_H2T"   >> /etc/sing-box/.config_cache
+    $ENABLE_VLESS_HUT  && echo "VLESS_HUT_PORT=$PORT_VLESS_HUT"   >> /etc/sing-box/.config_cache
+
+    # Trojan-TLS 族
+    if $ENABLE_TROJAN_WST || $ENABLE_TROJAN_H2T || $ENABLE_TROJAN_HUT; then
+        cat >> /etc/sing-box/.config_cache <<CACHEEOF
+TROJAN_TLS_PSK=$PSK_TROJAN_TLS
+PATH_TRANSPORT=$PATH_TRANSPORT
+CACHEEOF
+    fi
+    $ENABLE_TROJAN_WST && echo "TROJAN_WST_PORT=$PORT_TROJAN_WST" >> /etc/sing-box/.config_cache
+    $ENABLE_TROJAN_H2T && echo "TROJAN_H2T_PORT=$PORT_TROJAN_H2T" >> /etc/sing-box/.config_cache
+    $ENABLE_TROJAN_HUT && echo "TROJAN_HUT_PORT=$PORT_TROJAN_HUT" >> /etc/sing-box/.config_cache
 
     # 全局写入 CUSTOM_IP（哪怕为空也写）
     echo "CUSTOM_IP=$CUSTOM_IP" >> /etc/sing-box/.config_cache
@@ -830,6 +1211,35 @@ SYSTEMD
 
 setup_service
 
+# -----------------------
+# BBR 内核加速（借鉴开源项目 sing-box-main bbr.sh）
+apply_bbr() {
+    if [ "$FIXED_ENABLE_BBR" != "true" ]; then
+        info "跳过 BBR 优化（模板参数未启用）"
+        return 0
+    fi
+
+    info "尝试启用 BBR 内核加速..."
+    local kernel_major kernel_minor
+    kernel_major=$(uname -r | cut -d. -f1)
+    kernel_minor=$(uname -r | cut -d. -f2)
+
+    if [[ $kernel_major -ge 5 ]] || [[ $kernel_major -eq 4 && $kernel_minor -ge 9 ]]; then
+        sed -i '/net.ipv4.tcp_congestion_control/d' /etc/sysctl.conf 2>/dev/null || true
+        sed -i '/net.core.default_qdisc/d' /etc/sysctl.conf 2>/dev/null || true
+        {
+            echo "net.ipv4.tcp_congestion_control = bbr"
+            echo "net.core.default_qdisc = fq"
+        } >> /etc/sysctl.conf
+        sysctl -p >/dev/null 2>&1 || true
+        info "✅ BBR 内核加速已启用"
+    else
+        warn "内核版本 $(uname -r) 过低（需 4.9+），已跳过 BBR 优化"
+    fi
+}
+
+apply_bbr
+
 # 检测 IPv4 函数
 get_ipv4() {
     local ip=""
@@ -892,14 +1302,14 @@ generate_uris() {
     if $ENABLE_HY2; then
         hy2_encoded=$(printf "%s" "$PSK_HY2" | sed 's/:/%3A/g; s/+/%2B/g; s/\//%2F/g; s/=/%3D/g')
         echo "=== Hysteria2 (HY2) ==="
-        echo "hy2://${hy2_encoded}@${host}:${PORT_HY2}/?sni=www.bing.com&alpn=h3&insecure=1#hy2${suffix}"
+        echo "hy2://${hy2_encoded}@${host}:${PORT_HY2}/?sni=${FIXED_HY2_SNI}&alpn=h3&insecure=1#hy2${suffix}"
         echo ""
     fi
 
     if $ENABLE_TUIC; then
         tuic_encoded=$(printf "%s" "$PSK_TUIC" | sed 's/:/%3A/g; s/+/%2B/g; s/\//%2F/g; s/=/%3D/g')
         echo "=== TUIC ==="
-        echo "tuic://${UUID_TUIC}:${tuic_encoded}@${host}:${PORT_TUIC}/?congestion_control=bbr&alpn=h3&sni=www.bing.com&insecure=1#tuic${suffix}"
+        echo "tuic://${UUID_TUIC}:${tuic_encoded}@${host}:${PORT_TUIC}/?congestion_control=bbr&alpn=h3&sni=${FIXED_TUIC_SNI}&insecure=1#tuic${suffix}"
         echo ""
     fi
     
@@ -912,6 +1322,109 @@ generate_uris() {
     if $ENABLE_SOCKS5; then
         echo "=== SOCKS5 ==="
         echo "socks5://${USER_SOCKS5}:${PASS_SOCKS5}@${host}:${PORT_SOCKS5}#socks5${suffix}"
+        echo ""
+    fi
+
+    if $ENABLE_TROJAN; then
+        trojan_encoded=$(printf "%s" "$PSK_TROJAN" | sed 's/:/%3A/g; s/+/%2B/g; s/\//%2F/g; s/=/%3D/g')
+        echo "=== Trojan ==="
+        echo "trojan://${trojan_encoded}@${host}:${PORT_TROJAN}?sni=${FIXED_TROJAN_SNI}&allowInsecure=1#trojan${suffix}"
+        echo ""
+    fi
+
+    if $ENABLE_VLESS_H2; then
+        echo "=== VLESS-H2-Reality ==="
+        echo "vless://${UUID_VLESS_H2}@${host}:${PORT_VLESS_H2}?encryption=none&flow=&security=reality&sni=${REALITY_SNI}&fp=chrome&pbk=${REALITY_PUB}&sid=${REALITY_SID}&type=http#vless-h2${suffix}"
+        echo ""
+    fi
+
+    # VMess base64 URI 生成器
+    vmess_b64() {
+        local ps="$1" addr="$2" port="$3" uuid="$4" net="$5" tls="${6:-}" path="${7:-}" host="${8:-$2}"
+        local json="{\"v\":\"2\",\"ps\":\"$ps\",\"add\":\"$addr\",\"port\":\"$port\",\"id\":\"$uuid\",\"aid\":\"0\",\"net\":\"$net\",\"type\":\"none\",\"host\":\"$host\",\"path\":\"$path\",\"tls\":\"$tls\",\"sni\":\"$host\",\"alpn\":\"\"}"
+        printf 'vmess://%s' "$(printf '%s' "$json" | base64 | tr -d '\n')"
+    }
+
+    local raw_host="$PUB_IP"  # 不含中括号，用于 vmess JSON host 字段
+
+    if $ENABLE_VMESS_TCP; then
+        echo "=== VMess-TCP ==="
+        vmess_b64 "vmess-tcp${suffix}" "$raw_host" "$PORT_VMESS_TCP" "$UUID_VMESS" "tcp" "" ""
+        echo ""
+    fi
+
+    if $ENABLE_VMESS_WS; then
+        echo "=== VMess-WS ==="
+        vmess_b64 "vmess-ws${suffix}" "$raw_host" "$PORT_VMESS_WS" "$UUID_VMESS" "ws" "" "$PATH_TRANSPORT"
+        echo ""
+    fi
+
+    if $ENABLE_VMESS_HTTP; then
+        echo "=== VMess-HTTP ==="
+        vmess_b64 "vmess-http${suffix}" "$raw_host" "$PORT_VMESS_HTTP" "$UUID_VMESS" "http" "" "$PATH_TRANSPORT"
+        echo ""
+    fi
+
+    if $ENABLE_VMESS_QUIC; then
+        echo "=== VMess-QUIC ==="
+        vmess_b64 "vmess-quic${suffix}" "$raw_host" "$PORT_VMESS_QUIC" "$UUID_VMESS" "quic" "tls" "" "$raw_host"
+        echo ""
+    fi
+
+    if $ENABLE_VMESS_WST; then
+        echo "=== VMess-WS-TLS (allowInsecure) ==="
+        vmess_b64 "vmess-wst${suffix}" "$raw_host" "$PORT_VMESS_WST" "$UUID_VMESS" "ws" "tls" "$PATH_TRANSPORT" "$raw_host"
+        echo ""
+    fi
+
+    if $ENABLE_VMESS_H2T; then
+        echo "=== VMess-H2-TLS (allowInsecure) ==="
+        vmess_b64 "vmess-h2t${suffix}" "$raw_host" "$PORT_VMESS_H2T" "$UUID_VMESS" "h2" "tls" "$PATH_TRANSPORT" "$raw_host"
+        echo ""
+    fi
+
+    if $ENABLE_VMESS_HUT; then
+        echo "=== VMess-HTTPUpgrade-TLS (allowInsecure) ==="
+        vmess_b64 "vmess-hut${suffix}" "$raw_host" "$PORT_VMESS_HUT" "$UUID_VMESS" "httpupgrade" "tls" "$PATH_TRANSPORT" "$raw_host"
+        echo ""
+    fi
+
+    if $ENABLE_VLESS_WST; then
+        echo "=== VLESS-WS-TLS (allowInsecure) ==="
+        echo "vless://${UUID_VLESS_TLS}@${host}:${PORT_VLESS_WST}?security=tls&sni=${raw_host}&type=ws&path=${PATH_TRANSPORT}&allowInsecure=1&host=${raw_host}#vless-wst${suffix}"
+        echo ""
+    fi
+
+    if $ENABLE_VLESS_H2T; then
+        echo "=== VLESS-H2-TLS (allowInsecure) ==="
+        echo "vless://${UUID_VLESS_TLS}@${host}:${PORT_VLESS_H2T}?security=tls&sni=${raw_host}&type=http&path=${PATH_TRANSPORT}&allowInsecure=1#vless-h2t${suffix}"
+        echo ""
+    fi
+
+    if $ENABLE_VLESS_HUT; then
+        echo "=== VLESS-HTTPUpgrade-TLS (allowInsecure) ==="
+        echo "vless://${UUID_VLESS_TLS}@${host}:${PORT_VLESS_HUT}?security=tls&sni=${raw_host}&type=httpupgrade&path=${PATH_TRANSPORT}&allowInsecure=1#vless-hut${suffix}"
+        echo ""
+    fi
+
+    if $ENABLE_TROJAN_WST; then
+        local twst_enc=$(printf "%s" "$PSK_TROJAN_TLS" | sed 's/:/%3A/g; s/+/%2B/g; s/\//%2F/g; s/=/%3D/g')
+        echo "=== Trojan-WS-TLS (allowInsecure) ==="
+        echo "trojan://${twst_enc}@${host}:${PORT_TROJAN_WST}?sni=${raw_host}&type=ws&path=${PATH_TRANSPORT}&allowInsecure=1#trojan-wst${suffix}"
+        echo ""
+    fi
+
+    if $ENABLE_TROJAN_H2T; then
+        local th2t_enc=$(printf "%s" "$PSK_TROJAN_TLS" | sed 's/:/%3A/g; s/+/%2B/g; s/\//%2F/g; s/=/%3D/g')
+        echo "=== Trojan-H2-TLS (allowInsecure) ==="
+        echo "trojan://${th2t_enc}@${host}:${PORT_TROJAN_H2T}?sni=${raw_host}&type=http&path=${PATH_TRANSPORT}&allowInsecure=1#trojan-h2t${suffix}"
+        echo ""
+    fi
+
+    if $ENABLE_TROJAN_HUT; then
+        local thut_enc=$(printf "%s" "$PSK_TROJAN_TLS" | sed 's/:/%3A/g; s/+/%2B/g; s/\//%2F/g; s/=/%3D/g')
+        echo "=== Trojan-HTTPUpgrade-TLS (allowInsecure) ==="
+        echo "trojan://${thut_enc}@${host}:${PORT_TROJAN_HUT}?sni=${raw_host}&type=httpupgrade&path=${PATH_TRANSPORT}&allowInsecure=1#trojan-hut${suffix}"
         echo ""
     fi
 }
@@ -1147,7 +1660,7 @@ report_nodes() {
     # 2. HY2
     if $ENABLE_HY2; then
         local hy2_encoded=$(printf "%s" "$PSK_HY2" | sed 's/:/%3A/g; s/+/%2B/g; s/\//%2F/g; s/=/%3D/g')
-        local link="hy2://${hy2_encoded}@${link_host}:${PORT_HY2}/?sni=www.bing.com&alpn=h3&insecure=1#hy2-${NODE_NAME}"
+        local link="hy2://${hy2_encoded}@${link_host}:${PORT_HY2}/?sni=${FIXED_HY2_SNI}&alpn=h3&insecure=1#hy2-${NODE_NAME}"
         local json_data="{\"install_id\": \"$INSTALL_ID\", \"protocol\": \"hy2\", \"link\": \"$link\"}"
         curl_post_submit "$REPORT_URL" "$json_data" "HY2"
     fi
@@ -1155,7 +1668,7 @@ report_nodes() {
     # 3. TUIC
     if $ENABLE_TUIC; then
         local tuic_encoded=$(printf "%s" "$PSK_TUIC" | sed 's/:/%3A/g; s/+/%2B/g; s/\//%2F/g; s/=/%3D/g')
-        local link="tuic://${UUID_TUIC}:${tuic_encoded}@${link_host}:${PORT_TUIC}/?congestion_control=bbr&alpn=h3&sni=www.bing.com&insecure=1#tuic-${NODE_NAME}"
+        local link="tuic://${UUID_TUIC}:${tuic_encoded}@${link_host}:${PORT_TUIC}/?congestion_control=bbr&alpn=h3&sni=${FIXED_TUIC_SNI}&insecure=1#tuic-${NODE_NAME}"
         local json_data="{\"install_id\": \"$INSTALL_ID\", \"protocol\": \"tuic\", \"link\": \"$link\"}"
         curl_post_submit "$REPORT_URL" "$json_data" "TUIC"
     fi
@@ -1174,7 +1687,100 @@ report_nodes() {
         curl_post_submit "$REPORT_URL" "$json_data" "SOCKS5"
     fi
 
-    # 6. 上报双栈 IP 信息
+    # 6. Trojan
+    if $ENABLE_TROJAN; then
+        local trojan_encoded=$(printf "%s" "$PSK_TROJAN" | sed 's/:/%3A/g; s/+/%2B/g; s/\//%2F/g; s/=/%3D/g')
+        local link="trojan://${trojan_encoded}@${link_host}:${PORT_TROJAN}?sni=${FIXED_TROJAN_SNI}&allowInsecure=1#trojan-${NODE_NAME}"
+        local json_data="{\"install_id\": \"$INSTALL_ID\", \"protocol\": \"trojan\", \"link\": \"$link\"}"
+        curl_post_submit "$REPORT_URL" "$json_data" "Trojan"
+    fi
+
+    # 7. VLESS-H2-Reality
+    if $ENABLE_VLESS_H2; then
+        local link="vless://${UUID_VLESS_H2}@${link_host}:${PORT_VLESS_H2}?encryption=none&flow=&security=reality&sni=${REALITY_SNI}&fp=chrome&pbk=${REALITY_PUB}&sid=${REALITY_SID}&type=http#vless-h2-${NODE_NAME}"
+        local json_data="{\"install_id\": \"$INSTALL_ID\", \"protocol\": \"vless_h2\", \"link\": \"$link\"}"
+        curl_post_submit "$REPORT_URL" "$json_data" "VLESS-H2"
+    fi
+
+    # 内部 vmess b64 辅助
+    _vmess_b64_report() {
+        local ps="$1" addr="$2" port="$3" uuid="$4" net="$5" tls="${6:-}" path="${7:-}" host="${8:-$2}"
+        local json="{\"v\":\"2\",\"ps\":\"$ps\",\"add\":\"$addr\",\"port\":\"$port\",\"id\":\"$uuid\",\"aid\":\"0\",\"net\":\"$net\",\"type\":\"none\",\"host\":\"$host\",\"path\":\"$path\",\"tls\":\"$tls\",\"sni\":\"$host\",\"alpn\":\"\"}"
+        printf 'vmess://%s' "$(printf '%s' "$json" | base64 | tr -d '\n')"
+    }
+
+    local rh="$PUB_IP"  # raw host (无中括号)
+
+    # 8. VMess-TCP
+    if $ENABLE_VMESS_TCP; then
+        local link=$(_vmess_b64_report "vmess-tcp-${NODE_NAME}" "$rh" "$PORT_VMESS_TCP" "$UUID_VMESS" "tcp")
+        curl_post_submit "$REPORT_URL" "{\"install_id\": \"$INSTALL_ID\", \"protocol\": \"vmess_tcp\", \"link\": \"$link\"}" "VMess-TCP"
+    fi
+    # 9. VMess-WS
+    if $ENABLE_VMESS_WS; then
+        local link=$(_vmess_b64_report "vmess-ws-${NODE_NAME}" "$rh" "$PORT_VMESS_WS" "$UUID_VMESS" "ws" "" "$PATH_TRANSPORT")
+        curl_post_submit "$REPORT_URL" "{\"install_id\": \"$INSTALL_ID\", \"protocol\": \"vmess_ws\", \"link\": \"$link\"}" "VMess-WS"
+    fi
+    # 10. VMess-HTTP
+    if $ENABLE_VMESS_HTTP; then
+        local link=$(_vmess_b64_report "vmess-http-${NODE_NAME}" "$rh" "$PORT_VMESS_HTTP" "$UUID_VMESS" "http" "" "$PATH_TRANSPORT")
+        curl_post_submit "$REPORT_URL" "{\"install_id\": \"$INSTALL_ID\", \"protocol\": \"vmess_http\", \"link\": \"$link\"}" "VMess-HTTP"
+    fi
+    # 11. VMess-QUIC
+    if $ENABLE_VMESS_QUIC; then
+        local link=$(_vmess_b64_report "vmess-quic-${NODE_NAME}" "$rh" "$PORT_VMESS_QUIC" "$UUID_VMESS" "quic" "tls" "" "$rh")
+        curl_post_submit "$REPORT_URL" "{\"install_id\": \"$INSTALL_ID\", \"protocol\": \"vmess_quic\", \"link\": \"$link\"}" "VMess-QUIC"
+    fi
+    # 12. VMess-WS-TLS
+    if $ENABLE_VMESS_WST; then
+        local link=$(_vmess_b64_report "vmess-wst-${NODE_NAME}" "$rh" "$PORT_VMESS_WST" "$UUID_VMESS" "ws" "tls" "$PATH_TRANSPORT" "$rh")
+        curl_post_submit "$REPORT_URL" "{\"install_id\": \"$INSTALL_ID\", \"protocol\": \"vmess_wst\", \"link\": \"$link\"}" "VMess-WST"
+    fi
+    # 13. VMess-H2-TLS
+    if $ENABLE_VMESS_H2T; then
+        local link=$(_vmess_b64_report "vmess-h2t-${NODE_NAME}" "$rh" "$PORT_VMESS_H2T" "$UUID_VMESS" "h2" "tls" "$PATH_TRANSPORT" "$rh")
+        curl_post_submit "$REPORT_URL" "{\"install_id\": \"$INSTALL_ID\", \"protocol\": \"vmess_h2t\", \"link\": \"$link\"}" "VMess-H2T"
+    fi
+    # 14. VMess-HU-TLS
+    if $ENABLE_VMESS_HUT; then
+        local link=$(_vmess_b64_report "vmess-hut-${NODE_NAME}" "$rh" "$PORT_VMESS_HUT" "$UUID_VMESS" "httpupgrade" "tls" "$PATH_TRANSPORT" "$rh")
+        curl_post_submit "$REPORT_URL" "{\"install_id\": \"$INSTALL_ID\", \"protocol\": \"vmess_hut\", \"link\": \"$link\"}" "VMess-HUT"
+    fi
+    # 15. VLESS-WS-TLS
+    if $ENABLE_VLESS_WST; then
+        local link="vless://${UUID_VLESS_TLS}@${link_host}:${PORT_VLESS_WST}?security=tls&sni=${rh}&type=ws&path=${PATH_TRANSPORT}&allowInsecure=1&host=${rh}#vless-wst-${NODE_NAME}"
+        curl_post_submit "$REPORT_URL" "{\"install_id\": \"$INSTALL_ID\", \"protocol\": \"vless_wst\", \"link\": \"$link\"}" "VLESS-WST"
+    fi
+    # 16. VLESS-H2-TLS
+    if $ENABLE_VLESS_H2T; then
+        local link="vless://${UUID_VLESS_TLS}@${link_host}:${PORT_VLESS_H2T}?security=tls&sni=${rh}&type=http&path=${PATH_TRANSPORT}&allowInsecure=1#vless-h2t-${NODE_NAME}"
+        curl_post_submit "$REPORT_URL" "{\"install_id\": \"$INSTALL_ID\", \"protocol\": \"vless_h2t\", \"link\": \"$link\"}" "VLESS-H2T"
+    fi
+    # 17. VLESS-HU-TLS
+    if $ENABLE_VLESS_HUT; then
+        local link="vless://${UUID_VLESS_TLS}@${link_host}:${PORT_VLESS_HUT}?security=tls&sni=${rh}&type=httpupgrade&path=${PATH_TRANSPORT}&allowInsecure=1#vless-hut-${NODE_NAME}"
+        curl_post_submit "$REPORT_URL" "{\"install_id\": \"$INSTALL_ID\", \"protocol\": \"vless_hut\", \"link\": \"$link\"}" "VLESS-HUT"
+    fi
+    # 18. Trojan-WS-TLS
+    if $ENABLE_TROJAN_WST; then
+        local te=$(printf "%s" "$PSK_TROJAN_TLS" | sed 's/:/%3A/g; s/+/%2B/g; s/\//%2F/g; s/=/%3D/g')
+        local link="trojan://${te}@${link_host}:${PORT_TROJAN_WST}?sni=${rh}&type=ws&path=${PATH_TRANSPORT}&allowInsecure=1#trojan-wst-${NODE_NAME}"
+        curl_post_submit "$REPORT_URL" "{\"install_id\": \"$INSTALL_ID\", \"protocol\": \"trojan_wst\", \"link\": \"$link\"}" "Trojan-WST"
+    fi
+    # 19. Trojan-H2-TLS
+    if $ENABLE_TROJAN_H2T; then
+        local te=$(printf "%s" "$PSK_TROJAN_TLS" | sed 's/:/%3A/g; s/+/%2B/g; s/\//%2F/g; s/=/%3D/g')
+        local link="trojan://${te}@${link_host}:${PORT_TROJAN_H2T}?sni=${rh}&type=http&path=${PATH_TRANSPORT}&allowInsecure=1#trojan-h2t-${NODE_NAME}"
+        curl_post_submit "$REPORT_URL" "{\"install_id\": \"$INSTALL_ID\", \"protocol\": \"trojan_h2t\", \"link\": \"$link\"}" "Trojan-H2T"
+    fi
+    # 20. Trojan-HU-TLS
+    if $ENABLE_TROJAN_HUT; then
+        local te=$(printf "%s" "$PSK_TROJAN_TLS" | sed 's/:/%3A/g; s/+/%2B/g; s/\//%2F/g; s/=/%3D/g')
+        local link="trojan://${te}@${link_host}:${PORT_TROJAN_HUT}?sni=${rh}&type=httpupgrade&path=${PATH_TRANSPORT}&allowInsecure=1#trojan-hut-${NODE_NAME}"
+        curl_post_submit "$REPORT_URL" "{\"install_id\": \"$INSTALL_ID\", \"protocol\": \"trojan_hut\", \"link\": \"$link\"}" "Trojan-HUT"
+    fi
+
+    # 8. 上报双栈 IP 信息
     local ip_json_data="{\"install_id\": \"$INSTALL_ID\", \"ipv4\": \"$SERVER_IPV4\", \"ipv6\": \"$SERVER_IPV6\"}"
     
     info "-> 上报双栈 IP 信息 (V4: ${SERVER_IPV4:-无}, V6: ${SERVER_IPV6:-无})..."
@@ -1193,16 +1799,31 @@ echo "=========================================="
 echo ""
 info "📋 配置信息:"
 $ENABLE_SS && echo "   SS 端口: $PORT_SS | 密码: $PSK_SS | 加密: $SS_METHOD"
-$ENABLE_HY2 && echo "   HY2 端口: $PORT_HY2 | 密码: $PSK_HY2"
-$ENABLE_TUIC && echo "   TUIC 端口: $PORT_TUIC | UUID: $UUID_TUIC | 密码: $PSK_TUIC"
+$ENABLE_HY2 && echo "   HY2 端口: $PORT_HY2 | 密码: $PSK_HY2 | SNI: $FIXED_HY2_SNI"
+$ENABLE_TUIC && echo "   TUIC 端口: $PORT_TUIC | UUID: $UUID_TUIC | 密码: $PSK_TUIC | SNI: $FIXED_TUIC_SNI"
 $ENABLE_REALITY && echo "   Reality 端口: $PORT_REALITY | UUID: $UUID"
 $ENABLE_SOCKS5 && echo "   SOCKS5 端口: $PORT_SOCKS5 | 用户: $USER_SOCKS5 | 密码: $PASS_SOCKS5"
+$ENABLE_TROJAN && echo "   Trojan 端口: $PORT_TROJAN | 密码: $PSK_TROJAN | SNI: $FIXED_TROJAN_SNI"
+$ENABLE_VLESS_H2 && echo "   VLESS-H2-Reality 端口: $PORT_VLESS_H2 | UUID: $UUID_VLESS_H2"
+$ENABLE_VMESS_TCP  && echo "   VMess-TCP 端口: $PORT_VMESS_TCP | UUID: $UUID_VMESS"
+$ENABLE_VMESS_WS   && echo "   VMess-WS 端口: $PORT_VMESS_WS | UUID: $UUID_VMESS | Path: $PATH_TRANSPORT"
+$ENABLE_VMESS_HTTP && echo "   VMess-HTTP 端口: $PORT_VMESS_HTTP | UUID: $UUID_VMESS | Path: $PATH_TRANSPORT"
+$ENABLE_VMESS_QUIC && echo "   VMess-QUIC 端口: $PORT_VMESS_QUIC | UUID: $UUID_VMESS (TLS)"
+$ENABLE_VMESS_WST  && echo "   VMess-WS-TLS 端口: $PORT_VMESS_WST | UUID: $UUID_VMESS | Path: $PATH_TRANSPORT"
+$ENABLE_VMESS_H2T  && echo "   VMess-H2-TLS 端口: $PORT_VMESS_H2T | UUID: $UUID_VMESS | Path: $PATH_TRANSPORT"
+$ENABLE_VMESS_HUT  && echo "   VMess-HU-TLS 端口: $PORT_VMESS_HUT | UUID: $UUID_VMESS | Path: $PATH_TRANSPORT"
+$ENABLE_VLESS_WST  && echo "   VLESS-WS-TLS 端口: $PORT_VLESS_WST | UUID: $UUID_VLESS_TLS | Path: $PATH_TRANSPORT"
+$ENABLE_VLESS_H2T  && echo "   VLESS-H2-TLS 端口: $PORT_VLESS_H2T | UUID: $UUID_VLESS_TLS | Path: $PATH_TRANSPORT"
+$ENABLE_VLESS_HUT  && echo "   VLESS-HU-TLS 端口: $PORT_VLESS_HUT | UUID: $UUID_VLESS_TLS | Path: $PATH_TRANSPORT"
+$ENABLE_TROJAN_WST && echo "   Trojan-WS-TLS 端口: $PORT_TROJAN_WST | 密码: $PSK_TROJAN_TLS | Path: $PATH_TRANSPORT"
+$ENABLE_TROJAN_H2T && echo "   Trojan-H2-TLS 端口: $PORT_TROJAN_H2T | 密码: $PSK_TROJAN_TLS | Path: $PATH_TRANSPORT"
+$ENABLE_TROJAN_HUT && echo "   Trojan-HU-TLS 端口: $PORT_TROJAN_HUT | 密码: $PSK_TROJAN_TLS | Path: $PATH_TRANSPORT"
 echo "   服务器: $PUB_IP"
-echo "   Reality server_name(SNI): ${REALITY_SNI:-addons.mozilla.org}"
+($ENABLE_REALITY || $ENABLE_VLESS_H2) && echo "   Reality server_name(SNI): ${REALITY_SNI:-addons.mozilla.org}"
 echo ""
 info "📂 文件位置:"
 echo "   配置: $CONFIG_PATH"
-($ENABLE_HY2 || $ENABLE_TUIC) && echo "   证书: /etc/sing-box/certs/"
+($ENABLE_HY2 || $ENABLE_TUIC || $ENABLE_TROJAN || $ENABLE_VMESS_QUIC || $ENABLE_VMESS_WST || $ENABLE_VMESS_H2T || $ENABLE_VMESS_HUT || $ENABLE_VLESS_WST || $ENABLE_VLESS_H2T || $ENABLE_VLESS_HUT || $ENABLE_TROJAN_WST || $ENABLE_TROJAN_H2T || $ENABLE_TROJAN_HUT) && echo "   证书: /etc/sing-box/certs/"
 echo "   服务: $SERVICE_PATH"
 echo ""
 info "📜 客户端链接:"
@@ -1291,7 +1912,7 @@ service_status() {
 # 生成随机值
 rand_port() { shuf -i 10000-60000 -n 1 2>/dev/null || echo $((RANDOM % 50001 + 10000)); }
 rand_pass() { openssl rand -base64 16 | tr -d '\n\r' || head -c 16 /dev/urandom | base64 | tr -d '\n\r'; }
-rand_uuid() { cat /proc/sys/kernel/random/uuid 2>/dev/null || openssl rand -hex 16 | sed 's/\(..\)\(..\)\(..\)\(..\)\(..\)\(..\)\(..\)\(..\)\(..\)\(..\)\(..\)\(..\)\(..\)\(..\)\(..\)\(..\)/\1\2\3\4-\5\6-\7\8-\9\10-\11\12\13\14\15\16/'; }
+rand_uuid() { cat /proc/sys/kernel/random/uuid 2>/dev/null || openssl rand -hex 16 | awk '{print substr($0,1,8)"-"substr($0,9,4)"-"substr($0,13,4)"-"substr($0,17,4)"-"substr($0,21,12)}'; }
 
 # URL 编码
 url_encode() {
@@ -1339,10 +1960,10 @@ read_config() {
     fi
     
     if [ "${ENABLE_REALITY:-false}" = "true" ]; then
-        REALITY_PORT=$(jq -r '.inbounds[] | select(.type=="vless") | .listen_port // empty' "$CONFIG_PATH" | head -n1)
-        REALITY_UUID=$(jq -r '.inbounds[] | select(.type=="vless") | .users[0].uuid // empty' "$CONFIG_PATH" | head -n1)
-        REALITY_PK=$(jq -r '.inbounds[] | select(.type=="vless") | .tls.reality.private_key // empty' "$CONFIG_PATH" | head -n1)
-        REALITY_SID=$(jq -r '.inbounds[] | select(.type=="vless") | .tls.reality.short_id[0] // empty' "$CONFIG_PATH" | head -n1)
+        REALITY_PORT=$(jq -r '.inbounds[] | select(.tag=="vless-in") | .listen_port // empty' "$CONFIG_PATH" | head -n1)
+        REALITY_UUID=$(jq -r '.inbounds[] | select(.tag=="vless-in") | .users[0].uuid // empty' "$CONFIG_PATH" | head -n1)
+        REALITY_PK=$(jq -r '.inbounds[] | select(.tag=="vless-in") | .tls.reality.private_key // empty' "$CONFIG_PATH" | head -n1)
+        REALITY_SID=$(jq -r '.inbounds[] | select(.tag=="vless-in") | .tls.reality.short_id[0] // empty' "$CONFIG_PATH" | head -n1)
         [ -f /etc/sing-box/.reality_pub ] && REALITY_PUB=$(cat /etc/sing-box/.reality_pub)
     fi
 
@@ -1350,6 +1971,69 @@ read_config() {
         SOCKS5_PORT=$(jq -r '.inbounds[] | select(.type=="socks") | .listen_port // empty' "$CONFIG_PATH" | head -n1)
         SOCKS5_USER=$(jq -r '.inbounds[] | select(.type=="socks") | .users[0].username // empty' "$CONFIG_PATH" | head -n1)
         SOCKS5_PASS=$(jq -r '.inbounds[] | select(.type=="socks") | .users[0].password // empty' "$CONFIG_PATH" | head -n1)
+    fi
+
+    if [ "${ENABLE_TROJAN:-false}" = "true" ]; then
+        TROJAN_PORT=$(jq -r '.inbounds[] | select(.tag=="trojan-in") | .listen_port // empty' "$CONFIG_PATH" | head -n1)
+        TROJAN_PSK=$(jq -r '.inbounds[] | select(.tag=="trojan-in") | .users[0].password // empty' "$CONFIG_PATH" | head -n1)
+        TROJAN_SNI="${TROJAN_SNI:-www.bing.com}"
+    fi
+
+    if [ "${ENABLE_VLESS_H2:-false}" = "true" ]; then
+        VLESS_H2_PORT=$(jq -r '.inbounds[] | select(.tag=="vless-h2-in") | .listen_port // empty' "$CONFIG_PATH" | head -n1)
+        VLESS_H2_UUID=$(jq -r '.inbounds[] | select(.tag=="vless-h2-in") | .users[0].uuid // empty' "$CONFIG_PATH" | head -n1)
+        # 共用 Reality 公鑰
+        [ -f /etc/sing-box/.reality_pub ] && VLESS_H2_PUB=$(cat /etc/sing-box/.reality_pub)
+        [ -z "${REALITY_SID:-}" ] && REALITY_SID=$(jq -r '.inbounds[] | select(.tag=="vless-h2-in") | .tls.reality.short_id[0] // empty' "$CONFIG_PATH" | head -n1)
+    fi
+
+    # VMess 组（共用 UUID_VMESS 与 PATH_TRANSPORT，从缓存读取）
+    UUID_VMESS="${UUID_VMESS:-}"
+    PATH_TRANSPORT="${PATH_TRANSPORT:-/ray}"
+    if [ "${ENABLE_VMESS_TCP:-false}" = "true" ]; then
+        VMESS_TCP_PORT=$(jq -r '.inbounds[] | select(.tag=="vmess-tcp-in") | .listen_port // empty' "$CONFIG_PATH" | head -n1)
+    fi
+    if [ "${ENABLE_VMESS_WS:-false}" = "true" ]; then
+        VMESS_WS_PORT=$(jq -r '.inbounds[] | select(.tag=="vmess-ws-in") | .listen_port // empty' "$CONFIG_PATH" | head -n1)
+    fi
+    if [ "${ENABLE_VMESS_HTTP:-false}" = "true" ]; then
+        VMESS_HTTP_PORT=$(jq -r '.inbounds[] | select(.tag=="vmess-http-in") | .listen_port // empty' "$CONFIG_PATH" | head -n1)
+    fi
+    if [ "${ENABLE_VMESS_QUIC:-false}" = "true" ]; then
+        VMESS_QUIC_PORT=$(jq -r '.inbounds[] | select(.tag=="vmess-quic-in") | .listen_port // empty' "$CONFIG_PATH" | head -n1)
+    fi
+    if [ "${ENABLE_VMESS_WST:-false}" = "true" ]; then
+        VMESS_WST_PORT=$(jq -r '.inbounds[] | select(.tag=="vmess-wst-in") | .listen_port // empty' "$CONFIG_PATH" | head -n1)
+    fi
+    if [ "${ENABLE_VMESS_H2T:-false}" = "true" ]; then
+        VMESS_H2T_PORT=$(jq -r '.inbounds[] | select(.tag=="vmess-h2t-in") | .listen_port // empty' "$CONFIG_PATH" | head -n1)
+    fi
+    if [ "${ENABLE_VMESS_HUT:-false}" = "true" ]; then
+        VMESS_HUT_PORT=$(jq -r '.inbounds[] | select(.tag=="vmess-hut-in") | .listen_port // empty' "$CONFIG_PATH" | head -n1)
+    fi
+
+    # VLESS-TLS 组（共用 UUID_VLESS_TLS，从缓存读取）
+    UUID_VLESS_TLS="${UUID_VLESS_TLS:-}"
+    if [ "${ENABLE_VLESS_WST:-false}" = "true" ]; then
+        VLESS_WST_PORT=$(jq -r '.inbounds[] | select(.tag=="vless-wst-in") | .listen_port // empty' "$CONFIG_PATH" | head -n1)
+    fi
+    if [ "${ENABLE_VLESS_H2T:-false}" = "true" ]; then
+        VLESS_H2T_PORT=$(jq -r '.inbounds[] | select(.tag=="vless-h2t-in") | .listen_port // empty' "$CONFIG_PATH" | head -n1)
+    fi
+    if [ "${ENABLE_VLESS_HUT:-false}" = "true" ]; then
+        VLESS_HUT_PORT=$(jq -r '.inbounds[] | select(.tag=="vless-hut-in") | .listen_port // empty' "$CONFIG_PATH" | head -n1)
+    fi
+
+    # Trojan-TLS 组（共用 PSK_TROJAN_TLS，从缓存读取）
+    PSK_TROJAN_TLS="${PSK_TROJAN_TLS:-}"
+    if [ "${ENABLE_TROJAN_WST:-false}" = "true" ]; then
+        TROJAN_WST_PORT=$(jq -r '.inbounds[] | select(.tag=="trojan-wst-in") | .listen_port // empty' "$CONFIG_PATH" | head -n1)
+    fi
+    if [ "${ENABLE_TROJAN_H2T:-false}" = "true" ]; then
+        TROJAN_H2T_PORT=$(jq -r '.inbounds[] | select(.tag=="trojan-h2t-in") | .listen_port // empty' "$CONFIG_PATH" | head -n1)
+    fi
+    if [ "${ENABLE_TROJAN_HUT:-false}" = "true" ]; then
+        TROJAN_HUT_PORT=$(jq -r '.inbounds[] | select(.tag=="trojan-hut-in") | .listen_port // empty' "$CONFIG_PATH" | head -n1)
     fi
 }
 
@@ -1385,35 +2069,137 @@ generate_uris() {
         ss_b64=$(printf "%s" "$ss_userinfo" | base64 -w0 2>/dev/null || printf "%s" "$ss_userinfo" | base64 | tr -d '\n')
         
         echo "=== Shadowsocks (SS) ===" >> "$URI_FILE"
-        echo "ss://${ss_encoded}@${PUBLIC_IP}:${SS_PORT}#ss${node_suffix}" >> "$URI_FILE"
-        echo "ss://${ss_b64}@${PUBLIC_IP}:${SS_PORT}#ss${node_suffix}" >> "$URI_FILE"
+        echo "ss://${ss_encoded}@${link_host}:${SS_PORT}#ss${node_suffix}" >> "$URI_FILE"
+        echo "ss://${ss_b64}@${link_host}:${SS_PORT}#ss${node_suffix}" >> "$URI_FILE"
         echo "" >> "$URI_FILE"
     fi
     
     if [ "${ENABLE_HY2:-false}" = "true" ]; then
         hy2_encoded=$(url_encode "$HY2_PSK")
+        local _hy2_sni="${HY2_SNI:-www.bing.com}"
         echo "=== Hysteria2 (HY2) ===" >> "$URI_FILE"
-        echo "hy2://${hy2_encoded}@${PUBLIC_IP}:${HY2_PORT}/?sni=www.bing.com&alpn=h3&insecure=1#hy2${node_suffix}" >> "$URI_FILE"
+        echo "hy2://${hy2_encoded}@${link_host}:${HY2_PORT}/?sni=${_hy2_sni}&alpn=h3&insecure=1#hy2${node_suffix}" >> "$URI_FILE"
         echo "" >> "$URI_FILE"
     fi
     
     if [ "${ENABLE_TUIC:-false}" = "true" ]; then
         tuic_encoded=$(url_encode "$TUIC_PSK")
+        local _tuic_sni="${TUIC_SNI:-www.bing.com}"
         echo "=== TUIC ===" >> "$URI_FILE"
-        echo "tuic://${TUIC_UUID}:${tuic_encoded}@${PUBLIC_IP}:${TUIC_PORT}/?congestion_control=bbr&alpn=h3&sni=www.bing.com&insecure=1#tuic${node_suffix}" >> "$URI_FILE"
+        echo "tuic://${TUIC_UUID}:${tuic_encoded}@${link_host}:${TUIC_PORT}/?congestion_control=bbr&alpn=h3&sni=${_tuic_sni}&insecure=1#tuic${node_suffix}" >> "$URI_FILE"
         echo "" >> "$URI_FILE"
     fi
     
     if [ "${ENABLE_REALITY:-false}" = "true" ]; then
         REALITY_SNI="${REALITY_SNI:-addons.mozilla.org}"
         echo "=== VLESS Reality ===" >> "$URI_FILE"
-        echo "vless://${REALITY_UUID}@${PUBLIC_IP}:${REALITY_PORT}?encryption=none&flow=xtls-rprx-vision&security=reality&sni=${REALITY_SNI}&fp=chrome&pbk=${REALITY_PUB}&sid=${REALITY_SID}#reality${node_suffix}" >> "$URI_FILE"
+        echo "vless://${REALITY_UUID}@${link_host}:${REALITY_PORT}?encryption=none&flow=xtls-rprx-vision&security=reality&sni=${REALITY_SNI}&fp=chrome&pbk=${REALITY_PUB}&sid=${REALITY_SID}#reality${node_suffix}" >> "$URI_FILE"
         echo "" >> "$URI_FILE"
     fi
 
     if [ "${ENABLE_SOCKS5:-false}" = "true" ]; then
         echo "=== SOCKS5 ===" >> "$URI_FILE"
-        echo "socks5://${SOCKS5_USER}:${SOCKS5_PASS}@${PUBLIC_IP}:${SOCKS5_PORT}#socks5${node_suffix}" >> "$URI_FILE"
+        echo "socks5://${SOCKS5_USER}:${SOCKS5_PASS}@${link_host}:${SOCKS5_PORT}#socks5${node_suffix}" >> "$URI_FILE"
+        echo "" >> "$URI_FILE"
+    fi
+
+    if [ "${ENABLE_TROJAN:-false}" = "true" ]; then
+        trojan_encoded=$(url_encode "$TROJAN_PSK")
+        local _trojan_sni="${TROJAN_SNI:-www.bing.com}"
+        echo "=== Trojan ===" >> "$URI_FILE"
+        echo "trojan://${trojan_encoded}@${link_host}:${TROJAN_PORT}?sni=${_trojan_sni}&allowInsecure=1#trojan${node_suffix}" >> "$URI_FILE"
+        echo "" >> "$URI_FILE"
+    fi
+
+    if [ "${ENABLE_VLESS_H2:-false}" = "true" ]; then
+        local _vless_h2_sni="${REALITY_SNI:-addons.mozilla.org}"
+        local _vless_h2_pub="${VLESS_H2_PUB:-${REALITY_PUB:-}}"
+        local _vless_h2_sid="${VLESS_H2_SID:-${REALITY_SID:-}}"
+        echo "=== VLESS-H2-Reality ===" >> "$URI_FILE"
+        echo "vless://${VLESS_H2_UUID}@${link_host}:${VLESS_H2_PORT}?encryption=none&flow=&security=reality&sni=${_vless_h2_sni}&fp=chrome&pbk=${_vless_h2_pub}&sid=${_vless_h2_sid}&type=http#vless-h2${node_suffix}" >> "$URI_FILE"
+        echo "" >> "$URI_FILE"
+    fi
+
+    # VMess base64 URI 辅助函数
+    _vmess_b64() {
+        local ps="$1" addr="$2" port="$3" uuid="$4" net="$5" tls="${6:-}" path="${7:-}" host="${8:-$2}"
+        local json="{\"v\":\"2\",\"ps\":\"$ps\",\"add\":\"$addr\",\"port\":\"$port\",\"id\":\"$uuid\",\"aid\":\"0\",\"net\":\"$net\",\"type\":\"none\",\"host\":\"$host\",\"path\":\"$path\",\"tls\":\"$tls\",\"sni\":\"$host\",\"alpn\":\"\"}"
+        printf 'vmess://%s' "$(printf '%s' "$json" | base64 | tr -d '\n')"
+    }
+
+    local rh="$PUBLIC_IP"
+    local link_host="$PUBLIC_IP"
+    if [[ "$link_host" == *":"* ]]; then
+        link_host="[$link_host]"
+    fi
+    local tp="${PATH_TRANSPORT:-/ray}"
+
+    if [ "${ENABLE_VMESS_TCP:-false}" = "true" ]; then
+        echo "=== VMess-TCP ===" >> "$URI_FILE"
+        _vmess_b64 "vmess-tcp${node_suffix}" "$rh" "$VMESS_TCP_PORT" "$UUID_VMESS" "tcp" >> "$URI_FILE"
+        echo "" >> "$URI_FILE" ; echo "" >> "$URI_FILE"
+    fi
+    if [ "${ENABLE_VMESS_WS:-false}" = "true" ]; then
+        echo "=== VMess-WS ===" >> "$URI_FILE"
+        _vmess_b64 "vmess-ws${node_suffix}" "$rh" "$VMESS_WS_PORT" "$UUID_VMESS" "ws" "" "$tp" >> "$URI_FILE"
+        echo "" >> "$URI_FILE" ; echo "" >> "$URI_FILE"
+    fi
+    if [ "${ENABLE_VMESS_HTTP:-false}" = "true" ]; then
+        echo "=== VMess-HTTP ===" >> "$URI_FILE"
+        _vmess_b64 "vmess-http${node_suffix}" "$rh" "$VMESS_HTTP_PORT" "$UUID_VMESS" "http" "" "$tp" >> "$URI_FILE"
+        echo "" >> "$URI_FILE" ; echo "" >> "$URI_FILE"
+    fi
+    if [ "${ENABLE_VMESS_QUIC:-false}" = "true" ]; then
+        echo "=== VMess-QUIC(TLS) ===" >> "$URI_FILE"
+        _vmess_b64 "vmess-quic${node_suffix}" "$rh" "$VMESS_QUIC_PORT" "$UUID_VMESS" "quic" "tls" "" "$rh" >> "$URI_FILE"
+        echo " (allowInsecure)" >> "$URI_FILE" ; echo "" >> "$URI_FILE"
+    fi
+    if [ "${ENABLE_VMESS_WST:-false}" = "true" ]; then
+        echo "=== VMess-WS-TLS ===" >> "$URI_FILE"
+        _vmess_b64 "vmess-wst${node_suffix}" "$rh" "$VMESS_WST_PORT" "$UUID_VMESS" "ws" "tls" "$tp" "$rh" >> "$URI_FILE"
+        echo " (allowInsecure)" >> "$URI_FILE" ; echo "" >> "$URI_FILE"
+    fi
+    if [ "${ENABLE_VMESS_H2T:-false}" = "true" ]; then
+        echo "=== VMess-H2-TLS ===" >> "$URI_FILE"
+        _vmess_b64 "vmess-h2t${node_suffix}" "$rh" "$VMESS_H2T_PORT" "$UUID_VMESS" "h2" "tls" "$tp" "$rh" >> "$URI_FILE"
+        echo " (allowInsecure)" >> "$URI_FILE" ; echo "" >> "$URI_FILE"
+    fi
+    if [ "${ENABLE_VMESS_HUT:-false}" = "true" ]; then
+        echo "=== VMess-HU-TLS ===" >> "$URI_FILE"
+        _vmess_b64 "vmess-hut${node_suffix}" "$rh" "$VMESS_HUT_PORT" "$UUID_VMESS" "httpupgrade" "tls" "$tp" "$rh" >> "$URI_FILE"
+        echo " (allowInsecure)" >> "$URI_FILE" ; echo "" >> "$URI_FILE"
+    fi
+    if [ "${ENABLE_VLESS_WST:-false}" = "true" ]; then
+        echo "=== VLESS-WS-TLS ===" >> "$URI_FILE"
+        echo "vless://${UUID_VLESS_TLS}@${link_host}:${VLESS_WST_PORT}?security=tls&sni=${rh}&type=ws&path=${tp}&allowInsecure=1&host=${rh}#vless-wst${node_suffix}" >> "$URI_FILE"
+        echo "" >> "$URI_FILE"
+    fi
+    if [ "${ENABLE_VLESS_H2T:-false}" = "true" ]; then
+        echo "=== VLESS-H2-TLS ===" >> "$URI_FILE"
+        echo "vless://${UUID_VLESS_TLS}@${link_host}:${VLESS_H2T_PORT}?security=tls&sni=${rh}&type=http&path=${tp}&allowInsecure=1#vless-h2t${node_suffix}" >> "$URI_FILE"
+        echo "" >> "$URI_FILE"
+    fi
+    if [ "${ENABLE_VLESS_HUT:-false}" = "true" ]; then
+        echo "=== VLESS-HU-TLS ===" >> "$URI_FILE"
+        echo "vless://${UUID_VLESS_TLS}@${link_host}:${VLESS_HUT_PORT}?security=tls&sni=${rh}&type=httpupgrade&path=${tp}&allowInsecure=1#vless-hut${node_suffix}" >> "$URI_FILE"
+        echo "" >> "$URI_FILE"
+    fi
+    if [ "${ENABLE_TROJAN_WST:-false}" = "true" ]; then
+        local _te=$(printf "%s" "$PSK_TROJAN_TLS" | sed 's/:/%3A/g; s/+/%2B/g; s/\//%2F/g; s/=/%3D/g')
+        echo "=== Trojan-WS-TLS ===" >> "$URI_FILE"
+        echo "trojan://${_te}@${link_host}:${TROJAN_WST_PORT}?sni=${rh}&type=ws&path=${tp}&allowInsecure=1#trojan-wst${node_suffix}" >> "$URI_FILE"
+        echo "" >> "$URI_FILE"
+    fi
+    if [ "${ENABLE_TROJAN_H2T:-false}" = "true" ]; then
+        local _te=$(printf "%s" "$PSK_TROJAN_TLS" | sed 's/:/%3A/g; s/+/%2B/g; s/\//%2F/g; s/=/%3D/g')
+        echo "=== Trojan-H2-TLS ===" >> "$URI_FILE"
+        echo "trojan://${_te}@${link_host}:${TROJAN_H2T_PORT}?sni=${rh}&type=http&path=${tp}&allowInsecure=1#trojan-h2t${node_suffix}" >> "$URI_FILE"
+        echo "" >> "$URI_FILE"
+    fi
+    if [ "${ENABLE_TROJAN_HUT:-false}" = "true" ]; then
+        local _te=$(printf "%s" "$PSK_TROJAN_TLS" | sed 's/:/%3A/g; s/+/%2B/g; s/\//%2F/g; s/=/%3D/g')
+        echo "=== Trojan-HU-TLS ===" >> "$URI_FILE"
+        echo "trojan://${_te}@${link_host}:${TROJAN_HUT_PORT}?sni=${rh}&type=httpupgrade&path=${tp}&allowInsecure=1#trojan-hut${node_suffix}" >> "$URI_FILE"
         echo "" >> "$URI_FILE"
     fi
 
@@ -1552,7 +2338,7 @@ action_reset_reality() {
     cp "$CONFIG_PATH" "${CONFIG_PATH}.bak"
     
     jq --argjson port "$new_port" '
-    .inbounds |= map(if .type=="vless" then .listen_port = $port else . end)
+    .inbounds |= map(if .tag=="vless-in" then .listen_port = $port else . end)
     ' "$CONFIG_PATH" > "${CONFIG_PATH}.tmp" && mv "${CONFIG_PATH}.tmp" "$CONFIG_PATH"
     
     info "已启动服务并更新 Reality 端口: $new_port"
@@ -1585,7 +2371,90 @@ action_reset_socks5() {
     generate_uris || warn "生成 URI 失败"
 }
 
-# 更新sing-box
+# 重置Trojan端口
+action_reset_trojan() {
+    read_config || return 1
+    if [ "${ENABLE_TROJAN:-false}" != "true" ]; then
+        err "Trojan 协议未启用"
+        return 1
+    fi
+    read -p "输入新的 Trojan 端口(回车保持 $TROJAN_PORT): " new_port
+    new_port="${new_port:-$TROJAN_PORT}"
+
+    info "正在停止服务..."
+    service_stop || warn "停止服务失败"
+    cp "$CONFIG_PATH" "${CONFIG_PATH}.bak"
+
+    jq --argjson port "$new_port" '
+    .inbounds |= map(if .tag=="trojan-in" then .listen_port = $port else . end)
+    ' "$CONFIG_PATH" > "${CONFIG_PATH}.tmp" && mv "${CONFIG_PATH}.tmp" "$CONFIG_PATH"
+
+    info "已启动服务并更新 Trojan 端口: $new_port"
+    service_start || warn "启动服务失败"
+    sleep 1
+    generate_uris || warn "生成 URI 失败"
+}
+
+# 重置VLESS-H2-Reality端口
+action_reset_vless_h2() {
+    read_config || return 1
+    if [ "${ENABLE_VLESS_H2:-false}" != "true" ]; then
+        err "VLESS-H2-Reality 协议未启用"
+        return 1
+    fi
+    read -p "输入新的 VLESS-H2 端口(回车保持 $VLESS_H2_PORT): " new_port
+    new_port="${new_port:-$VLESS_H2_PORT}"
+
+    info "正在停止服务..."
+    service_stop || warn "停止服务失败"
+    cp "$CONFIG_PATH" "${CONFIG_PATH}.bak"
+
+    jq --argjson port "$new_port" '
+    .inbounds |= map(if .tag=="vless-h2-in" then .listen_port = $port else . end)
+    ' "$CONFIG_PATH" > "${CONFIG_PATH}.tmp" && mv "${CONFIG_PATH}.tmp" "$CONFIG_PATH"
+
+    info "已启动服务并更新 VLESS-H2 端口: $new_port"
+    service_start || warn "启动服务失败"
+    sleep 1
+    generate_uris || warn "生成 URI 失败"
+}
+
+# 通用 tag-based 端口重置辅助
+_reset_port_by_tag() {
+    local protocol_label="$1" enable_var="$2" port_var="$3" tag="$4"
+    read_config || return 1
+    eval "_enabled=\${${enable_var}:-false}"
+    if [ "$_enabled" != "true" ]; then
+        err "${protocol_label} 协议未启用"; return 1
+    fi
+    eval "_cur_port=\${${port_var}:-unknown}"
+    read -p "输入新的 ${protocol_label} 端口(回车保持 ${_cur_port}): " new_port
+    new_port="${new_port:-$_cur_port}"
+    info "正在停止服务..."
+    service_stop || warn "停止服务失败"
+    cp "$CONFIG_PATH" "${CONFIG_PATH}.bak"
+    jq --argjson port "$new_port" --arg t "$tag" '
+    .inbounds |= map(if .tag==$t then .listen_port = $port else . end)
+    ' "$CONFIG_PATH" > "${CONFIG_PATH}.tmp" && mv "${CONFIG_PATH}.tmp" "$CONFIG_PATH"
+    info "已启动服务并更新 ${protocol_label} 端口: $new_port"
+    service_start || warn "启动服务失败"
+    sleep 1
+    generate_uris || warn "生成 URI 失败"
+}
+
+action_reset_vmess_tcp()  { _reset_port_by_tag "VMess-TCP"      ENABLE_VMESS_TCP  VMESS_TCP_PORT  "vmess-tcp-in";  }
+action_reset_vmess_ws()   { _reset_port_by_tag "VMess-WS"       ENABLE_VMESS_WS   VMESS_WS_PORT   "vmess-ws-in";   }
+action_reset_vmess_http() { _reset_port_by_tag "VMess-HTTP"      ENABLE_VMESS_HTTP VMESS_HTTP_PORT "vmess-http-in"; }
+action_reset_vmess_quic() { _reset_port_by_tag "VMess-QUIC"      ENABLE_VMESS_QUIC VMESS_QUIC_PORT "vmess-quic-in"; }
+action_reset_vmess_wst()  { _reset_port_by_tag "VMess-WS-TLS"   ENABLE_VMESS_WST  VMESS_WST_PORT  "vmess-wst-in";  }
+action_reset_vmess_h2t()  { _reset_port_by_tag "VMess-H2-TLS"   ENABLE_VMESS_H2T  VMESS_H2T_PORT  "vmess-h2t-in";  }
+action_reset_vmess_hut()  { _reset_port_by_tag "VMess-HU-TLS"   ENABLE_VMESS_HUT  VMESS_HUT_PORT  "vmess-hut-in";  }
+action_reset_vless_wst()  { _reset_port_by_tag "VLESS-WS-TLS"   ENABLE_VLESS_WST  VLESS_WST_PORT  "vless-wst-in";  }
+action_reset_vless_h2t()  { _reset_port_by_tag "VLESS-H2-TLS"   ENABLE_VLESS_H2T  VLESS_H2T_PORT  "vless-h2t-in";  }
+action_reset_vless_hut()  { _reset_port_by_tag "VLESS-HU-TLS"   ENABLE_VLESS_HUT  VLESS_HUT_PORT  "vless-hut-in";  }
+action_reset_trojan_wst() { _reset_port_by_tag "Trojan-WS-TLS"  ENABLE_TROJAN_WST TROJAN_WST_PORT "trojan-wst-in"; }
+action_reset_trojan_h2t() { _reset_port_by_tag "Trojan-H2-TLS"  ENABLE_TROJAN_H2T TROJAN_H2T_PORT "trojan-h2t-in"; }
+action_reset_trojan_hut() { _reset_port_by_tag "Trojan-HU-TLS"  ENABLE_TROJAN_HUT TROJAN_HUT_PORT "trojan-hut-in"; }
 action_update() {
     info "开始更新 sing-box..."
     if [ "$OS" = "alpine" ]; then
@@ -1624,241 +2493,6 @@ action_uninstall() {
     info "卸载完成"
 }
 
-# 生成线路机脚本
-action_generate_relay() {
-    read_config || return 1
-    
-    # 检查是否启用了SS
-    if [ "${ENABLE_SS:-false}" != "true" ]; then
-        warn "未检测到 SS 协议,需要先部署 SS 作为入站"
-        read -p "是否现在部署 SS 协议?(y/N): " deploy_ss
-        if [[ "$deploy_ss" =~ ^[Yy]$ ]]; then
-            info "开始部署 SS 协议..."
-            
-            # 让用户选择端口
-            read -p "请输入 SS 端口(留空则随机 10000-60000): " USER_SS_PORT
-            SS_PORT="${USER_SS_PORT:-$(rand_port)}"
-            SS_PSK=$(rand_pass)
-            SS_METHOD="aes-128-gcm"
-            
-            info "SS 端口: $SS_PORT | 密码已自动生成"
-            
-            info "正在停止服务..."
-            service_stop || warn "停止服务失败"
-            
-            cp "$CONFIG_PATH" "${CONFIG_PATH}.bak"
-            
-            # 添加 SS inbound
-            jq --argjson port "$SS_PORT" --arg psk "$SS_PSK" '
-            .inbounds += [{
-              "type": "shadowsocks",
-              "listen": "::",
-              "listen_port": $port,
-              "method": "aes-128-gcm",
-              "password": $psk,
-              "tag": "ss-in"
-            }]
-            ' "$CONFIG_PATH" > "${CONFIG_PATH}.tmp" && mv "${CONFIG_PATH}.tmp" "$CONFIG_PATH"
-            
-            # 更新缓存和协议标记
-            sed -i 's/ENABLE_SS=false/ENABLE_SS=true/' "$CACHE_FILE" 2>/dev/null || echo "ENABLE_SS=true" >> "$CACHE_FILE"
-            echo "SS_PORT=$SS_PORT" >> "$CACHE_FILE"
-            echo "SS_PSK=$SS_PSK" >> "$CACHE_FILE"
-            echo "SS_METHOD=$SS_METHOD" >> "$CACHE_FILE"
-            
-            # 同步更新协议标记文件
-            PROTOCOL_FILE="/etc/sing-box/.protocols"
-            if [ -f "$PROTOCOL_FILE" ]; then
-                sed -i 's/ENABLE_SS=false/ENABLE_SS=true/' "$PROTOCOL_FILE"
-            else
-                echo "ENABLE_SS=true" >> "$PROTOCOL_FILE"
-            fi
-            
-            # 更新当前会话变量
-            ENABLE_SS=true
-            
-            info "SS 已部署 - 端口: $SS_PORT"
-            service_start || warn "启动服务失败"
-            sleep 1
-            
-            # 重新读取配置
-            read_config
-        else
-            err "取消生成线路机脚本"
-            return 1
-        fi
-    fi
-    
-    # 线路机模板使用 CUSTOM_IP（若设置）或当前公共 IP
-    if [ -n "${CUSTOM_IP:-}" ]; then
-        INBOUND_IP="${CUSTOM_IP}"
-    else
-        INBOUND_IP="$(get_public_ip)"
-    fi
-
-    PUBLIC_IP="$INBOUND_IP"
-    RELAY_SCRIPT="/tmp/relay-install.sh"
-    
-    info "正在生成线路机脚本: $RELAY_SCRIPT"
-    
-    cat > "$RELAY_SCRIPT" <<'RELAY_EOF'
-#!/usr/bin/env bash
-set -euo pipefail
-
-info() { echo -e "\033[1;34m[INFO]\033[0m $*"; }
-err()  { echo -e "\033[1;31m[ERR]\033[0m $*" >&2; }
-
-[ "$(id -u)" != "0" ] && err "必须以 root 运行" && exit 1
-
-detect_os(){
-    . /etc/os-release 2>/dev/null || true
-    case "${ID:-}" in
-        alpine) OS=alpine ;;
-        debian|ubuntu) OS=debian ;;
-        centos|rhel|fedora) OS=redhat ;;
-        *) OS=unknown ;;
-    esac
-}
-detect_os
-
-info "安装依赖..."
-case "$OS" in
-    alpine) apk update; apk add --no-cache curl jq bash openssl ca-certificates ;;
-    debian) apt-get update -y; apt-get install -y curl jq bash openssl ca-certificates ;;
-    redhat) yum install -y curl jq bash openssl ca-certificates ;;
-esac
-
-info "安装 sing-box..."
-case "$OS" in
-    alpine) apk add --repository=http://dl-cdn.alpinelinux.org/alpine/edge/community sing-box ;;
-    *) bash <(curl -fsSL https://sing-box.app/install.sh) ;;
-esac
-
-UUID=$(cat /proc/sys/kernel/random/uuid 2>/dev/null || echo "00000000-0000-0000-0000-000000000000")
-
-info "生成 Reality 密钥对"
-REALITY_KEYS=$(sing-box generate reality-keypair 2>/dev/null || echo "")
-REALITY_PK=$(echo "$REALITY_KEYS" | grep "PrivateKey" | awk '{print $NF}' | tr -d '\r' || echo "")
-REALITY_PUB=$(echo "$REALITY_KEYS" | grep "PublicKey" | awk '{print $NF}' | tr -d '\r' || echo "")
-REALITY_SID=$(sing-box generate rand 8 --hex 2>/dev/null || echo "0123456789abcdef")
-
-read -p "请输入线路机监听端口(留空随机 20000-65000): " USER_PORT
-LISTEN_PORT="${USER_PORT:-$(shuf -i 20000-65000 -n 1 2>/dev/null || echo 20443)}"
-
-mkdir -p /etc/sing-box
-
-cat > /etc/sing-box/config.json <<EOF
-{
-  "log": { "level": "info", "timestamp": true },
-  "inbounds": [
-    {
-      "type": "vless",
-      "listen": "::",
-      "listen_port": $LISTEN_PORT,
-      "sniff": true,
-      "users": [{ "uuid": "$UUID", "flow": "xtls-rprx-vision" }],
-      "tls": {
-        "enabled": true,
-        "server_name": "__REALITY_SNI__",
-        "reality": {
-          "enabled": true,
-          "handshake": { "server": "__REALITY_SNI__", "server_port": 443 },
-          "private_key": "$REALITY_PK",
-          "short_id": ["$REALITY_SID"]
-        }
-      },
-      "tag": "vless-in"
-    }
-  ],
-  "outbounds": [
-    {
-      "type": "shadowsocks",
-      "server": "__INBOUND_IP__",
-      "server_port": __INBOUND_PORT__,
-      "method": "__INBOUND_METHOD__",
-      "password": "__INBOUND_PASSWORD__",
-      "tag": "relay-out"
-    },
-    { "type": "direct", "tag": "direct-out" }
-  ],
-  "route": { "rules": [{ "inbound": "vless-in", "outbound": "relay-out" }] }
-}
-EOF
-
-if [ "$OS" = "alpine" ]; then
-    cat > /etc/init.d/sing-box <<'SVC'
-#!/sbin/openrc-run
-name="sing-box"
-command="/usr/bin/sing-box"
-command_args="run -c /etc/sing-box/config.json"
-command_background="yes"
-pidfile="/run/sing-box.pid"
-supervisor=supervise-daemon
-supervise_daemon_args="--respawn-max 0 --respawn-delay 5"
-
-depend() { need net; }
-SVC
-    chmod +x /etc/init.d/sing-box
-    rc-update add sing-box default
-    rc-service sing-box restart
-else
-    cat > /etc/systemd/system/sing-box.service <<'SYSTEMD'
-[Unit]
-Description=Sing-box Relay
-After=network.target
-[Service]
-ExecStart=/usr/bin/sing-box run -c /etc/sing-box/config.json
-Restart=on-failure
-RestartSec=10s
-[Install]
-WantedBy=multi-user.target
-SYSTEMD
-    systemctl daemon-reload
-    systemctl enable sing-box
-    systemctl restart sing-box
-fi
-
-PUB_IP=$(curl -s https://api.ipify.org 2>/dev/null || echo "YOUR_RELAY_IP")
-
-# 生成并保存链接
-RELAY_URI="vless://$UUID@$PUB_IP:$LISTEN_PORT?encryption=none&flow=xtls-rprx-vision&security=reality&sni=__REALITY_SNI__&fp=chrome&pbk=$REALITY_PUB&sid=$REALITY_SID#relay"
-
-mkdir -p /etc/sing-box
-echo "$RELAY_URI" > /etc/sing-box/relay_uri.txt
-
-echo ""
-info "✅ 安装完成"
-echo "=============== 中转节点 Reality 链接 ==============="
-echo "$RELAY_URI"
-echo "===================================================="
-echo ""
-info "💡 链接已保存到: /etc/sing-box/relay_uri.txt"
-info "💡 查看链接命令: cat /etc/sing-box/relay_uri.txt"
-RELAY_EOF
-
-    # 替换占位符（INBOUND_IP/PORT/METHOD/PASSWORD 同时替换 REALITY_SNI）
-    sed -i "s|__INBOUND_IP__|$INBOUND_IP|g" "$RELAY_SCRIPT"
-    sed -i "s|__INBOUND_PORT__|$SS_PORT|g" "$RELAY_SCRIPT"
-    sed -i "s|__INBOUND_METHOD__|$SS_METHOD|g" "$RELAY_SCRIPT"
-    sed -i "s|__INBOUND_PASSWORD__|$SS_PSK|g" "$RELAY_SCRIPT"
-    sed -i "s|__REALITY_SNI__|${REALITY_SNI:-addons.mozilla.org}|g" "$RELAY_SCRIPT"
-    
-    chmod +x "$RELAY_SCRIPT"
-    
-    info "✅ 线路机脚本已生成: $RELAY_SCRIPT"
-    echo ""
-    info "请复制以下内容到线路机执行:"
-    echo "----------------------------------------"
-    cat "$RELAY_SCRIPT"
-    echo "----------------------------------------"
-    echo ""
-    info "在线路机执行命令示例："
-    echo "   nano /tmp/relay-install.sh 保存后执行"
-    echo "   chmod +x /tmp/relay-install.sh && bash /tmp/relay-install.sh"
-    echo ""
-    info "复制执行完成后，即可在线路机完成 sing-box 中转节点部署。"
-}
-
 # 动态生成菜单
 show_menu() {
     read_config 2>/dev/null || true
@@ -1875,6 +2509,7 @@ MENU
 
     # 构建协议重置选项映射
     declare -g -A MENU_MAP
+    MENU_MAP=()
     local option=4
     
     if [ "${ENABLE_SS:-false}" = "true" ]; then
@@ -1907,6 +2542,84 @@ MENU
         option=$((option + 1))
     fi
 
+    if [ "${ENABLE_TROJAN:-false}" = "true" ]; then
+        echo "$option) 重置 Trojan 端口"
+        MENU_MAP[$option]="reset_trojan"
+        option=$((option + 1))
+    fi
+
+    if [ "${ENABLE_VLESS_H2:-false}" = "true" ]; then
+        echo "$option) 重置 VLESS-H2 端口"
+        MENU_MAP[$option]="reset_vless_h2"
+        option=$((option + 1))
+    fi
+
+    if [ "${ENABLE_VMESS_TCP:-false}" = "true" ]; then
+        echo "$option) 重置 VMess-TCP 端口"
+        MENU_MAP[$option]="reset_vmess_tcp"
+        option=$((option + 1))
+    fi
+    if [ "${ENABLE_VMESS_WS:-false}" = "true" ]; then
+        echo "$option) 重置 VMess-WS 端口"
+        MENU_MAP[$option]="reset_vmess_ws"
+        option=$((option + 1))
+    fi
+    if [ "${ENABLE_VMESS_HTTP:-false}" = "true" ]; then
+        echo "$option) 重置 VMess-HTTP 端口"
+        MENU_MAP[$option]="reset_vmess_http"
+        option=$((option + 1))
+    fi
+    if [ "${ENABLE_VMESS_QUIC:-false}" = "true" ]; then
+        echo "$option) 重置 VMess-QUIC 端口"
+        MENU_MAP[$option]="reset_vmess_quic"
+        option=$((option + 1))
+    fi
+    if [ "${ENABLE_VMESS_WST:-false}" = "true" ]; then
+        echo "$option) 重置 VMess-WS-TLS 端口"
+        MENU_MAP[$option]="reset_vmess_wst"
+        option=$((option + 1))
+    fi
+    if [ "${ENABLE_VMESS_H2T:-false}" = "true" ]; then
+        echo "$option) 重置 VMess-H2-TLS 端口"
+        MENU_MAP[$option]="reset_vmess_h2t"
+        option=$((option + 1))
+    fi
+    if [ "${ENABLE_VMESS_HUT:-false}" = "true" ]; then
+        echo "$option) 重置 VMess-HU-TLS 端口"
+        MENU_MAP[$option]="reset_vmess_hut"
+        option=$((option + 1))
+    fi
+    if [ "${ENABLE_VLESS_WST:-false}" = "true" ]; then
+        echo "$option) 重置 VLESS-WS-TLS 端口"
+        MENU_MAP[$option]="reset_vless_wst"
+        option=$((option + 1))
+    fi
+    if [ "${ENABLE_VLESS_H2T:-false}" = "true" ]; then
+        echo "$option) 重置 VLESS-H2-TLS 端口"
+        MENU_MAP[$option]="reset_vless_h2t"
+        option=$((option + 1))
+    fi
+    if [ "${ENABLE_VLESS_HUT:-false}" = "true" ]; then
+        echo "$option) 重置 VLESS-HU-TLS 端口"
+        MENU_MAP[$option]="reset_vless_hut"
+        option=$((option + 1))
+    fi
+    if [ "${ENABLE_TROJAN_WST:-false}" = "true" ]; then
+        echo "$option) 重置 Trojan-WS-TLS 端口"
+        MENU_MAP[$option]="reset_trojan_wst"
+        option=$((option + 1))
+    fi
+    if [ "${ENABLE_TROJAN_H2T:-false}" = "true" ]; then
+        echo "$option) 重置 Trojan-H2-TLS 端口"
+        MENU_MAP[$option]="reset_trojan_h2t"
+        option=$((option + 1))
+    fi
+    if [ "${ENABLE_TROJAN_HUT:-false}" = "true" ]; then
+        echo "$option) 重置 Trojan-HU-TLS 端口"
+        MENU_MAP[$option]="reset_trojan_hut"
+        option=$((option + 1))
+    fi
+
     # 固定功能选项
     MENU_MAP[$option]="start"
     echo "$option) 启动服务"
@@ -1927,11 +2640,7 @@ MENU
     MENU_MAP[$option]="update"
     echo "$((option))) 更新 sing-box"
     option=$((option + 1))
-    
-    MENU_MAP[$option]="relay"
-    echo "$((option))) 生成线路机脚本(出口为本机ss协议)"
-    option=$((option + 1))
-    
+
     MENU_MAP[$option]="uninstall"
     echo "$((option))) 卸载 sing-box"
     
@@ -1965,12 +2674,26 @@ while true; do
                 reset_tuic) action_reset_tuic ;;
                 reset_reality) action_reset_reality ;;
                 reset_socks5) action_reset_socks5 ;;
+                reset_trojan) action_reset_trojan ;;
+                reset_vless_h2) action_reset_vless_h2 ;;
+                reset_vmess_tcp)  action_reset_vmess_tcp ;;
+                reset_vmess_ws)   action_reset_vmess_ws ;;
+                reset_vmess_http) action_reset_vmess_http ;;
+                reset_vmess_quic) action_reset_vmess_quic ;;
+                reset_vmess_wst)  action_reset_vmess_wst ;;
+                reset_vmess_h2t)  action_reset_vmess_h2t ;;
+                reset_vmess_hut)  action_reset_vmess_hut ;;
+                reset_vless_wst)  action_reset_vless_wst ;;
+                reset_vless_h2t)  action_reset_vless_h2t ;;
+                reset_vless_hut)  action_reset_vless_hut ;;
+                reset_trojan_wst) action_reset_trojan_wst ;;
+                reset_trojan_h2t) action_reset_trojan_h2t ;;
+                reset_trojan_hut) action_reset_trojan_hut ;;
                 start) service_start && info "已启动" ;;
                 stop) service_stop && info "已停止" ;;
                 restart) service_restart && info "已重启" ;;
                 status) service_status ;;
                 update) action_update ;;
-                relay) action_generate_relay ;;
                 uninstall) action_uninstall; exit 0 ;;
                 *) warn "无效选项: $opt" ;;
             esac

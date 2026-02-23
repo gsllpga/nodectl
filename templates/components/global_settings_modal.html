@@ -357,6 +357,82 @@
         gap: 12px;
     }
 
+    /* ================= 变种配置区 ================= */
+    .variant-section {
+        border: 1px solid #e5e5ea;
+        border-radius: 8px;
+        margin-bottom: 10px;
+        overflow: hidden;
+    }
+
+    .variant-section-hd {
+        background: #f5f5f7;
+        padding: 7px 12px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        font-size: 12px;
+        font-weight: 700;
+        color: #444;
+        border-bottom: 1px solid #e5e5ea;
+    }
+
+    .variant-section-hd-title {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+    }
+
+    .variant-port-input {
+        width: 70px;
+        padding: 4px 8px;
+        border: 1px solid #d1d1d6;
+        border-radius: 6px;
+        font-size: 12px;
+        color: #1d1d1f;
+        outline: none;
+        transition: border 0.2s;
+        background: #fff;
+        font-family: monospace;
+        text-align: center;
+    }
+
+    .variant-port-input:focus {
+        border-color: #007aff;
+    }
+
+    .variant-section-bd {
+        padding: 10px 12px 4px;
+        display: flex;
+        gap: 10px;
+        flex-wrap: wrap;
+    }
+
+    .variant-section-bd .gs-field {
+        margin-bottom: 8px;
+    }
+
+    .variant-field-sni  { flex: 1; min-width: 140px; }
+    .variant-field-full { flex: 1; min-width: 180px; }
+
+    .variant-note {
+        font-size: 11px;
+        color: #86868b;
+        font-style: italic;
+        padding: 0 12px 8px;
+    }
+
+    .tls-path-wrap {
+        margin-top: 4px;
+        padding: 10px 12px 2px;
+        background: #fafbfc;
+        border: 1px dashed #d1d1d6;
+        border-radius: 8px;
+        margin-bottom: 10px;
+    }
+
+    .tls-path-wrap .gs-label { color: #555; }
+
     .gs-empty-state {
         font-size: 13px;
         color: #86868b;
@@ -479,12 +555,21 @@
             <div class="gs-left-col no-scrollbar">
                 <label class="gs-section-label">选择协议以配置默认安装参数</label>
 
-                <div class="proto-nav-card" data-proto-id="reality" onclick="selectGsProto('reality', this)">
-                    <div class="proto-name">VLESS Reality</div>
+                <div class="proto-nav-card" data-proto-id="vless" onclick="selectGsProto('vless', this)">
+                    <div class="proto-name">VLESS</div>
                     <div class="proto-actions">
                         <span class="proto-chip tcp">TCP</span>
-                        <input type="number" id="gs_proxy_port_reality" class="port-input" placeholder="端口"
-                            onclick="event.stopPropagation()" oninput="triggerGsAutoSave()">
+                        <div class="expand-indicator"><svg viewBox="0 0 24 24" width="16" height="16" fill="none"
+                                stroke="currentColor" stroke-width="2">
+                                <polyline points="9 18 15 12 9 6"></polyline>
+                            </svg></div>
+                    </div>
+                </div>
+
+                <div class="proto-nav-card" data-proto-id="vmess" onclick="selectGsProto('vmess', this)">
+                    <div class="proto-name">VMess</div>
+                    <div class="proto-actions">
+                        <span class="proto-chip tcp">TCP</span>
                         <div class="expand-indicator"><svg viewBox="0 0 24 24" width="16" height="16" fill="none"
                                 stroke="currentColor" stroke-width="2">
                                 <polyline points="9 18 15 12 9 6"></polyline>
@@ -497,8 +582,6 @@
                     <div class="proto-actions">
                         <span class="proto-chip tcp">TCP</span>
                         <span class="proto-chip udp">UDP</span>
-                        <input type="number" id="gs_proxy_port_ss" class="port-input" placeholder="端口"
-                            onclick="event.stopPropagation()" oninput="triggerGsAutoSave()">
                         <div class="expand-indicator"><svg viewBox="0 0 24 24" width="16" height="16" fill="none"
                                 stroke="currentColor" stroke-width="2">
                                 <polyline points="9 18 15 12 9 6"></polyline>
@@ -510,8 +593,6 @@
                     <div class="proto-name">Hysteria2</div>
                     <div class="proto-actions">
                         <span class="proto-chip udp">UDP</span>
-                        <input type="number" id="gs_proxy_port_hy2" class="port-input" placeholder="端口"
-                            onclick="event.stopPropagation()" oninput="triggerGsAutoSave()">
                         <div class="expand-indicator"><svg viewBox="0 0 24 24" width="16" height="16" fill="none"
                                 stroke="currentColor" stroke-width="2">
                                 <polyline points="9 18 15 12 9 6"></polyline>
@@ -523,8 +604,6 @@
                     <div class="proto-name">TUIC</div>
                     <div class="proto-actions">
                         <span class="proto-chip udp">UDP</span>
-                        <input type="number" id="gs_proxy_port_tuic" class="port-input" placeholder="端口"
-                            onclick="event.stopPropagation()" oninput="triggerGsAutoSave()">
                         <div class="expand-indicator"><svg viewBox="0 0 24 24" width="16" height="16" fill="none"
                                 stroke="currentColor" stroke-width="2">
                                 <polyline points="9 18 15 12 9 6"></polyline>
@@ -537,88 +616,277 @@
                     <div class="proto-actions">
                         <span class="proto-chip tcp">TCP</span>
                         <span class="proto-chip udp">UDP</span>
-                        <input type="number" id="gs_proxy_port_socks5" class="port-input" placeholder="端口"
-                            onclick="event.stopPropagation()" oninput="triggerGsAutoSave()">
                         <div class="expand-indicator"><svg viewBox="0 0 24 24" width="16" height="16" fill="none"
                                 stroke="currentColor" stroke-width="2">
                                 <polyline points="9 18 15 12 9 6"></polyline>
                             </svg></div>
                     </div>
                 </div>
+
+                <div class="proto-nav-card" data-proto-id="trojan" onclick="selectGsProto('trojan', this)">
+                    <div class="proto-name">Trojan</div>
+                    <div class="proto-actions">
+                        <span class="proto-chip tcp">TCP</span>
+                        <div class="expand-indicator"><svg viewBox="0 0 24 24" width="16" height="16" fill="none"
+                                stroke="currentColor" stroke-width="2">
+                                <polyline points="9 18 15 12 9 6"></polyline>
+                            </svg></div>
+                    </div>
+                </div>
+
+                <label class="gs-section-label" style="margin-top:18px;">系统优化</label>
+
+                <div class="proto-nav-card" style="cursor:default;" onclick="event.stopPropagation()">
+                    <div class="proto-name" style="font-size:13px;">BBR 内核加速</div>
+                    <div class="proto-actions">
+                        <label style="display:flex;align-items:center;gap:6px;cursor:pointer;">
+                            <input type="checkbox" id="gs_proxy_enable_bbr" onchange="triggerGsAutoSave()"
+                                style="width:16px;height:16px;cursor:pointer;">
+                            <span style="font-size:12px;color:#86868b;">安装时启用</span>
+                        </label>
+                    </div>
+                </div>
+
             </div>
 
             <div class="gs-right-col no-scrollbar" id="gsRightCol">
                 <label class="gs-section-label" id="gsRightTitle">协议配置</label>
 
-                <div class="proto-form" id="gs-form-reality" style="display:none;">
-                    <div class="gs-field">
-                        <label class="gs-label">目标伪装域名 (SNI)</label>
-                        <input type="text" id="gs_proxy_reality_sni" class="gs-input" placeholder="www.bing.com"
-                            oninput="triggerGsAutoSave()">
-                    </div>
-                </div>
-
-                <div class="proto-form" id="gs-form-ss" style="display:none;">
-                    <div class="gs-field">
-                        <label class="gs-label" style="display: flex; align-items: center;">
-                            加密方式
-                            <div class="gs-info-tooltip-wrap" tabindex="0">
-                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                                    stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                                    <circle cx="12" cy="12" r="10"></circle>
-                                    <line x1="12" y1="8" x2="12" y2="12"></line>
-                                    <line x1="12" y1="16" x2="12.01" y2="16"></line>
-                                </svg>
-                                <div class="gs-tooltip-content">
-                                    <span style="color:#60a5fa">AES-128-GCM:</span> 性能强，适合低端设备<br>
-                                    <span style="color:#60a5fa">2022-blake3:</span> 极强抗封锁与兼容性
-                                </div>
-                            </div>
-                        </label>
-                        <select id="gs_proxy_ss_method" class="gs-select" onchange="triggerGsAutoSave()">
-                            <option value="aes-128-gcm">AES-128-GCM</option>
-                            <option value="2022-blake3-aes-128-gcm">2022-blake3-aes-128-gcm</option>
-                        </select>
-                    </div>
-                </div>
-
-                <div class="proto-form" id="gs-form-hy2" style="display:none;">
-                    <div class="gs-empty-state">
-                        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                            stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"
-                            style="opacity: 0.5; margin-bottom: 10px;">
-                            <circle cx="12" cy="12" r="10"></circle>
-                            <line x1="12" y1="8" x2="12" y2="12"></line>
-                            <line x1="12" y1="16" x2="12.01" y2="16"></line>
-                        </svg>
-                        <br>该协议暂无额外参数配置
-                    </div>
-                </div>
-
-                <div class="proto-form" id="gs-form-tuic" style="display:none;">
-                    <div class="gs-empty-state">
-                        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                            stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"
-                            style="opacity: 0.5; margin-bottom: 10px;">
-                            <circle cx="12" cy="12" r="10"></circle>
-                            <line x1="12" y1="8" x2="12" y2="12"></line>
-                            <line x1="12" y1="16" x2="12.01" y2="16"></line>
-                        </svg>
-                        <br>该协议暂无额外参数配置
-                    </div>
-                </div>
-
-                <div class="proto-form" id="gs-form-socks5" style="display:none;">
-                    <div class="socks5-grid">
-                        <div class="gs-field" style="margin: 0;">
-                            <label class="gs-label">默认账号 (留空无密码)</label>
-                            <input type="text" id="gs_proxy_socks5_user" class="gs-input" placeholder=""
-                                oninput="triggerGsAutoSave()">
+                <!-- ===== VLESS 变种 ===== -->
+                <div class="proto-form" id="gs-form-vless" style="display:none;">
+                    <div class="variant-section">
+                        <div class="variant-section-hd">
+                            <div class="variant-section-hd-title"><span class="proto-chip tcp">TCP</span> VLESS Reality</div>
+                            <input type="number" id="gs_proxy_port_reality" class="variant-port-input" placeholder="20004" oninput="triggerGsAutoSave()">
                         </div>
-                        <div class="gs-field" style="margin: 0;">
-                            <label class="gs-label">默认密码 (留空无密码)</label>
-                            <input type="text" id="gs_proxy_socks5_pass" class="gs-input" placeholder=""
-                                oninput="triggerGsAutoSave()">
+                        <div class="variant-section-bd">
+                            
+                            <div class="gs-field variant-field-sni">
+                                <label class="gs-label">目标伪装域名 (SNI)</label>
+                                <input type="text" id="gs_proxy_reality_sni" class="gs-input" placeholder="www.bing.com" oninput="triggerGsAutoSave()">
+                            </div>
+                        </div>
+                    </div>
+                    <div class="variant-section">
+                        <div class="variant-section-hd">
+                            <div class="variant-section-hd-title"><span class="proto-chip tcp">TCP</span> VLESS-H2-Reality</div>
+                            <input type="number" id="gs_proxy_port_vless_h2" class="variant-port-input" placeholder="20007" oninput="triggerGsAutoSave()">
+                        </div>
+                        
+                    </div>
+                    <div class="variant-section">
+                        <div class="variant-section-hd">
+                            <div class="variant-section-hd-title"><span class="proto-chip tcp">TCP</span> VLESS-WS-TLS</div>
+                            <input type="number" id="gs_proxy_port_vless_wst" class="variant-port-input" placeholder="20015" oninput="triggerGsAutoSave()">
+                        </div>
+                        
+                    </div>
+                    <div class="variant-section">
+                        <div class="variant-section-hd">
+                            <div class="variant-section-hd-title"><span class="proto-chip tcp">TCP</span> VLESS-H2-TLS</div>
+                            <input type="number" id="gs_proxy_port_vless_h2t" class="variant-port-input" placeholder="20016" oninput="triggerGsAutoSave()">
+                        </div>
+                        
+                    </div>
+                    <div class="variant-section">
+                        <div class="variant-section-hd">
+                            <div class="variant-section-hd-title"><span class="proto-chip tcp">TCP</span> VLESS-HU-TLS</div>
+                            <input type="number" id="gs_proxy_port_vless_hut" class="variant-port-input" placeholder="20017" oninput="triggerGsAutoSave()">
+                        </div>
+                        
+                    </div>
+                    <div class="tls-path-wrap">
+                        <div class="gs-field" style="margin:0;">
+                            <label class="gs-label">WS / H2 / HTTPUpgrade 传输路径 (TLS 变种共用)</label>
+                            <input type="text" class="gs-input tls-path-input" placeholder="/ray" oninput="syncTlsPath(this)">
+                        </div>
+                    </div>
+                </div>
+
+                <!-- ===== VMess 变种 ===== -->
+                <div class="proto-form" id="gs-form-vmess" style="display:none;">
+                    <div class="variant-section">
+                        <div class="variant-section-hd">
+                            <div class="variant-section-hd-title"><span class="proto-chip tcp">TCP</span> VMess-TCP</div>
+                            <input type="number" id="gs_proxy_port_vmess_tcp" class="variant-port-input" placeholder="20008" oninput="triggerGsAutoSave()">
+                        </div>
+                        
+                    </div>
+                    <div class="variant-section">
+                        <div class="variant-section-hd">
+                            <div class="variant-section-hd-title"><span class="proto-chip tcp">TCP</span> VMess-WS</div>
+                            <input type="number" id="gs_proxy_port_vmess_ws" class="variant-port-input" placeholder="20009" oninput="triggerGsAutoSave()">
+                        </div>
+                        
+                    </div>
+                    <div class="variant-section">
+                        <div class="variant-section-hd">
+                            <div class="variant-section-hd-title"><span class="proto-chip tcp">TCP</span> VMess-HTTP</div>
+                            <input type="number" id="gs_proxy_port_vmess_http" class="variant-port-input" placeholder="20010" oninput="triggerGsAutoSave()">
+                        </div>
+                        
+                    </div>
+                    <div class="variant-section">
+                        <div class="variant-section-hd">
+                            <div class="variant-section-hd-title"><span class="proto-chip udp">UDP</span> VMess-QUIC</div>
+                            <input type="number" id="gs_proxy_port_vmess_quic" class="variant-port-input" placeholder="20011" oninput="triggerGsAutoSave()">
+                        </div>
+                        
+                    </div>
+                    <div class="variant-section">
+                        <div class="variant-section-hd">
+                            <div class="variant-section-hd-title"><span class="proto-chip tcp">TCP</span> VMess-WS-TLS</div>
+                            <input type="number" id="gs_proxy_port_vmess_wst" class="variant-port-input" placeholder="20012" oninput="triggerGsAutoSave()">
+                        </div>
+                        
+                    </div>
+                    <div class="variant-section">
+                        <div class="variant-section-hd">
+                            <div class="variant-section-hd-title"><span class="proto-chip tcp">TCP</span> VMess-H2-TLS</div>
+                            <input type="number" id="gs_proxy_port_vmess_h2t" class="variant-port-input" placeholder="20013" oninput="triggerGsAutoSave()">
+                        </div>
+                        
+                    </div>
+                    <div class="variant-section">
+                        <div class="variant-section-hd">
+                            <div class="variant-section-hd-title"><span class="proto-chip tcp">TCP</span> VMess-HU-TLS</div>
+                            <input type="number" id="gs_proxy_port_vmess_hut" class="variant-port-input" placeholder="20014" oninput="triggerGsAutoSave()">
+                        </div>
+                        
+                    </div>
+                    <div class="tls-path-wrap">
+                        <div class="gs-field" style="margin:0;">
+                            <label class="gs-label">WS / H2 / HTTPUpgrade 传输路径 (TLS 变种共用)</label>
+                            <input type="text" class="gs-input tls-path-input" placeholder="/ray" oninput="syncTlsPath(this)">
+                        </div>
+                    </div>
+                </div>
+
+                <!-- ===== Shadowsocks ===== -->
+                <div class="proto-form" id="gs-form-ss" style="display:none;">
+                    <div class="variant-section">
+                        <div class="variant-section-hd">
+                            <div class="variant-section-hd-title"><span class="proto-chip tcp">TCP</span><span class="proto-chip udp">UDP</span> Shadowsocks</div>
+                            <input type="number" id="gs_proxy_port_ss" class="variant-port-input" placeholder="20001" oninput="triggerGsAutoSave()">
+                        </div>
+                        <div class="variant-section-bd">
+                            
+                            <div class="gs-field variant-field-sni">
+                                <label class="gs-label" style="display:flex;align-items:center;">加密方式
+                                    <div class="gs-info-tooltip-wrap" tabindex="0">
+                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                            <circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line>
+                                        </svg>
+                                        <div class="gs-tooltip-content">
+                                            <span style="color:#60a5fa">AES-128-GCM:</span> 性能强，适合低端设备<br>
+                                            <span style="color:#60a5fa">2022-blake3:</span> 极强抗封锁与兼容性
+                                        </div>
+                                    </div>
+                                </label>
+                                <select id="gs_proxy_ss_method" class="gs-select" onchange="triggerGsAutoSave()">
+                                    <option value="aes-128-gcm">AES-128-GCM</option>
+                                    <option value="2022-blake3-aes-128-gcm">2022-blake3-aes-128-gcm</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- ===== Hysteria2 ===== -->
+                <div class="proto-form" id="gs-form-hy2" style="display:none;">
+                    <div class="variant-section">
+                        <div class="variant-section-hd">
+                            <div class="variant-section-hd-title"><span class="proto-chip udp">UDP</span> Hysteria2</div>
+                            <input type="number" id="gs_proxy_port_hy2" class="variant-port-input" placeholder="20002" oninput="triggerGsAutoSave()">
+                        </div>
+                        <div class="variant-section-bd">
+                            
+                            <div class="gs-field variant-field-sni">
+                                <label class="gs-label">客户端 SNI 伪装域名</label>
+                                <input type="text" id="gs_proxy_hy2_sni" class="gs-input" placeholder="www.bing.com" oninput="triggerGsAutoSave()">
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- ===== TUIC ===== -->
+                <div class="proto-form" id="gs-form-tuic" style="display:none;">
+                    <div class="variant-section">
+                        <div class="variant-section-hd">
+                            <div class="variant-section-hd-title"><span class="proto-chip udp">UDP</span> TUIC</div>
+                            <input type="number" id="gs_proxy_port_tuic" class="variant-port-input" placeholder="20003" oninput="triggerGsAutoSave()">
+                        </div>
+                        <div class="variant-section-bd">
+                            
+                            <div class="gs-field variant-field-sni">
+                                <label class="gs-label">客户端 SNI 伪装域名</label>
+                                <input type="text" id="gs_proxy_tuic_sni" class="gs-input" placeholder="www.bing.com" oninput="triggerGsAutoSave()">
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- ===== Socks5 ===== -->
+                <div class="proto-form" id="gs-form-socks5" style="display:none;">
+                    <div class="variant-section">
+                        <div class="variant-section-hd">
+                            <div class="variant-section-hd-title"><span class="proto-chip tcp">TCP</span><span class="proto-chip udp">UDP</span> Socks5</div>
+                            <input type="number" id="gs_proxy_port_socks5" class="variant-port-input" placeholder="20005" oninput="triggerGsAutoSave()">
+                        </div>
+                        <div class="variant-section-bd">
+                            
+                            <div class="gs-field variant-field-sni">
+                                <label class="gs-label">默认账号 (留空无密码)</label>
+                                <input type="text" id="gs_proxy_socks5_user" class="gs-input" placeholder="" oninput="triggerGsAutoSave()">
+                            </div>
+                            <div class="gs-field variant-field-sni">
+                                <label class="gs-label">默认密码 (留空无密码)</label>
+                                <input type="text" id="gs_proxy_socks5_pass" class="gs-input" placeholder="" oninput="triggerGsAutoSave()">
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- ===== Trojan 变种 ===== -->
+                <div class="proto-form" id="gs-form-trojan" style="display:none;">
+                    <div class="variant-section">
+                        <div class="variant-section-hd">
+                            <div class="variant-section-hd-title"><span class="proto-chip tcp">TCP</span> Trojan</div>
+                            <input type="number" id="gs_proxy_port_trojan" class="variant-port-input" placeholder="20006" oninput="triggerGsAutoSave()">
+                        </div>
+                        <div class="variant-section-bd">
+                            
+                            <div class="gs-field variant-field-sni">
+                                <label class="gs-label">客户端 SNI 伪装域名</label>
+                                <input type="text" id="gs_proxy_trojan_sni" class="gs-input" placeholder="www.bing.com" oninput="triggerGsAutoSave()">
+                            </div>
+                        </div>
+                    </div>
+                    <div class="variant-section">
+                        <div class="variant-section-hd">
+                            <div class="variant-section-hd-title"><span class="proto-chip tcp">TCP</span> Trojan-WS-TLS</div>
+                            <input type="number" id="gs_proxy_port_trojan_wst" class="variant-port-input" placeholder="20018" oninput="triggerGsAutoSave()">
+                        </div>
+                        
+                    </div>
+                    <div class="variant-section">
+                        <div class="variant-section-hd">
+                            <div class="variant-section-hd-title"><span class="proto-chip tcp">TCP</span> Trojan-H2-TLS</div>
+                            <input type="number" id="gs_proxy_port_trojan_h2t" class="variant-port-input" placeholder="20019" oninput="triggerGsAutoSave()">
+                        </div>
+                        
+                    </div>
+                    <div class="variant-section">
+                        <div class="variant-section-hd">
+                            <div class="variant-section-hd-title"><span class="proto-chip tcp">TCP</span> Trojan-HU-TLS</div>
+                            <input type="number" id="gs_proxy_port_trojan_hut" class="variant-port-input" placeholder="20020" oninput="triggerGsAutoSave()">
+                        </div>
+                        
+                    </div>
+                    <div class="tls-path-wrap">
+                        <div class="gs-field" style="margin:0;">
+                            <label class="gs-label">WS / H2 / HTTPUpgrade 传输路径 (TLS 变种共用)</label>
+                            <input type="text" class="gs-input tls-path-input" placeholder="/ray" oninput="syncTlsPath(this)">
                         </div>
                     </div>
                 </div>
@@ -655,7 +923,7 @@
 
         cardElement.classList.add('active');
         const protoName = cardElement.querySelector('.proto-name').innerText;
-        document.getElementById('gsRightTitle').innerText = protoName + ' 额外配置';
+        document.getElementById('gsRightTitle').innerText = protoName + ' 变种配置';
 
         const formEl = document.getElementById('gs-form-' + protoId);
 
@@ -684,7 +952,7 @@
 
         if (!activeCard) {
             if (!isMobile) {
-                const firstCard = document.querySelector('.proto-nav-card');
+                const firstCard = document.querySelector('.proto-nav-card[data-proto-id]');
                 if (firstCard) selectGsProto(firstCard.getAttribute('data-proto-id'), firstCard);
             }
             return;
@@ -711,11 +979,18 @@
         const currentIsMobile = window.innerWidth <= 768;
         if (currentIsMobile !== gsLastIsMobile) {
             gsLastIsMobile = currentIsMobile;
-            if (gsModal.classList.contains('active')) {
-                adjustGsLayout();
-            }
+            if (gsModal.classList.contains('active')) adjustGsLayout();
         }
     });
+
+    // 同步所有 TLS 路径输入框（VLESS / VMess / Trojan 面板各有一个，值保持一致）
+    function syncTlsPath(el) {
+        const val = el.value;
+        document.querySelectorAll('.tls-path-input').forEach(inp => {
+            if (inp !== el) inp.value = val;
+        });
+        triggerGsAutoSave();
+    }
 
     async function openGlobalSettingsModal() {
         document.querySelectorAll('.proto-nav-card').forEach(c => c.classList.remove('active', 'mobile-expanded'));
@@ -727,10 +1002,13 @@
 
         if (window.innerWidth > 768) {
             gsModalCard.classList.add('has-content');
-            const firstCard = document.querySelector('.proto-nav-card');
-            firstCard.classList.add('active');
-            document.getElementById('gsRightTitle').innerText = 'VLESS Reality 额外配置';
-            document.getElementById('gs-form-reality').style.display = 'block';
+            const firstCard = document.querySelector('.proto-nav-card[data-proto-id]');
+            if (firstCard) {
+                firstCard.classList.add('active');
+                const protoId = firstCard.getAttribute('data-proto-id');
+                document.getElementById('gsRightTitle').innerText = firstCard.querySelector('.proto-name').innerText + ' 变种配置';
+                document.getElementById('gs-form-' + protoId).style.display = 'block';
+            }
         } else {
             gsModalCard.classList.remove('has-content');
         }
@@ -742,25 +1020,51 @@
             const res = await fetch('/api/get-settings');
             const result = await res.json();
             if (result.status === 'success') {
-                const data = result.data;
-                document.getElementById('gs_proxy_port_ss').value = data.proxy_port_ss || '';
-
+                const d = result.data;
+                // VLESS 族
+                document.getElementById('gs_proxy_port_reality').value   = d.proxy_port_reality   || '';
+                document.getElementById('gs_proxy_reality_sni').value    = d.proxy_reality_sni    || '';
+                document.getElementById('gs_proxy_port_vless_h2').value  = d.proxy_port_vless_h2  || '';
+                document.getElementById('gs_proxy_port_vless_wst').value = d.proxy_port_vless_wst || '';
+                document.getElementById('gs_proxy_port_vless_h2t').value = d.proxy_port_vless_h2t || '';
+                document.getElementById('gs_proxy_port_vless_hut').value = d.proxy_port_vless_hut || '';
+                // VMess 族
+                document.getElementById('gs_proxy_port_vmess_tcp').value  = d.proxy_port_vmess_tcp  || '';
+                document.getElementById('gs_proxy_port_vmess_ws').value   = d.proxy_port_vmess_ws   || '';
+                document.getElementById('gs_proxy_port_vmess_http').value = d.proxy_port_vmess_http || '';
+                document.getElementById('gs_proxy_port_vmess_quic').value = d.proxy_port_vmess_quic || '';
+                document.getElementById('gs_proxy_port_vmess_wst').value  = d.proxy_port_vmess_wst  || '';
+                document.getElementById('gs_proxy_port_vmess_h2t').value  = d.proxy_port_vmess_h2t  || '';
+                document.getElementById('gs_proxy_port_vmess_hut').value  = d.proxy_port_vmess_hut  || '';
+                // Shadowsocks
+                document.getElementById('gs_proxy_port_ss').value = d.proxy_port_ss || '';
                 const ssMethodSelect = document.getElementById('gs_proxy_ss_method');
-                if (data.proxy_ss_method) {
-                    const optionExists = Array.from(ssMethodSelect.options).some(opt => opt.value === data.proxy_ss_method);
-                    if (!optionExists) {
-                        ssMethodSelect.add(new Option(data.proxy_ss_method, data.proxy_ss_method));
-                    }
-                    ssMethodSelect.value = data.proxy_ss_method;
+                if (d.proxy_ss_method) {
+                    const optionExists = Array.from(ssMethodSelect.options).some(o => o.value === d.proxy_ss_method);
+                    if (!optionExists) ssMethodSelect.add(new Option(d.proxy_ss_method, d.proxy_ss_method));
+                    ssMethodSelect.value = d.proxy_ss_method;
                 }
-
-                document.getElementById('gs_proxy_port_hy2').value = data.proxy_port_hy2 || '';
-                document.getElementById('gs_proxy_port_tuic').value = data.proxy_port_tuic || '';
-                document.getElementById('gs_proxy_port_reality').value = data.proxy_port_reality || '';
-                document.getElementById('gs_proxy_reality_sni').value = data.proxy_reality_sni || '';
-                document.getElementById('gs_proxy_port_socks5').value = data.proxy_port_socks5 || '';
-                document.getElementById('gs_proxy_socks5_user').value = data.proxy_socks5_user || '';
-                document.getElementById('gs_proxy_socks5_pass').value = data.proxy_socks5_pass || '';
+                // Hysteria2
+                document.getElementById('gs_proxy_port_hy2').value = d.proxy_port_hy2 || '';
+                document.getElementById('gs_proxy_hy2_sni').value   = d.proxy_hy2_sni  || '';
+                // TUIC
+                document.getElementById('gs_proxy_port_tuic').value = d.proxy_port_tuic || '';
+                document.getElementById('gs_proxy_tuic_sni').value   = d.proxy_tuic_sni  || '';
+                // Socks5
+                document.getElementById('gs_proxy_port_socks5').value = d.proxy_port_socks5 || '';
+                document.getElementById('gs_proxy_socks5_user').value  = d.proxy_socks5_user || '';
+                document.getElementById('gs_proxy_socks5_pass').value  = d.proxy_socks5_pass || '';
+                // Trojan 族
+                document.getElementById('gs_proxy_port_trojan').value     = d.proxy_port_trojan     || '';
+                document.getElementById('gs_proxy_trojan_sni').value      = d.proxy_trojan_sni      || '';
+                document.getElementById('gs_proxy_port_trojan_wst').value = d.proxy_port_trojan_wst || '';
+                document.getElementById('gs_proxy_port_trojan_h2t').value = d.proxy_port_trojan_h2t || '';
+                document.getElementById('gs_proxy_port_trojan_hut').value = d.proxy_port_trojan_hut || '';
+                // TLS 传输路径（VLESS / VMess / Trojan 面板共用同一个值）
+                const tlsPath = d.proxy_tls_transport_path || '';
+                document.querySelectorAll('.tls-path-input').forEach(inp => inp.value = tlsPath);
+                // 系统优化
+                document.getElementById('gs_proxy_enable_bbr').checked = (d.proxy_enable_bbr === 'true');
             }
         } catch (e) { console.error("加载配置失败", e); }
     }
@@ -772,9 +1076,7 @@
 
     let gsAutoSaveTimer = null;
     function triggerGsAutoSave() {
-        if (!document.getElementById('globalSettingsModal').classList.contains('active')) {
-            return;
-        }
+        if (!document.getElementById('globalSettingsModal').classList.contains('active')) return;
 
         clearTimeout(gsAutoSaveTimer);
         const indicator = document.getElementById('gsSaveIndicator');
@@ -782,16 +1084,46 @@
         indicator.style.opacity = '1';
 
         gsAutoSaveTimer = setTimeout(async () => {
+            const tlsPath = document.querySelector('.tls-path-input')?.value || '';
             const payload = {
-                "proxy_port_ss": document.getElementById('gs_proxy_port_ss').value,
+                // VLESS 族
+                "proxy_port_reality":   document.getElementById('gs_proxy_port_reality').value,
+                "proxy_reality_sni":    document.getElementById('gs_proxy_reality_sni').value,
+                "proxy_port_vless_h2":  document.getElementById('gs_proxy_port_vless_h2').value,
+                "proxy_port_vless_wst": document.getElementById('gs_proxy_port_vless_wst').value,
+                "proxy_port_vless_h2t": document.getElementById('gs_proxy_port_vless_h2t').value,
+                "proxy_port_vless_hut": document.getElementById('gs_proxy_port_vless_hut').value,
+                // VMess 族
+                "proxy_port_vmess_tcp":  document.getElementById('gs_proxy_port_vmess_tcp').value,
+                "proxy_port_vmess_ws":   document.getElementById('gs_proxy_port_vmess_ws').value,
+                "proxy_port_vmess_http": document.getElementById('gs_proxy_port_vmess_http').value,
+                "proxy_port_vmess_quic": document.getElementById('gs_proxy_port_vmess_quic').value,
+                "proxy_port_vmess_wst":  document.getElementById('gs_proxy_port_vmess_wst').value,
+                "proxy_port_vmess_h2t":  document.getElementById('gs_proxy_port_vmess_h2t').value,
+                "proxy_port_vmess_hut":  document.getElementById('gs_proxy_port_vmess_hut').value,
+                // Shadowsocks
+                "proxy_port_ss":   document.getElementById('gs_proxy_port_ss').value,
                 "proxy_ss_method": document.getElementById('gs_proxy_ss_method').value,
+                // Hysteria2
                 "proxy_port_hy2": document.getElementById('gs_proxy_port_hy2').value,
+                "proxy_hy2_sni":  document.getElementById('gs_proxy_hy2_sni').value,
+                // TUIC
                 "proxy_port_tuic": document.getElementById('gs_proxy_port_tuic').value,
-                "proxy_port_reality": document.getElementById('gs_proxy_port_reality').value,
-                "proxy_reality_sni": document.getElementById('gs_proxy_reality_sni').value,
+                "proxy_tuic_sni":  document.getElementById('gs_proxy_tuic_sni').value,
+                // Socks5
                 "proxy_port_socks5": document.getElementById('gs_proxy_port_socks5').value,
                 "proxy_socks5_user": document.getElementById('gs_proxy_socks5_user').value,
-                "proxy_socks5_pass": document.getElementById('gs_proxy_socks5_pass').value
+                "proxy_socks5_pass": document.getElementById('gs_proxy_socks5_pass').value,
+                // Trojan 族
+                "proxy_port_trojan":     document.getElementById('gs_proxy_port_trojan').value,
+                "proxy_trojan_sni":      document.getElementById('gs_proxy_trojan_sni').value,
+                "proxy_port_trojan_wst": document.getElementById('gs_proxy_port_trojan_wst').value,
+                "proxy_port_trojan_h2t": document.getElementById('gs_proxy_port_trojan_h2t').value,
+                "proxy_port_trojan_hut": document.getElementById('gs_proxy_port_trojan_hut').value,
+                // TLS 传输路径（三个面板共用）
+                "proxy_tls_transport_path": tlsPath,
+                // 系统优化
+                "proxy_enable_bbr": document.getElementById('gs_proxy_enable_bbr').checked ? 'true' : 'false'
             };
 
             try {

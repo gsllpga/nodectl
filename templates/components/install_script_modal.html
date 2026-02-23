@@ -58,8 +58,10 @@
     }
 
     .script-body {
-        padding: 24px 20px;
+        padding: 20px;
         background: #ffffff;
+        overflow-y: auto;
+        max-height: calc(85vh - 140px);
     }
 
     /* 协议选择区样式 */
@@ -104,6 +106,82 @@
     .protocol-selector input[type="checkbox"]:checked:hover+.protocol-label-btn {
         border-color: #0062cc;
         color: #0062cc;
+    }
+
+    /* ====== 协议分组行内展开 ====== */
+    .proto-groups-wrap {
+        margin-bottom: 16px;
+    }
+
+    .proto-row {
+        display: flex;
+        align-items: flex-start;
+        gap: 8px;
+        margin-bottom: 7px;
+    }
+
+    .proto-row-label {
+        font-size: 11px;
+        font-weight: 700;
+        color: #666;
+        min-width: 46px;
+        flex-shrink: 0;
+        padding-top: 5px;
+        text-align: right;
+        letter-spacing: 0.2px;
+    }
+
+    .proto-row-chips {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        flex: 1;
+    }
+
+    /* 单变种协议合并行 */
+    .proto-singles-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        padding-top: 8px;
+        margin-top: 2px;
+        border-top: 1px dashed #e1e4e8;
+    }
+
+    .variant-check-item {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        cursor: pointer;
+        padding: 4px 10px;
+        border-radius: 6px;
+        font-size: 12px;
+        font-weight: 500;
+        color: #444;
+        background: #f4f5f7;
+        border: 1px solid #e1e4e8;
+        transition: all 0.15s;
+        user-select: none;
+    }
+
+    .variant-check-item:hover {
+        background: #eef4ff;
+        border-color: #b3d1ff;
+        color: #0062cc;
+    }
+
+    .variant-check-item input[type="checkbox"] {
+        width: 13px;
+        height: 13px;
+        margin: 0;
+        cursor: pointer;
+        accent-color: #007aff;
+    }
+
+    .variant-check-item:has(input:checked) {
+        background: #e8f2ff;
+        border-color: #007aff;
+        color: #007aff;
     }
 
     /* 代码框样式 */
@@ -230,7 +308,8 @@
         </div>
 
         <div class="script-body">
-            <div class="protocol-selector" id="protocolCheckboxes"></div>
+            <!-- 协议分组折叠面板，由 JS 动态渲染 -->
+            <div class="proto-groups-wrap" id="protocolCheckboxes"></div>
 
             <div class="cmd-box">
                 <div class="cmd-text" id="installCmdDisplay"></div>
@@ -252,19 +331,116 @@
 
 <script>
     const scriptModal = document.getElementById('installScriptModal');
-    const cmdDisplay = document.getElementById('installCmdDisplay');
-    const checkboxContainer = document.getElementById('protocolCheckboxes');
+    const cmdDisplay  = document.getElementById('installCmdDisplay');
+    const groupsWrap  = document.getElementById('protocolCheckboxes');
     let currentScriptNode = null;
 
-    // 协议名称映射与展示名
-    const protocolArgMap = {
-        "vless": { arg: "vless", label: "VLESS Reality" },
-        "ss": { arg: "shadowsocks", label: "Shadowsocks" },
-        "hy2": { arg: "hysteria2", label: "Hysteria2" },
-        "tuic": { arg: "tuic", label: "TUIC" },
-        "socks": { arg: "socks5", label: "SOCKS5" }
-    };
+    // ─── 协议分组定义 ───
+    const protoGroups = [
+        {
+            id: 'vless', name: 'VLESS',
+            variants: [
+                { key: 'vless',      arg: 'vless',      label: 'Reality' },
+                { key: 'vless_h2',   arg: 'vless-h2',   label: 'H2-Reality' },
+                { key: 'vless_wst',  arg: 'vless-wst',  label: 'WS-TLS' },
+                { key: 'vless_h2t',  arg: 'vless-h2t',  label: 'H2-TLS' },
+                { key: 'vless_hut',  arg: 'vless-hut',  label: 'HU-TLS' },
+            ]
+        },
+        {
+            id: 'vmess', name: 'VMess',
+            variants: [
+                { key: 'vmess_tcp',  arg: 'vmess-tcp',  label: 'TCP' },
+                { key: 'vmess_ws',   arg: 'vmess-ws',   label: 'WS' },
+                { key: 'vmess_http', arg: 'vmess-http', label: 'HTTP' },
+                { key: 'vmess_quic', arg: 'vmess-quic', label: 'QUIC' },
+                { key: 'vmess_wst',  arg: 'vmess-wst',  label: 'WS-TLS' },
+                { key: 'vmess_h2t',  arg: 'vmess-h2t',  label: 'H2-TLS' },
+                { key: 'vmess_hut',  arg: 'vmess-hut',  label: 'HU-TLS' },
+            ]
+        },
+        {
+            id: 'ss', name: 'Shadowsocks',
+            variants: [
+                { key: 'ss',   arg: 'shadowsocks', label: 'Shadowsocks' },
+            ]
+        },
+        {
+            id: 'hy2', name: 'Hysteria2',
+            variants: [
+                { key: 'hy2',  arg: 'hysteria2',   label: 'Hysteria2' },
+            ]
+        },
+        {
+            id: 'tuic', name: 'TUIC',
+            variants: [
+                { key: 'tuic', arg: 'tuic',         label: 'TUIC' },
+            ]
+        },
+        {
+            id: 'socks5', name: 'Socks5',
+            variants: [
+                { key: 'socks5', arg: 'socks5',     label: 'Socks5' },
+            ]
+        },
+        {
+            id: 'trojan', name: 'Trojan',
+            variants: [
+                { key: 'trojan',     arg: 'trojan',      label: 'Trojan' },
+                { key: 'trojan_wst', arg: 'trojan-wst',  label: 'WS-TLS' },
+                { key: 'trojan_h2t', arg: 'trojan-h2t',  label: 'H2-TLS' },
+                { key: 'trojan_hut', arg: 'trojan-hut',  label: 'HU-TLS' },
+            ]
+        },
+    ];
 
+    // ─── 渲染协议面板（行内展开，无折叠）───
+    function renderGroups(activeSet) {
+        groupsWrap.innerHTML = '';
+
+        const multiGroups  = protoGroups.filter(g => g.variants.length > 1);
+        const singleGroups = protoGroups.filter(g => g.variants.length === 1);
+
+        // 多变种协议：每组独占一行，左侧显示协议名标签
+        for (const group of multiGroups) {
+            const rowEl = document.createElement('div');
+            rowEl.className = 'proto-row';
+            rowEl.innerHTML = `
+                <span class="proto-row-label">${group.name}</span>
+                <div class="proto-row-chips">
+                    ${group.variants.map(v => `
+                        <label class="variant-check-item">
+                            <input type="checkbox" value="${v.arg}"
+                                ${activeSet.has(v.key) ? 'checked' : ''}
+                                onchange="updateScriptCmd()">
+                            <span>${v.label}</span>
+                        </label>
+                    `).join('')}
+                </div>
+            `;
+            groupsWrap.appendChild(rowEl);
+        }
+
+        // 单变种协议：全部合并到最后一行
+        if (singleGroups.length > 0) {
+            const singlesEl = document.createElement('div');
+            singlesEl.className = 'proto-singles-row';
+            singlesEl.innerHTML = singleGroups.map(g => {
+                const v = g.variants[0];
+                return `
+                    <label class="variant-check-item">
+                        <input type="checkbox" value="${v.arg}"
+                            ${activeSet.has(v.key) ? 'checked' : ''}
+                            onchange="updateScriptCmd()">
+                        <span>${g.name}</span>
+                    </label>
+                `;
+            }).join('');
+            groupsWrap.appendChild(singlesEl);
+        }
+    }
+
+    // ─── 打开弹窗 ───
     function openScriptModal(uuid) {
         currentScriptNode = window.allNodesData[uuid];
         if (!currentScriptNode) return;
@@ -274,52 +450,37 @@
             return;
         }
 
-        // 解析当前节点已开启的协议，默认勾选
-        let activeProtocols = [];
+        // 解析已启用的协议 key 集合
+        const activeSet = new Set();
         if (currentScriptNode.links) {
-            const allProtos = Object.keys(currentScriptNode.links);
             const disabledSet = new Set(currentScriptNode.disabled_links || []);
-            activeProtocols = allProtos.filter(p => !disabledSet.has(p));
+            Object.keys(currentScriptNode.links).forEach(k => {
+                if (!disabledSet.has(k)) activeSet.add(k);
+            });
         }
 
-        // 渲染复选框
-        checkboxContainer.innerHTML = '';
-        for (const [key, info] of Object.entries(protocolArgMap)) {
-            const isChecked = activeProtocols.includes(key) ? 'checked' : '';
-            checkboxContainer.innerHTML += `
-                <label>
-                    <input type="checkbox" value="${info.arg}" ${isChecked} onchange="updateScriptCmd()">
-                    <div class="protocol-label-btn">${info.label}</div>
-                </label>
-            `;
-        }
-
-        // 初始化命令内容
+        renderGroups(activeSet);
         updateScriptCmd();
         scriptModal.classList.add('active');
     }
 
+    // ─── 生成命令 ───
     function updateScriptCmd() {
         if (!currentScriptNode) return;
 
         let host = window.panelUrl || window.location.origin;
         host = host.replace(/\/+$/, "");
 
-        const checkedBoxes = checkboxContainer.querySelectorAll('input[type="checkbox"]:checked');
+        const checkedBoxes = groupsWrap.querySelectorAll('input[type="checkbox"]:checked');
         const selectedArgs = Array.from(checkedBoxes).map(cb => cb.value);
 
-        const protocolsArgHtml = selectedArgs.map(p => `<span class="hl-proto">${p}</span>`).join(" ");
-        const protocolsArgRaw = selectedArgs.join(" ");
+        const protosHtml = selectedArgs.map(p => `<span class="hl-proto">${p}</span>`).join(" ");
+        const protosRaw  = selectedArgs.join(" ");
 
-        // URL 已经包含了 id 参数，后端可通过它获取该节点所有信息
         const scriptUrl = `${host}/api/public/install-script?id=${currentScriptNode.install_id}`;
 
-        // 构建带有高亮的 HTML 命令展示 (极致精简，仅传协议参数)
-        const cmdHtml =
-            `<span class="hl-cmd">bash</span> <span class="hl-param">-c</span> <span class="hl-string">"$(curl -fsSL ${scriptUrl})"</span> <span class="hl-param">--</span> ${protocolsArgHtml}`;
-
-        // 构建纯文本用于剪贴板 (极致精简)
-        const rawCmd = `bash -c "$(curl -fsSL ${scriptUrl})" -- ${protocolsArgRaw}`;
+        const cmdHtml = `<span class="hl-cmd">bash</span> <span class="hl-param">-c</span> <span class="hl-string">"$(curl -fsSL ${scriptUrl})"</span> <span class="hl-param">--</span> ${protosHtml}`;
+        const rawCmd  = `bash -c "$(curl -fsSL ${scriptUrl})" -- ${protosRaw}`;
 
         cmdDisplay.innerHTML = cmdHtml;
         cmdDisplay.setAttribute('data-clipboard-text', rawCmd);
@@ -334,12 +495,10 @@
         navigator.clipboard.writeText(text).then(() => {
             const btn = document.querySelector('.btn-script-copy');
             const originalHtml = btn.innerHTML;
-            btn.style.background = '#34c759'; // 浅色UI中更柔和的绿色
-            btn.style.borderColor = '#34c759';
+            btn.style.background = '#34c759';
             btn.innerHTML = '复制成功!';
             setTimeout(() => {
                 btn.style.background = '#007aff';
-                btn.style.borderColor = 'transparent';
                 btn.innerHTML = originalHtml;
             }, 1500);
         });

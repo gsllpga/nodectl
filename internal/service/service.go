@@ -148,6 +148,88 @@ func RenderInstallScript(node database.NodePool) (string, error) {
 		reportURL = cleanPanelURL + "/api/callback/report"
 	}
 
+	// 读取可配置 SNI，提供兜底默认值
+	hy2SNI := configMap["proxy_hy2_sni"]
+	if hy2SNI == "" {
+		hy2SNI = "www.bing.com"
+	}
+	tuicSNI := configMap["proxy_tuic_sni"]
+	if tuicSNI == "" {
+		tuicSNI = "www.bing.com"
+	}
+	trojanSNI := configMap["proxy_trojan_sni"]
+	if trojanSNI == "" {
+		trojanSNI = "www.bing.com"
+	}
+	enableBBR := configMap["proxy_enable_bbr"]
+	if enableBBR == "" {
+		enableBBR = "true"
+	}
+	portTrojan := configMap["proxy_port_trojan"]
+	if portTrojan == "" {
+		portTrojan = "20006"
+	}
+	portVlessH2 := configMap["proxy_port_vless_h2"]
+	if portVlessH2 == "" {
+		portVlessH2 = "20007"
+	}
+	portVmessTCP := configMap["proxy_port_vmess_tcp"]
+	if portVmessTCP == "" {
+		portVmessTCP = "20008"
+	}
+	portVmessWS := configMap["proxy_port_vmess_ws"]
+	if portVmessWS == "" {
+		portVmessWS = "20009"
+	}
+	portVmessHTTP := configMap["proxy_port_vmess_http"]
+	if portVmessHTTP == "" {
+		portVmessHTTP = "20010"
+	}
+	portVmessQUIC := configMap["proxy_port_vmess_quic"]
+	if portVmessQUIC == "" {
+		portVmessQUIC = "20011"
+	}
+	portVmessWST := configMap["proxy_port_vmess_wst"]
+	if portVmessWST == "" {
+		portVmessWST = "20012"
+	}
+	portVmessH2T := configMap["proxy_port_vmess_h2t"]
+	if portVmessH2T == "" {
+		portVmessH2T = "20013"
+	}
+	portVmessHUT := configMap["proxy_port_vmess_hut"]
+	if portVmessHUT == "" {
+		portVmessHUT = "20014"
+	}
+	portVlessWST := configMap["proxy_port_vless_wst"]
+	if portVlessWST == "" {
+		portVlessWST = "20015"
+	}
+	portVlessH2T := configMap["proxy_port_vless_h2t"]
+	if portVlessH2T == "" {
+		portVlessH2T = "20016"
+	}
+	portVlessHUT := configMap["proxy_port_vless_hut"]
+	if portVlessHUT == "" {
+		portVlessHUT = "20017"
+	}
+	portTrojanWST := configMap["proxy_port_trojan_wst"]
+	if portTrojanWST == "" {
+		portTrojanWST = "20018"
+	}
+	portTrojanH2T := configMap["proxy_port_trojan_h2t"]
+	if portTrojanH2T == "" {
+		portTrojanH2T = "20019"
+	}
+	portTrojanHUT := configMap["proxy_port_trojan_hut"]
+	if portTrojanHUT == "" {
+		portTrojanHUT = "20020"
+	}
+	tlsTransportPath := configMap["proxy_tls_transport_path"]
+	if tlsTransportPath == "" {
+		tlsTransportPath = "/ray"
+	}
+
 	data := map[string]string{
 		"PortSS":      configMap["proxy_port_ss"],
 		"PortHY2":     configMap["proxy_port_hy2"],
@@ -158,7 +240,35 @@ func RenderInstallScript(node database.NodePool) (string, error) {
 		"PortSocks5":  configMap["proxy_port_socks5"],
 		"Socks5User":  configMap["proxy_socks5_user"],
 		"Socks5Pass":  configMap["proxy_socks5_pass"],
-		"ReportURL":   reportURL,
+		// 新增协议端口
+		"PortTrojan":  portTrojan,
+		"PortVlessH2": portVlessH2,
+		// 可配置 SNI
+		"HY2SNI":    hy2SNI,
+		"TUICSNI":   tuicSNI,
+		"TrojanSNI": trojanSNI,
+		// 系统优化
+		"EnableBBR": enableBBR,
+		// VMess 族端口
+		"PortVmessTCP":  portVmessTCP,
+		"PortVmessWS":   portVmessWS,
+		"PortVmessHTTP": portVmessHTTP,
+		"PortVmessQUIC": portVmessQUIC,
+		// VMess+TLS 传输族端口
+		"PortVmessWST": portVmessWST,
+		"PortVmessH2T": portVmessH2T,
+		"PortVmessHUT": portVmessHUT,
+		// VLESS-TLS 传输族端口
+		"PortVlessWST": portVlessWST,
+		"PortVlessH2T": portVlessH2T,
+		"PortVlessHUT": portVlessHUT,
+		// Trojan-TLS 传输族端口
+		"PortTrojanWST": portTrojanWST,
+		"PortTrojanH2T": portTrojanH2T,
+		"PortTrojanHUT": portTrojanHUT,
+		// TLS 传输共用路径
+		"TLSTransportPath": tlsTransportPath,
+		"ReportURL":        reportURL,
 		// [新增] 将节点专属参数硬编码注入到脚本中
 		"InstallID": node.InstallID,
 		"ResetDay":  fmt.Sprintf("%d", node.ResetDay), // int 转 string

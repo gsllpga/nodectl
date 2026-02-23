@@ -12,7 +12,13 @@ import (
 )
 
 // SupportedProtocols 定义系统支持的节点协议列表 (全局变量，供前端和逻辑使用)
-var SupportedProtocols = []string{"vless", "hy2", "socks5", "tuic", "ss"}
+var SupportedProtocols = []string{
+	"vless", "hy2", "socks5", "tuic", "ss", "trojan", "vless_h2",
+	"vmess_tcp", "vmess_ws", "vmess_http", "vmess_quic",
+	"vmess_wst", "vmess_h2t", "vmess_hut",
+	"vless_wst", "vless_h2t", "vless_hut",
+	"trojan_wst", "trojan_h2t", "trojan_hut",
+}
 
 // initDefaultConfigs 初始化默认的系统配置参数
 func initDefaultConfigs() {
@@ -123,6 +129,34 @@ func initProxySettings() {
 		{Key: "proxy_port_socks5", Value: "20005", Description: "Socks5 默认监听端口"},
 		{Key: "proxy_socks5_user", Value: "admin", Description: "Socks5 默认用户名"},
 		{Key: "proxy_socks5_pass", Value: "123456", Description: "Socks5 默认密码"},
+		// 新增协议配置
+		{Key: "proxy_port_trojan", Value: "20006", Description: "Trojan 默认监听端口"},
+		{Key: "proxy_port_vless_h2", Value: "20007", Description: "VLESS-H2-Reality 默认监听端口"},
+		// 可配置 SNI（原先硬编码 www.bing.com）
+		{Key: "proxy_hy2_sni", Value: "www.bing.com", Description: "HY2 客户端 SNI 伪装域名"},
+		{Key: "proxy_tuic_sni", Value: "www.bing.com", Description: "TUIC 客户端 SNI 伪装域名"},
+		{Key: "proxy_trojan_sni", Value: "www.bing.com", Description: "Trojan 客户端 SNI 伪装域名"},
+		// 系统优化选项
+		{Key: "proxy_enable_bbr", Value: "true", Description: "是否在安装时启用 BBR 内核加速"},
+		// VMess 协议族端口
+		{Key: "proxy_port_vmess_tcp", Value: "20008", Description: "VMess-TCP 默认监听端口"},
+		{Key: "proxy_port_vmess_ws", Value: "20009", Description: "VMess-WS 默认监听端口"},
+		{Key: "proxy_port_vmess_http", Value: "20010", Description: "VMess-HTTP 默认监听端口"},
+		{Key: "proxy_port_vmess_quic", Value: "20011", Description: "VMess-QUIC 默认监听端口"},
+		// VMess+TLS 传输族端口
+		{Key: "proxy_port_vmess_wst", Value: "20012", Description: "VMess-WS-TLS 默认监听端口"},
+		{Key: "proxy_port_vmess_h2t", Value: "20013", Description: "VMess-H2-TLS 默认监听端口"},
+		{Key: "proxy_port_vmess_hut", Value: "20014", Description: "VMess-HTTPUpgrade-TLS 默认监听端口"},
+		// VLESS+TLS 传输族端口
+		{Key: "proxy_port_vless_wst", Value: "20015", Description: "VLESS-WS-TLS 默认监听端口"},
+		{Key: "proxy_port_vless_h2t", Value: "20016", Description: "VLESS-H2-TLS 默认监听端口"},
+		{Key: "proxy_port_vless_hut", Value: "20017", Description: "VLESS-HTTPUpgrade-TLS 默认监听端口"},
+		// Trojan+TLS 传输族端口
+		{Key: "proxy_port_trojan_wst", Value: "20018", Description: "Trojan-WS-TLS 默认监听端口"},
+		{Key: "proxy_port_trojan_h2t", Value: "20019", Description: "Trojan-H2-TLS 默认监听端口"},
+		{Key: "proxy_port_trojan_hut", Value: "20020", Description: "Trojan-HTTPUpgrade-TLS 默认监听端口"},
+		// TLS 传输协议共用路径
+		{Key: "proxy_tls_transport_path", Value: "/ray", Description: "WS/H2/HTTPUpgrade 传输协议共用路径"},
 	}
 
 	for _, config := range defaultConfigs {
