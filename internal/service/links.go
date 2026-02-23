@@ -165,6 +165,9 @@ func ParseLinkToClashNode(link string, nameSuffix string) *ClashNode {
 		if vj.Alpn != "" {
 			node.ALPN = strings.Split(vj.Alpn, ",")
 		}
+		if node.Network == "quic" && node.TLS && len(node.ALPN) == 0 {
+			node.ALPN = []string{"h3"}
+		}
 		// 智能解析 host 字段（可能是字符串或数组）
 		hostStr := ""
 		switch v := vj.Host.(type) {

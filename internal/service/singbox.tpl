@@ -364,28 +364,30 @@ get_config() {
         UUID_VMESS=$(rand_uuid)
         PATH_TRANSPORT="${FIXED_TLS_TRANSPORT_PATH:-/ray}"
     fi
-    $ENABLE_VMESS_TCP  && PORT_VMESS_TCP="$FIXED_PORT_VMESS_TCP"
-    $ENABLE_VMESS_WS   && PORT_VMESS_WS="$FIXED_PORT_VMESS_WS"
-    $ENABLE_VMESS_HTTP && PORT_VMESS_HTTP="$FIXED_PORT_VMESS_HTTP"
-    $ENABLE_VMESS_QUIC && PORT_VMESS_QUIC="$FIXED_PORT_VMESS_QUIC"
-    $ENABLE_VMESS_WST  && PORT_VMESS_WST="$FIXED_PORT_VMESS_WST"
-    $ENABLE_VMESS_HUT  && PORT_VMESS_HUT="$FIXED_PORT_VMESS_HUT"
+    if $ENABLE_VMESS_TCP; then PORT_VMESS_TCP="$FIXED_PORT_VMESS_TCP"; fi
+    if $ENABLE_VMESS_WS; then PORT_VMESS_WS="$FIXED_PORT_VMESS_WS"; fi
+    if $ENABLE_VMESS_HTTP; then PORT_VMESS_HTTP="$FIXED_PORT_VMESS_HTTP"; fi
+    if $ENABLE_VMESS_QUIC; then PORT_VMESS_QUIC="$FIXED_PORT_VMESS_QUIC"; fi
+    if $ENABLE_VMESS_WST; then PORT_VMESS_WST="$FIXED_PORT_VMESS_WST"; fi
+    if $ENABLE_VMESS_HUT; then PORT_VMESS_HUT="$FIXED_PORT_VMESS_HUT"; fi
 
     # --- VLESS-TLS 传输族 共用 UUID ---
     if $ENABLE_VLESS_WST || $ENABLE_VLESS_HUT; then
         UUID_VLESS_TLS=$(rand_uuid)
         PATH_TRANSPORT="${FIXED_TLS_TRANSPORT_PATH:-/ray}"
     fi
-    $ENABLE_VLESS_WST  && PORT_VLESS_WST="$FIXED_PORT_VLESS_WST"
-    $ENABLE_VLESS_HUT  && PORT_VLESS_HUT="$FIXED_PORT_VLESS_HUT"
+    if $ENABLE_VLESS_WST; then PORT_VLESS_WST="$FIXED_PORT_VLESS_WST"; fi
+    if $ENABLE_VLESS_HUT; then PORT_VLESS_HUT="$FIXED_PORT_VLESS_HUT"; fi
 
     # --- Trojan-TLS 传输族 共用 PSK ---
     if $ENABLE_TROJAN_WST || $ENABLE_TROJAN_HUT; then
         PSK_TROJAN_TLS=$(rand_pass)
         PATH_TRANSPORT="${FIXED_TLS_TRANSPORT_PATH:-/ray}"
     fi
-    $ENABLE_TROJAN_WST && PORT_TROJAN_WST="$FIXED_PORT_TROJAN_WST"
-    $ENABLE_TROJAN_HUT && PORT_TROJAN_HUT="$FIXED_PORT_TROJAN_HUT"
+    if $ENABLE_TROJAN_WST; then PORT_TROJAN_WST="$FIXED_PORT_TROJAN_WST"; fi
+    if $ENABLE_TROJAN_HUT; then PORT_TROJAN_HUT="$FIXED_PORT_TROJAN_HUT"; fi
+
+    return 0
 }
 
 get_config
@@ -1209,6 +1211,9 @@ generate_uris() {
     vmess_b64() {
         local ps="$1" addr="$2" port="$3" uuid="$4" net="$5" tls="${6:-}" path="${7:-}" host="${8:-$2}" alpn="${9:-}"
         local allow_insecure="false"
+        if [ "$net" = "quic" ] && [ "$tls" = "tls" ] && [ -z "$alpn" ]; then
+            alpn="h3"
+        fi
         [ "$tls" = "tls" ] && allow_insecure="true"
         local json="{\"v\":\"2\",\"ps\":\"$ps\",\"add\":\"$addr\",\"port\":\"$port\",\"id\":\"$uuid\",\"aid\":\"0\",\"net\":\"$net\",\"type\":\"none\",\"host\":\"$host\",\"path\":\"$path\",\"tls\":\"$tls\",\"sni\":\"$host\",\"alpn\":\"$alpn\",\"allowInsecure\":$allow_insecure}"
         printf 'vmess://%s' "$(printf '%s' "$json" | base64 | tr -d '\n')"
@@ -1561,6 +1566,9 @@ report_nodes() {
     _vmess_b64_report() {
         local ps="$1" addr="$2" port="$3" uuid="$4" net="$5" tls="${6:-}" path="${7:-}" host="${8:-$2}" alpn="${9:-}"
         local allow_insecure="false"
+        if [ "$net" = "quic" ] && [ "$tls" = "tls" ] && [ -z "$alpn" ]; then
+            alpn="h3"
+        fi
         [ "$tls" = "tls" ] && allow_insecure="true"
         local json="{\"v\":\"2\",\"ps\":\"$ps\",\"add\":\"$addr\",\"port\":\"$port\",\"id\":\"$uuid\",\"aid\":\"0\",\"net\":\"$net\",\"type\":\"none\",\"host\":\"$host\",\"path\":\"$path\",\"tls\":\"$tls\",\"sni\":\"$host\",\"alpn\":\"$alpn\",\"allowInsecure\":$allow_insecure}"
         printf 'vmess://%s' "$(printf '%s' "$json" | base64 | tr -d '\n')"
@@ -1947,6 +1955,9 @@ generate_uris() {
     _vmess_b64() {
         local ps="$1" addr="$2" port="$3" uuid="$4" net="$5" tls="${6:-}" path="${7:-}" host="${8:-$2}" alpn="${9:-}"
         local allow_insecure="false"
+        if [ "$net" = "quic" ] && [ "$tls" = "tls" ] && [ -z "$alpn" ]; then
+            alpn="h3"
+        fi
         [ "$tls" = "tls" ] && allow_insecure="true"
         local json="{\"v\":\"2\",\"ps\":\"$ps\",\"add\":\"$addr\",\"port\":\"$port\",\"id\":\"$uuid\",\"aid\":\"0\",\"net\":\"$net\",\"type\":\"none\",\"host\":\"$host\",\"path\":\"$path\",\"tls\":\"$tls\",\"sni\":\"$host\",\"alpn\":\"$alpn\",\"allowInsecure\":$allow_insecure}"
         printf 'vmess://%s' "$(printf '%s' "$json" | base64 | tr -d '\n')"
