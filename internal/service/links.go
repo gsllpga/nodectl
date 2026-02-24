@@ -121,20 +121,46 @@ func safeBase64Decode(str string) string {
 	return ""
 }
 
+// logLinkParseSkip 统一记录链接转换失败日志，便于定位订阅生成时被忽略的节点
+func logLinkParseSkip(reason string, link string) {
+	trimmed := strings.TrimSpace(link)
+	if trimmed == "" {
+		logger.Log.Warn("链接转换失败，已跳过", "reason", reason, "protocol", "unknown", "link", "<empty>")
+		return
+	}
+
+	if len(trimmed) > 256 {
+		trimmed = trimmed[:256] + "..."
+	}
+
+	proto := "unknown"
+	if idx := strings.Index(trimmed, "://"); idx > 0 {
+		proto = strings.ToLower(trimmed[:idx])
+	}
+
+	logger.Log.Warn("链接转换失败，已跳过", "reason", reason, "protocol", proto, "link", trimmed)
+}
+
 // 3. 核心分发调度中心
 
 // ParseLinkToClashNode 将分享链接解析并映射为 Clash 节点对象
 func ParseLinkToClashNode(link string, nameSuffix string) *ClashNode {
 	lowerLink := strings.ToLower(link)
+	if strings.TrimSpace(link) == "" {
+		logLinkParseSkip("empty-link", link)
+		return nil
+	}
 
 	// [1] 处理 VMess 协议 (JSON over Base64)
 	if strings.HasPrefix(lowerLink, "vmess://") {
 		body := safeBase64Decode(link[8:])
 		if body == "" {
+			logLinkParseSkip("vmess-base64-decode-failed", link)
 			return nil
 		}
 		var vj vmessJSON
 		if err := json.Unmarshal([]byte(body), &vj); err != nil {
+			logLinkParseSkip("vmess-json-unmarshal-failed", link)
 			return nil
 		}
 		alterId := parseInt(vj.Aid)
@@ -212,6 +238,7 @@ func ParseLinkToClashNode(link string, nameSuffix string) *ClashNode {
 	if strings.HasPrefix(lowerLink, "trojan://") {
 		u, err := url.Parse(link)
 		if err != nil {
+			logLinkParseSkip("trojan-url-parse-failed", link)
 			return nil
 		}
 		port, _ := strconv.Atoi(u.Port())
@@ -264,6 +291,7 @@ func ParseLinkToClashNode(link string, nameSuffix string) *ClashNode {
 	if strings.HasPrefix(lowerLink, "ssr://") {
 		decoded := safeBase64Decode(link[6:])
 		if decoded == "" {
+			logLinkParseSkip("ssr-base64-decode-failed", link)
 			return nil
 		}
 		parts := strings.SplitN(decoded, "/?", 2)
@@ -303,6 +331,7 @@ func ParseLinkToClashNode(link string, nameSuffix string) *ClashNode {
 			}
 			return node
 		}
+		logLinkParseSkip("ssr-format-invalid", link)
 		return nil
 	}
 
@@ -310,6 +339,7 @@ func ParseLinkToClashNode(link string, nameSuffix string) *ClashNode {
 	if strings.HasPrefix(lowerLink, "vless://") {
 		u, err := url.Parse(link)
 		if err != nil {
+			logLinkParseSkip("vless-url-parse-failed", link)
 			return nil
 		}
 		port, _ := strconv.Atoi(u.Port())
@@ -376,6 +406,7 @@ func ParseLinkToClashNode(link string, nameSuffix string) *ClashNode {
 	if strings.HasPrefix(lowerLink, "hy2://") || strings.HasPrefix(lowerLink, "hysteria2://") {
 		u, err := url.Parse(link)
 		if err != nil {
+			logLinkParseSkip("hysteria2-url-parse-failed", link)
 			return nil
 		}
 		port, _ := strconv.Atoi(u.Port())
@@ -408,6 +439,7 @@ func ParseLinkToClashNode(link string, nameSuffix string) *ClashNode {
 	} else if strings.HasPrefix(lowerLink, "hy://") || strings.HasPrefix(lowerLink, "hysteria://") {
 		u, err := url.Parse(link)
 		if err != nil {
+			logLinkParseSkip("hysteria-url-parse-failed", link)
 			return nil
 		}
 		port, _ := strconv.Atoi(u.Port())
@@ -434,6 +466,7 @@ func ParseLinkToClashNode(link string, nameSuffix string) *ClashNode {
 	if strings.HasPrefix(lowerLink, "tuic://") {
 		u, err := url.Parse(link)
 		if err != nil {
+			logLinkParseSkip("tuic-url-parse-failed", link)
 			return nil
 		}
 		port, _ := strconv.Atoi(u.Port())
@@ -467,6 +500,7 @@ func ParseLinkToClashNode(link string, nameSuffix string) *ClashNode {
 			if decoded := safeBase64Decode(body); decoded != "" {
 				body = decoded
 			} else {
+				logLinkParseSkip("ss-base64-decode-failed", link)
 				return nil
 			}
 		}
@@ -528,6 +562,7 @@ func ParseLinkToClashNode(link string, nameSuffix string) *ClashNode {
 		}
 		parsedURL, err := url.Parse("socks5://" + body)
 		if err != nil {
+			logLinkParseSkip("socks5-url-parse-failed", link)
 			return nil
 		}
 		portStr := parsedURL.Port()
@@ -552,6 +587,7 @@ func ParseLinkToClashNode(link string, nameSuffix string) *ClashNode {
 	if strings.HasPrefix(lowerLink, "anytls://") {
 		u, err := url.Parse(link)
 		if err != nil {
+			logLinkParseSkip("anytls-url-parse-failed", link)
 			return nil
 		}
 		portStr := u.Port()
@@ -585,6 +621,7 @@ func ParseLinkToClashNode(link string, nameSuffix string) *ClashNode {
 	if strings.HasPrefix(lowerLink, "http://") || strings.HasPrefix(lowerLink, "https://") {
 		u, err := url.Parse(link)
 		if err != nil {
+			logLinkParseSkip("http-url-parse-failed", link)
 			return nil
 		}
 		portStr := u.Port()
@@ -617,6 +654,6 @@ func ParseLinkToClashNode(link string, nameSuffix string) *ClashNode {
 		return node
 	}
 
-	logger.Log.Warn("遇到未受支持的协议，跳过解析", "link", link)
+	logLinkParseSkip("unsupported-protocol", link)
 	return nil
 }
