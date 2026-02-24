@@ -5,7 +5,9 @@ import (
 	"crypto/tls"
 	"embed"
 	"html/template"
+	"log"
 	"net/http"
+	"strings"
 	"time"
 
 	"nodectl/internal/logger"
@@ -18,6 +20,16 @@ var tmpl *template.Template
 
 // restartChan 用于接收重启信号的通道
 var restartChan = make(chan bool)
+
+type serverLogWriter struct{}
+
+func (w *serverLogWriter) Write(p []byte) (n int, err error) {
+	msg := strings.TrimSpace(string(p))
+	if msg != "" {
+		logger.Log.Warn("HTTP 服务告警", "message", msg)
+	}
+	return len(p), nil
+}
 
 // TriggerRestart 触发服务器重启逻辑 (供 handlers.go 调用)
 // 功能：向 restartChan 发送信号，通知主循环关闭当前 Server 实例
@@ -133,8 +145,9 @@ func Start(tmplFS embed.FS) {
 
 		// 实例化当前 Server，统一监听 8080 端口
 		activeServer := &http.Server{
-			Addr:    ":8080",
-			Handler: mux,
+			Addr:     ":8080",
+			Handler:  mux,
+			ErrorLog: log.New(&serverLogWriter{}, "", 0),
 		}
 
 		// 若证书就绪，则挂载 TLS 动态获取配置

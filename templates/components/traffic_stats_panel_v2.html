@@ -6,7 +6,7 @@
 
     .ts-layout {
         display: grid;
-        grid-template-columns: minmax(0, 1fr) 330px;
+        grid-template-columns: minmax(0, 3.2fr) minmax(0, 1.0fr);
         gap: 12px;
         align-items: stretch;
     }
@@ -141,6 +141,7 @@
         display: flex;
         flex-direction: column;
         min-height: 0;
+        min-width: 0;
     }
 
     .ts-rank-header {
@@ -339,6 +340,8 @@
         .ts-right {
             order: -1;
             min-height: 0;
+            width: 100%;
+            box-sizing: border-box;
         }
 
         .ts-left {
@@ -353,6 +356,15 @@
 
         .ts-rank-date input {
             min-width: 108px;
+        }
+
+        .ts-rank-header {
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+
+        .ts-rank-date {
+            margin-left: auto;
         }
     }
 </style>
@@ -427,7 +439,8 @@
 
 <script>
     (function () {
-        const RANK_VISIBLE_COUNT = 10;
+        const RANK_VISIBLE_COUNT_DESKTOP = 10;
+        const RANK_VISIBLE_COUNT_MOBILE = 6;
         const RANK_REQUEST_LIMIT = 200;
 
         const state = {
@@ -484,12 +497,19 @@
             return (label.split(' ').pop() || label);
         }
 
+        function getRankVisibleCount() {
+            return window.innerWidth <= 768 ? RANK_VISIBLE_COUNT_MOBILE : RANK_VISIBLE_COUNT_DESKTOP;
+        }
+
         function syncRankListHeight() {
             const list = document.getElementById('ts-rank-list');
             if (!list) return;
 
-            // 移动端不固定高度，避免压缩阅读区域
-            if (window.innerWidth <= 1200) {
+            const isMobile = window.innerWidth <= 768;
+            const isTablet = window.innerWidth > 768 && window.innerWidth <= 1200;
+
+            // 平板端不固定高度，避免压缩阅读区域
+            if (isTablet) {
                 list.style.minHeight = '';
                 list.style.maxHeight = '';
                 return;
@@ -502,7 +522,7 @@
                 return;
             }
 
-            const count = Math.min(RANK_VISIBLE_COUNT, rows.length);
+            const count = Math.min(isMobile ? RANK_VISIBLE_COUNT_MOBILE : RANK_VISIBLE_COUNT_DESKTOP, rows.length);
             const gap = 6;
             let height = 0;
             for (let i = 0; i < count; i++) {
