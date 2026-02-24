@@ -859,7 +859,6 @@ func apiPublicScript(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	logger.Log.Debug("成功分发安装脚本", "ip", clientIP, "path", reqPath)
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 	w.Write([]byte(scriptContent))
 }
@@ -1456,7 +1455,6 @@ func apiSubRaw(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	logger.Log.Debug("成功下发 Raw 节点列表", "routing_type", routingType, "ip", clientIP, "path", reqPath)
 	w.Header().Set("Content-Type", "text/yaml; charset=utf-8")
 	w.Write([]byte(yamlContent))
 }
@@ -1549,7 +1547,6 @@ func apiSubRuleList(w http.ResponseWriter, r *http.Request) {
 
 	formattedContent := service.ParseCustomRules(rawContent)
 
-	logger.Log.Debug("成功下发智能格式化规则集", "rule_path", path, "ip", clientIP, "path", reqPath)
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0")
 	w.Write([]byte(formattedContent))
@@ -2117,7 +2114,5 @@ func apiCallbackTraffic(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 仅打印 Debug 日志，避免频繁上报导致日志刷屏
-	logger.Log.Debug("节点流量更新成功", "install_id", report.InstallID, "rx", report.RXBytes, "tx", report.TXBytes)
 	sendJSON(w, "success", "流量上报接收成功")
 }
