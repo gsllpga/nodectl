@@ -136,7 +136,7 @@ func InitDB() {
 
 	if err := os.MkdirAll("data", os.ModePerm); err != nil {
 		logger.Log.Error("创建 data 目录失败", "err", err.Error())
-		panic("目录初始化失败")
+		panic("NodeCTL工作目录初始化失败")
 	}
 	dbPath := filepath.Join("data", "nodectl.db")
 
@@ -177,5 +177,4 @@ func InitDB() {
 	// 5. 调用外部模块初始化默认系统设置
 	initDefaultConfigs()
 
-	logger.Log.Info("数据库初始化成功，表结构已同步", "path", dbPath)
 }

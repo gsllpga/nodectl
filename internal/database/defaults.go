@@ -70,11 +70,12 @@ func initBasicSettings() {
 		{Key: "tg_bot_token", Value: "", Description: "Telegram Bot Token"},
 		{Key: "tg_bot_whitelist", Value: "", Description: "允许使用 Bot 的 TG User ID (逗号分隔)"},
 		{Key: "tg_bot_register_commands", Value: "false", Description: "是否清理历史菜单并注册 /sub 指令"},
+		{Key: "sys_log_level", Value: "info", Description: "系统日志等级 (debug/info/warn/error)"},
 	}
 
 	for _, config := range defaultConfigs {
 		if err := DB.Where(SysConfig{Key: config.Key}).FirstOrCreate(&config).Error; err != nil {
-			logger.Log.Error("初始化普通配置失败", "key", config.Key, "err", err.Error())
+			logger.Log.Error("初始化设置项配置失败", "key", config.Key, "err", err.Error())
 		}
 	}
 }

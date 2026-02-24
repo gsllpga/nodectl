@@ -13,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -267,6 +268,18 @@ func apiUpdateNode(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// 记录更新前快照，用于输出精确变更日志
+	oldNode := targetNode
+	oldNode.Links = make(map[string]string, len(targetNode.Links))
+	for k, v := range targetNode.Links {
+		oldNode.Links[k] = v
+	}
+	oldNode.LinkIPModes = make(map[string]int, len(targetNode.LinkIPModes))
+	for k, v := range targetNode.LinkIPModes {
+		oldNode.LinkIPModes[k] = v
+	}
+	oldNode.DisabledLinks = append([]string(nil), targetNode.DisabledLinks...)
+
 	demoPath := filepath.Join("data", "debug", "demo")
 	if _, err := os.Stat(demoPath); err == nil {
 		// 判定条件：节点创建时间早于程序启动时间 (内置节点)
@@ -381,7 +394,123 @@ func apiUpdateNode(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	logger.Log.Info("节点更新成功", "name", targetNode.Name, "uuid", targetNode.UUID)
+	changedDetails := make([]string, 0)
+	if oldNode.Name != targetNode.Name {
+		changedDetails = append(changedDetails, fmt.Sprintf("name: %s -> %s", oldNode.Name, targetNode.Name))
+	}
+	if oldNode.RoutingType != targetNode.RoutingType {
+		changedDetails = append(changedDetails, fmt.Sprintf("routing_type: %d -> %d", oldNode.RoutingType, targetNode.RoutingType))
+	}
+	if oldNode.IsBlocked != targetNode.IsBlocked {
+		changedDetails = append(changedDetails, fmt.Sprintf("is_blocked: %t -> %t", oldNode.IsBlocked, targetNode.IsBlocked))
+	}
+	if oldNode.IPV4 != targetNode.IPV4 {
+		changedDetails = append(changedDetails, fmt.Sprintf("ipv4: %s -> %s", oldNode.IPV4, targetNode.IPV4))
+	}
+	if oldNode.IPV6 != targetNode.IPV6 {
+		changedDetails = append(changedDetails, fmt.Sprintf("ipv6: %s -> %s", oldNode.IPV6, targetNode.IPV6))
+	}
+	if oldNode.IPMode != targetNode.IPMode {
+		changedDetails = append(changedDetails, fmt.Sprintf("ip_mode: %d -> %d", oldNode.IPMode, targetNode.IPMode))
+	}
+	if oldNode.ResetDay != targetNode.ResetDay {
+		changedDetails = append(changedDetails, fmt.Sprintf("reset_day: %d -> %d", oldNode.ResetDay, targetNode.ResetDay))
+	}
+	if oldNode.TrafficLimit != targetNode.TrafficLimit {
+		changedDetails = append(changedDetails, fmt.Sprintf("traffic_limit: %d -> %d", oldNode.TrafficLimit, targetNode.TrafficLimit))
+	}
+
+	oldDisabledSet := make(map[string]struct{}, len(oldNode.DisabledLinks))
+	for _, p := range oldNode.DisabledLinks {
+		oldDisabledSet[p] = struct{}{}
+	}
+	newDisabledSet := make(map[string]struct{}, len(targetNode.DisabledLinks))
+	for _, p := range targetNode.DisabledLinks {
+		newDisabledSet[p] = struct{}{}
+	}
+	addedDisabled := make([]string, 0)
+	removedDisabled := make([]string, 0)
+	for p := range newDisabledSet {
+		if _, ok := oldDisabledSet[p]; !ok {
+			addedDisabled = append(addedDisabled, p)
+		}
+	}
+	for p := range oldDisabledSet {
+		if _, ok := newDisabledSet[p]; !ok {
+			removedDisabled = append(removedDisabled, p)
+		}
+	}
+	if len(addedDisabled) > 0 {
+		sort.Strings(addedDisabled)
+		changedDetails = append(changedDetails, fmt.Sprintf("disabled_links_add: %s", strings.Join(addedDisabled, ",")))
+	}
+	if len(removedDisabled) > 0 {
+		sort.Strings(removedDisabled)
+		changedDetails = append(changedDetails, fmt.Sprintf("disabled_links_remove: %s", strings.Join(removedDisabled, ",")))
+	}
+
+	protoSet := make(map[string]struct{})
+	for p := range oldNode.Links {
+		protoSet[p] = struct{}{}
+	}
+	for p := range targetNode.Links {
+		protoSet[p] = struct{}{}
+	}
+	protos := make([]string, 0, len(protoSet))
+	for p := range protoSet {
+		protos = append(protos, p)
+	}
+	sort.Strings(protos)
+	for _, p := range protos {
+		oldVal, oldOK := oldNode.Links[p]
+		newVal, newOK := targetNode.Links[p]
+		switch {
+		case !oldOK && newOK:
+			changedDetails = append(changedDetails, fmt.Sprintf("links[%s]: added", p))
+		case oldOK && !newOK:
+			changedDetails = append(changedDetails, fmt.Sprintf("links[%s]: removed", p))
+		case oldOK && newOK && oldVal != newVal:
+			changedDetails = append(changedDetails, fmt.Sprintf("links[%s]: updated", p))
+		}
+	}
+
+	ipModeProtoSet := make(map[string]struct{})
+	for p := range oldNode.LinkIPModes {
+		ipModeProtoSet[p] = struct{}{}
+	}
+	for p := range targetNode.LinkIPModes {
+		ipModeProtoSet[p] = struct{}{}
+	}
+	ipModeProtos := make([]string, 0, len(ipModeProtoSet))
+	for p := range ipModeProtoSet {
+		ipModeProtos = append(ipModeProtos, p)
+	}
+	sort.Strings(ipModeProtos)
+	for _, p := range ipModeProtos {
+		oldMode, oldOK := oldNode.LinkIPModes[p]
+		newMode, newOK := targetNode.LinkIPModes[p]
+		switch {
+		case !oldOK && newOK:
+			changedDetails = append(changedDetails, fmt.Sprintf("link_ip_modes[%s]: add %d", p, newMode))
+		case oldOK && !newOK:
+			changedDetails = append(changedDetails, fmt.Sprintf("link_ip_modes[%s]: removed", p))
+		case oldOK && newOK && oldMode != newMode:
+			changedDetails = append(changedDetails, fmt.Sprintf("link_ip_modes[%s]: %d -> %d", p, oldMode, newMode))
+		}
+	}
+
+	if len(changedDetails) == 0 {
+		logger.Log.Info("节点更新成功(无字段变化)", "name", targetNode.Name, "uuid", targetNode.UUID, "ip", clientIP, "path", reqPath)
+	} else {
+		logger.Log.Info("节点更新成功",
+			"name", targetNode.Name,
+			"uuid", targetNode.UUID,
+			"changed_count", len(changedDetails),
+			"changes", strings.Join(changedDetails, " | "),
+			"ip", clientIP,
+			"path", reqPath,
+		)
+	}
 	sendJSON(w, "success", "更新成功")
 }
 
@@ -447,11 +576,15 @@ func apiChangePassword(w http.ResponseWriter, r *http.Request) {
 	}
 
 	database.DB.Model(&database.SysConfig{}).Where("key = ?", "admin_password").Update("value", string(hashedPassword))
+
+	// 修改密码时同时重置 JWT 密钥，强制所有设备下线
 	secureBytes := make([]byte, 32)
 	if _, err := rand.Read(secureBytes); err == nil {
 		newSecret := hex.EncodeToString(secureBytes)
 		database.DB.Model(&database.SysConfig{}).Where("key = ?", "jwt_secret").Update("value", newSecret)
 		logger.Log.Info("系统级密钥 (JWT Secret) 已重置", "ip", clientIP, "path", reqPath)
+	} else {
+		logger.Log.Error("生成新密钥失败", "error", err, "ip", clientIP, "path", reqPath)
 	}
 
 	logger.Log.Info("管理员密码修改成功", "ip", clientIP, "path", reqPath)
@@ -465,6 +598,46 @@ func apiChangePassword(w http.ResponseWriter, r *http.Request) {
 	})
 
 	sendJSON(w, "success", "密码修改成功！1.5秒后将重新跳转到登录页")
+}
+
+func apiResetJWT(w http.ResponseWriter, r *http.Request) {
+	clientIP := r.RemoteAddr
+	reqPath := r.URL.Path
+
+	demoPath := filepath.Join("data", "debug", "demo")
+	if _, err := os.Stat(demoPath); err == nil {
+		logger.Log.Warn("尝试在演示模式下重置JWT密钥，已被拦截", "ip", r.RemoteAddr)
+		sendJSON(w, "error", "演示模式已开启，禁止重置密钥")
+		return
+	}
+
+	if r.Method != http.MethodPost {
+		logger.Log.Warn("非法请求方法", "method", r.Method, "ip", clientIP, "path", reqPath)
+		http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	secureBytes := make([]byte, 32)
+	if _, err := rand.Read(secureBytes); err == nil {
+		newSecret := hex.EncodeToString(secureBytes)
+		database.DB.Model(&database.SysConfig{}).Where("key = ?", "jwt_secret").Update("value", newSecret)
+		logger.Log.Info("系统级密钥 (JWT Secret) 已手动重置", "ip", clientIP, "path", reqPath)
+	} else {
+		logger.Log.Error("生成新密钥失败", "error", err, "ip", clientIP, "path", reqPath)
+		sendJSON(w, "error", "生成新密钥失败，请稍后重试")
+		return
+	}
+
+	// 清除当前用户的 Cookie
+	http.SetCookie(w, &http.Cookie{
+		Name:     "nodectl_token",
+		Value:    "",
+		Path:     "/",
+		HttpOnly: true,
+		MaxAge:   -1,
+	})
+
+	sendJSON(w, "success", "JWT 密钥重置成功！所有设备已下线，请重新登录")
 }
 
 func apiAddNode(w http.ResponseWriter, r *http.Request) {
@@ -629,17 +802,17 @@ func apiDeleteNode(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// 先查询目标节点，便于后续日志记录 name
+	var targetNode database.NodePool
+	if err := database.DB.Where("uuid = ?", req.UUID).First(&targetNode).Error; err != nil {
+		logger.Log.Warn("删除拦截: 节点不存在", "uuid", req.UUID, "ip", clientIP, "path", reqPath)
+		sendJSON(w, "error", "节点不存在")
+		return
+	}
+
 	// 检查是否处于演示模式 (存在 data/debug/demo 文件)
 	demoPath := filepath.Join("data", "debug", "demo")
 	if _, err := os.Stat(demoPath); err == nil {
-		// 1. 先查询该节点的详细信息
-		var targetNode database.NodePool
-		if err := database.DB.Where("uuid = ?", req.UUID).First(&targetNode).Error; err != nil {
-			logger.Log.Warn("删除拦截: 节点不存在", "uuid", req.UUID, "ip", clientIP)
-			sendJSON(w, "error", "节点不存在")
-			return
-		}
-
 		if targetNode.CreatedAt.Before(AppStartTime) {
 			logger.Log.Warn("尝试在演示模式下删除初始节点，已被拦截", "uuid", req.UUID, "name", targetNode.Name, "ip", clientIP)
 			sendJSON(w, "error", "【演示模式保护】禁止删除。您可自由测试并删除您自行创建的节点。")
@@ -654,7 +827,7 @@ func apiDeleteNode(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	logger.Log.Info("节点已删除", "uuid", req.UUID, "ip", clientIP, "path", reqPath)
+	logger.Log.Info("节点已删除", "uuid", req.UUID, "name", targetNode.Name, "ip", clientIP, "path", reqPath)
 	sendJSON(w, "success", "节点已删除")
 }
 
@@ -790,7 +963,7 @@ func apiGetSettings(w http.ResponseWriter, r *http.Request) {
 		"panel_url", "sub_token", "proxy_port_ss", "proxy_port_hy2", "proxy_port_tuic",
 		"proxy_port_reality", "proxy_ss_method",
 		"proxy_port_socks5", "proxy_socks5_user", "proxy_socks5_pass", "pref_use_emoji_flag", "sub_custom_name", "pref_ip_strategy", "pref_default_install_protocols",
-		"sys_force_http", "cf_email", "cf_api_key", "cf_domain", "cf_auto_renew", "airport_filter_invalid", "pref_speed_test_mode", "pref_speed_test_file_size",
+		"sys_force_http", "sys_log_level", "cf_email", "cf_api_key", "cf_domain", "cf_auto_renew", "airport_filter_invalid", "pref_speed_test_mode", "pref_speed_test_file_size",
 		"tg_bot_enabled", "tg_bot_token", "tg_bot_whitelist", "tg_bot_register_commands", "clash_proxies_update_interval", "clash_rules_update_interval", "clash_public_rules_update_interval",
 		// 新增协议与内核优化配置
 		"proxy_port_trojan", "proxy_hy2_sni", "proxy_tuic_sni", "proxy_enable_bbr",
@@ -847,7 +1020,7 @@ func apiUpdateSettings(w http.ResponseWriter, r *http.Request) {
 		"proxy_port_tuic": true, "proxy_port_reality": true,
 		"proxy_ss_method": true, "proxy_port_socks5": true, "proxy_socks5_user": true, "proxy_socks5_pass": true, "pref_use_emoji_flag": true,
 		"sub_custom_name": true, "pref_ip_strategy": true, "pref_default_install_protocols": true,
-		"sys_force_http": true, "cf_email": true, "cf_api_key": true, "cf_domain": true, "cf_auto_renew": true,
+		"sys_force_http": true, "sys_log_level": true, "cf_email": true, "cf_api_key": true, "cf_domain": true, "cf_auto_renew": true,
 		"airport_filter_invalid": true, "pref_speed_test_mode": true, "pref_speed_test_file_size": true,
 		"tg_bot_enabled": true, "tg_bot_token": true, "tg_bot_whitelist": true, "tg_bot_register_commands": true,
 		"clash_proxies_update_interval": true, "clash_rules_update_interval": true, "clash_public_rules_update_interval": true,
@@ -866,6 +1039,20 @@ func apiUpdateSettings(w http.ResponseWriter, r *http.Request) {
 	}
 
 	needRestartTgBot := false
+	changedDetails := make([]string, 0)
+
+	maskValue := func(key, val string) string {
+		if key == "cf_api_key" || key == "tg_bot_token" {
+			if val == "" {
+				return "<empty>"
+			}
+			return "********"
+		}
+		if val == "" {
+			return "<empty>"
+		}
+		return val
+	}
 
 	for k, v := range req {
 		if validKeys[k] {
@@ -873,9 +1060,34 @@ func apiUpdateSettings(w http.ResponseWriter, r *http.Request) {
 				continue
 			}
 
+			var oldConfig database.SysConfig
+			oldValue := ""
+			if err := database.DB.Where("key = ?", k).First(&oldConfig).Error; err == nil {
+				oldValue = oldConfig.Value
+			} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+				logger.Log.Error("读取旧配置值失败", "key", k, "error", err, "ip", clientIP, "path", reqPath)
+			}
+
+			if k == "sys_log_level" {
+				v = strings.ToLower(strings.TrimSpace(v))
+				if v == "" {
+					v = "info"
+				}
+				if oldValue == v {
+					continue
+				}
+				if !logger.SetLevel(v) {
+					logger.Log.Warn("收到非法日志等级配置，已拒绝更新", "value", v, "ip", clientIP, "path", reqPath)
+					sendJSON(w, "error", "日志等级无效，仅支持: debug / info / warn / error")
+					return
+				}
+			}
+
+			if k != "sys_log_level" && oldValue == v {
+				continue
+			}
+
 			if k == "tg_bot_enabled" || k == "tg_bot_token" || k == "tg_bot_whitelist" || k == "tg_bot_register_commands" {
-				var oldConfig database.SysConfig
-				database.DB.Where("key = ?", k).First(&oldConfig)
 				if oldConfig.Value != v {
 					needRestartTgBot = true
 				}
@@ -891,7 +1103,10 @@ func apiUpdateSettings(w http.ResponseWriter, r *http.Request) {
 
 			if err := database.DB.Model(&database.SysConfig{}).Where("key = ?", k).Update("value", v).Error; err != nil {
 				logger.Log.Error("更新系统配置异常", "key", k, "error", err, "ip", clientIP, "path", reqPath)
+				continue
 			}
+
+			changedDetails = append(changedDetails, fmt.Sprintf("%s: %s -> %s", k, maskValue(k, oldValue), maskValue(k, v)))
 		}
 	}
 
@@ -899,7 +1114,18 @@ func apiUpdateSettings(w http.ResponseWriter, r *http.Request) {
 		go service.RestartTelegramBot()
 	}
 
-	logger.Log.Info("系统全局配置已更新", "ip", clientIP, "path", reqPath)
+	if len(changedDetails) == 0 {
+		logger.Log.Info("系统设置保存完成，但未检测到配置变更", "ip", clientIP, "path", reqPath)
+		sendJSON(w, "success", "设置无变化")
+		return
+	}
+
+	logger.Log.Info("系统全局配置已更新",
+		"changed_count", len(changedDetails),
+		"changes", strings.Join(changedDetails, " | "),
+		"ip", clientIP,
+		"path", reqPath,
+	)
 	sendJSON(w, "success", "设置已保存")
 }
 
@@ -1035,13 +1261,62 @@ func apiSaveClashSettings(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	oldModules := service.GetActiveClashModules()
+
 	if err := service.SaveActiveClashModules(req.Modules); err != nil {
 		logger.Log.Error("保存 Clash 模块设置失败", "error", err, "ip", clientIP, "path", reqPath)
 		sendJSON(w, "error", "保存失败")
 		return
 	}
 
-	logger.Log.Info("Clash 模板模块设置已更新", "modules", req.Modules, "ip", clientIP, "path", reqPath)
+	oldSet := make(map[string]struct{}, len(oldModules))
+	for _, m := range oldModules {
+		oldSet[m] = struct{}{}
+	}
+	newSet := make(map[string]struct{}, len(req.Modules))
+	for _, m := range req.Modules {
+		newSet[m] = struct{}{}
+	}
+	added := make([]string, 0)
+	removed := make([]string, 0)
+	for m := range newSet {
+		if _, ok := oldSet[m]; !ok {
+			added = append(added, m)
+		}
+	}
+	for m := range oldSet {
+		if _, ok := newSet[m]; !ok {
+			removed = append(removed, m)
+		}
+	}
+	sort.Strings(added)
+	sort.Strings(removed)
+
+	oldOrder := strings.Join(oldModules, ",")
+	newOrder := strings.Join(req.Modules, ",")
+	reordered := oldOrder != newOrder && len(added) == 0 && len(removed) == 0
+
+	changeSummary := make([]string, 0)
+	if len(added) > 0 {
+		changeSummary = append(changeSummary, "新增: "+strings.Join(added, ","))
+	}
+	if len(removed) > 0 {
+		changeSummary = append(changeSummary, "移除: "+strings.Join(removed, ","))
+	}
+	if reordered {
+		changeSummary = append(changeSummary, "仅顺序变化")
+	}
+	if len(changeSummary) == 0 {
+		changeSummary = append(changeSummary, "无变化")
+	}
+
+	logger.Log.Info("Clash 模板模块设置已更新",
+		"changed", strings.Join(changeSummary, " | "),
+		"before_count", len(oldModules),
+		"after_count", len(req.Modules),
+		"ip", clientIP,
+		"path", reqPath,
+	)
 	sendJSON(w, "success", "Clash 规则组合保存成功")
 }
 
@@ -1507,7 +1782,11 @@ func apiAirportAdd(w http.ResponseWriter, r *http.Request) {
 
 // apiAirportUpdate 手动更新订阅
 func apiAirportUpdate(w http.ResponseWriter, r *http.Request) {
+	clientIP := r.RemoteAddr
+	reqPath := r.URL.Path
+
 	if r.Method != http.MethodPost {
+		logger.Log.Warn("非法请求方法", "method", r.Method, "ip", clientIP, "path", reqPath)
 		http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
 		return
 	}
@@ -1516,16 +1795,33 @@ func apiAirportUpdate(w http.ResponseWriter, r *http.Request) {
 		ID string `json:"id"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		logger.Log.Warn("更新机场订阅失败: JSON 解析异常", "error", err, "ip", clientIP, "path", reqPath)
 		sendJSON(w, "error", "格式错误")
 		return
 	}
+	if req.ID == "" {
+		logger.Log.Warn("更新机场订阅失败: 缺少订阅ID", "ip", clientIP, "path", reqPath)
+		sendJSON(w, "error", "缺少订阅ID")
+		return
+	}
+
+	var sub database.AirportSub
+	if err := database.DB.Where("id = ?", req.ID).First(&sub).Error; err != nil {
+		logger.Log.Warn("更新机场订阅失败: 订阅不存在", "id", req.ID, "ip", clientIP, "path", reqPath)
+		sendJSON(w, "error", "订阅不存在")
+		return
+	}
+
+	logger.Log.Info("手动触发机场订阅更新", "id", sub.ID, "name", sub.Name, "ip", clientIP, "path", reqPath)
 
 	// 调用 service 层逻辑进行同步 (包含保留状态逻辑)
 	if err := service.SyncAirportSubscription(req.ID); err != nil {
-		logger.Log.Error("更新订阅失败", "id", req.ID, "error", err)
+		logger.Log.Error("更新订阅失败", "id", sub.ID, "name", sub.Name, "error", err, "ip", clientIP, "path", reqPath)
 		sendJSON(w, "error", "更新失败: "+err.Error())
 		return
 	}
+
+	logger.Log.Info("机场订阅更新成功", "id", sub.ID, "name", sub.Name, "ip", clientIP, "path", reqPath)
 
 	sendJSON(w, "success", "订阅已更新")
 }

@@ -8,16 +8,101 @@ import (
 	"path/filepath"
 	"strings"
 
-	"nodectl/internal/version"
-
+	"github.com/glebarez/sqlite"
 	"gopkg.in/natefinch/lumberjack.v2"
+	"gorm.io/gorm"
+	gormlogger "gorm.io/gorm/logger"
 )
 
 // Log 全局导出的日志实例
 var Log *slog.Logger
 
+// levelVar 支持运行时热切换日志等级
+var levelVar = new(slog.LevelVar)
+
+// parseLevel 解析日志等级字符串
+func parseLevel(level string) (slog.Level, bool) {
+	switch strings.ToLower(strings.TrimSpace(level)) {
+	case "debug":
+		return slog.LevelDebug, true
+	case "info", "":
+		return slog.LevelInfo, true
+	case "warn", "warning":
+		return slog.LevelWarn, true
+	case "error":
+		return slog.LevelError, true
+	default:
+		return slog.LevelInfo, false
+	}
+}
+
+// CurrentLevel 返回当前日志等级字符串
+func CurrentLevel() string {
+	current := levelVar.Level()
+	switch {
+	case current <= slog.LevelDebug:
+		return "debug"
+	case current <= slog.LevelInfo:
+		return "info"
+	case current <= slog.LevelWarn:
+		return "warn"
+	default:
+		return "error"
+	}
+}
+
+// SetLevel 动态设置日志等级，支持热切换
+func SetLevel(level string) bool {
+	parsed, ok := parseLevel(level)
+	if !ok {
+		return false
+	}
+
+	levelVar.Set(parsed)
+	if Log != nil {
+		Log.Info("日志等级已更新", "level", CurrentLevel())
+	}
+	return true
+}
+
+// LoadPersistedLogLevel 从数据库读取已保存的日志等级
+func LoadPersistedLogLevel() string {
+	defaultLevel := "info"
+
+	dbPath := filepath.Join("data", "nodectl.db")
+	if _, err := os.Stat(dbPath); err != nil {
+		return defaultLevel
+	}
+
+	db, err := gorm.Open(sqlite.Open(dbPath), &gorm.Config{
+		Logger: gormlogger.Default.LogMode(gormlogger.Silent),
+	})
+	if err != nil {
+		return defaultLevel
+	}
+
+	var cfg struct {
+		Value string `gorm:"column:value"`
+	}
+	if err := db.Table("sys_config").Select("value").Where("key = ?", "sys_log_level").Take(&cfg).Error; err != nil {
+		return defaultLevel
+	}
+
+	if cfg.Value == "" {
+		return defaultLevel
+	}
+
+	return cfg.Value
+}
+
 // Init 初始化日志配置
-func Init() {
+func Init(initialLevel string) {
+	parsedLevel, ok := parseLevel(initialLevel)
+	if !ok {
+		parsedLevel = slog.LevelInfo
+	}
+	levelVar.Set(parsedLevel)
+
 	// 1. 配置文件切割
 	logFile := &lumberjack.Logger{
 		Filename:   filepath.Join("data", "logs", "nodectl.log"), // 日志文件的绝对或相对路径
@@ -29,16 +114,9 @@ func Init() {
 
 	multiWriter := io.MultiWriter(os.Stdout, logFile)
 
-	// 2. 动态判断日志级别
-	logLevel := slog.LevelDebug
-	// 在正式版本中强制使用 Error 级别，禁止 Debug 和 Info 日志输出
-	if version.Version != "dev" && version.Version != "" {
-		logLevel = slog.LevelError
-	}
-
-	// 3. 配置 slog 拦截器
+	// 2. 配置 slog 拦截器
 	opts := &slog.HandlerOptions{
-		Level:     logLevel,
+		Level:     levelVar,
 		AddSource: true,
 		ReplaceAttr: func(groups []string, a slog.Attr) slog.Attr {
 			if a.Key == slog.TimeKey {
@@ -70,14 +148,12 @@ func Init() {
 		},
 	}
 
-	// 4. 实例化 Logger
+	// 3. 实例化 Logger
 	handler := slog.NewTextHandler(multiWriter, opts)
 	Log = slog.New(handler)
 	slog.SetDefault(Log)
-
-	if logLevel == slog.LevelDebug {
-		Log.Info("日志组件初始化完成", slog.String("模块", "logger"), slog.String("模式", "Debug 开发模式"))
-	} else {
-		Log.Error("服务已启动", slog.String("模块", "logger"), slog.String("模式", "Error 生产模式"))
+	if !ok && strings.TrimSpace(initialLevel) != "" {
+		Log.Warn("启动时读取到非法日志等级配置，已回退为 info", "value", initialLevel)
 	}
+	Log.Info("日志组件初始化完成", slog.String("模块", "logger"), slog.String("等级", CurrentLevel()))
 }

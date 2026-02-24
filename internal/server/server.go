@@ -62,6 +62,7 @@ func Start(tmplFS embed.FS) {
 	// ========== B. 管理员 API (需登录 + 保护) ==========
 	// 基础与设置
 	mux.HandleFunc("/api/change-password", withAuthAndSecure(apiChangePassword))
+	mux.HandleFunc("/api/reset-jwt", withAuthAndSecure(apiResetJWT))
 	mux.HandleFunc("/api/get-settings", withAuthAndSecure(apiGetSettings))
 	mux.HandleFunc("/api/update-settings", withAuthAndSecure(apiUpdateSettings))
 

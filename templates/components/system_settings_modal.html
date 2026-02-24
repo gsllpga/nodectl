@@ -1283,6 +1283,16 @@
                         </div>
                         <div class="sys-desc">这是您的核心订阅鉴权标识。如遭泄露，请点击重新生成，旧链接将立即失效。</div>
                     </div>
+                    <div class="sys-field">
+                        <label class="sys-label">系统日志等级</label>
+                        <select id="sys_log_level" class="sys-select" onchange="triggerSysAutoSave()">
+                            <option value="debug">DEBUG（最详细）</option>
+                            <option value="info">INFO（推荐）</option>
+                            <option value="warn">WARN（仅警告与错误）</option>
+                            <option value="error">ERROR（仅错误）</option>
+                        </select>
+                        <div class="sys-desc">修改后立即热切换生效，无需重启服务。</div>
+                    </div>
                 </div>
 
                 <div class="sys-form-section" id="sys-form-tgbot" style="display:none;">
@@ -2015,6 +2025,7 @@
                 document.getElementById('sys_clash_proxies_update_interval').value = data.clash_proxies_update_interval || '300';
                 document.getElementById('sys_clash_rules_update_interval').value = data.clash_rules_update_interval || '3600';
                 document.getElementById('sys_clash_public_rules_update_interval').value = data.clash_public_rules_update_interval || '86400';
+                document.getElementById('sys_log_level').value = data.sys_log_level || 'info';
                 loadSysDefaultInstallProtocols(data.pref_default_install_protocols || '[]');
 
 
@@ -2163,6 +2174,7 @@
                 "clash_proxies_update_interval": document.getElementById('sys_clash_proxies_update_interval').value,
                 "clash_rules_update_interval": document.getElementById('sys_clash_rules_update_interval').value,
                 "clash_public_rules_update_interval": document.getElementById('sys_clash_public_rules_update_interval').value,
+                "sys_log_level": document.getElementById('sys_log_level').value,
                 "sys_force_http": document.getElementById('sys_force_http').checked ? 'true' : 'false',
                 "cf_email": document.getElementById('sys_cf_email').value,
                 "cf_api_key": document.getElementById('sys_cf_api_key').value,
