@@ -154,7 +154,7 @@ func initProxySettings() {
 		// TLS 传输协议共用路径
 		{Key: "proxy_tls_transport_path", Value: "/ray", Description: "WS/HTTPUpgrade 传输协议共用路径"},
 		{Key: "proxy_vmess_tls_sni", Value: "www.bing.com", Description: "VMess TLS 传输族默认客户端 SNI 伪装域名"},
-		{Key: "proxy_vless_tls_sni", Value: "www.bing.com", Description: "VLESS TLS 传输族默认客户端 SNI 伪装域名"},
+		{Key: "proxy_vless_tls_sni", Value: "learn.microsoft.com", Description: "VLESS TLS 传输族默认客户端 SNI 伪装域名"},
 		{Key: "proxy_trojan_tls_sni", Value: "www.bing.com", Description: "Trojan TLS 传输族默认客户端 SNI 伪装域名"},
 	}
 
