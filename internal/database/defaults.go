@@ -65,6 +65,7 @@ func initBasicSettings() {
 		{Key: "airport_filter_invalid", Value: "false", Description: "是否剔除机场订阅中的无效节点"},
 		{Key: "pref_speed_test_mode", Value: "ping_speed", Description: "节点测速模式"},
 		{Key: "pref_speed_test_file_size", Value: "50", Description: "节点测速文件大小(MB)"},
+		{Key: "pref_traffic_stats_retention_days", Value: "30", Description: "流量统计记录最长保留天数"},
 		// Telegram Bot 配置
 		{Key: "tg_bot_enabled", Value: "false", Description: "是否启用 Telegram Bot"},
 		{Key: "tg_bot_token", Value: "", Description: "Telegram Bot Token"},

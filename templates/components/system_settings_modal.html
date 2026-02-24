@@ -1576,6 +1576,12 @@
                         </label>
                     </div>
 
+                    <div class="sys-field">
+                        <label class="sys-label">🕒 流量记录最长保存时间（天）</label>
+                        <input type="number" id="sys_pref_traffic_stats_retention_days" class="sys-input" placeholder="默认: 30" min="1" max="3650" oninput="triggerSysAutoSave()">
+                        <div class="sys-desc">仅保留最近 N 天流量历史记录，超出范围的旧记录将自动清理。建议范围 7~365 天。</div>
+                    </div>
+
                     <div class="sys-pref-row" style="flex-direction: column; align-items: flex-start; gap: 12px;">
                         <div class="sys-pref-info" style="width: 100%; flex-direction: row; align-items: center; gap: 6px;">
                             <span class="sys-pref-title">🚀 默认安装协议</span>
@@ -2022,6 +2028,7 @@
                 document.getElementById('sys_airport_filter_invalid').checked = (data.airport_filter_invalid === 'true');
                 document.getElementById('sys_pref_speed_test_mode').value = data.pref_speed_test_mode || 'ping_speed';
                 document.getElementById('sys_pref_speed_test_file_size').value = data.pref_speed_test_file_size || '50';
+                document.getElementById('sys_pref_traffic_stats_retention_days').value = data.pref_traffic_stats_retention_days || '30';
                 document.getElementById('sys_clash_proxies_update_interval').value = data.clash_proxies_update_interval || '300';
                 document.getElementById('sys_clash_rules_update_interval').value = data.clash_rules_update_interval || '3600';
                 document.getElementById('sys_clash_public_rules_update_interval').value = data.clash_public_rules_update_interval || '86400';
@@ -2171,6 +2178,7 @@
                 "airport_filter_invalid": document.getElementById('sys_airport_filter_invalid').checked ? "true" : "false", // ✨ 新增：提交剔除无效节点开关
                 "pref_speed_test_mode": document.getElementById('sys_pref_speed_test_mode').value,
                 "pref_speed_test_file_size": document.getElementById('sys_pref_speed_test_file_size').value,
+                "pref_traffic_stats_retention_days": document.getElementById('sys_pref_traffic_stats_retention_days').value,
                 "clash_proxies_update_interval": document.getElementById('sys_clash_proxies_update_interval').value,
                 "clash_rules_update_interval": document.getElementById('sys_clash_rules_update_interval').value,
                 "clash_public_rules_update_interval": document.getElementById('sys_clash_public_rules_update_interval').value,

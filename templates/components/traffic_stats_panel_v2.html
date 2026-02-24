@@ -1,0 +1,933 @@
+{{define "traffic_stats_panel_v2.html"}}
+<style>
+    .traffic-stats-card {
+        margin-top: 16px;
+    }
+
+    .ts-layout {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) 330px;
+        gap: 12px;
+        align-items: stretch;
+    }
+
+    .ts-left {
+        display: grid;
+        grid-template-rows: minmax(0, 1fr) minmax(0, 1fr);
+        gap: 12px;
+        min-height: 0;
+        height: 100%;
+    }
+
+    .ts-panel {
+        border: 1px solid #ececf2;
+        border-radius: 12px;
+        background: #fff;
+        padding: 10px 12px;
+        display: flex;
+        flex-direction: column;
+        min-height: 0;
+    }
+
+    .ts-panel-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 8px;
+        margin-bottom: 8px;
+    }
+
+    .ts-head-left,
+    .ts-head-right {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+    }
+
+    .ts-panel-title {
+        font-size: 16px;
+        font-weight: 700;
+        color: #1d1d1f;
+    }
+
+    .ts-switch {
+        display: inline-flex;
+        background: #f4f4f8;
+        border-radius: 8px;
+        border: 1px solid #ececf2;
+        padding: 2px;
+    }
+
+    .ts-switch button {
+        border: none;
+        background: transparent;
+        color: #666;
+        padding: 5px 10px;
+        border-radius: 6px;
+        font-size: 12px;
+        font-weight: 600;
+        cursor: pointer;
+    }
+
+    .ts-switch button.active {
+        background: #007aff;
+        color: #fff;
+        box-shadow: 0 1px 6px rgba(0, 122, 255, 0.35);
+    }
+
+    .ts-selected-node {
+        font-size: 16px;
+        font-weight: 700;
+        color: #1d1d1f;
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        line-height: 1;
+    }
+
+    .ts-selected-node .dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: #ff4d4f;
+        box-shadow: 0 0 0 3px rgba(255, 77, 79, 0.2);
+    }
+
+    .ts-selected-node .ts-node-main {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        line-height: 1;
+    }
+
+    .ts-selected-node .ts-node-name {
+        display: inline-block;
+        line-height: 1.1;
+    }
+
+    .ts-svg {
+        width: 100%;
+        flex: 1;
+        min-height: 220px;
+        display: block;
+        background: linear-gradient(180deg, #fbfcff 0%, #ffffff 100%);
+        border-radius: 8px;
+        border: 1px solid #f0f1f6;
+    }
+
+    .ts-legend {
+        margin-top: 8px;
+        display: flex;
+        justify-content: center;
+        gap: 12px;
+        font-size: 13px;
+        color: #666;
+    }
+
+    .ts-dot {
+        width: 10px;
+        height: 10px;
+        border-radius: 50%;
+        display: inline-block;
+        margin-right: 5px;
+        vertical-align: middle;
+    }
+
+    .ts-right {
+        border: 1px solid #ececf2;
+        border-radius: 12px;
+        background: #fff;
+        padding: 10px;
+        display: flex;
+        flex-direction: column;
+        min-height: 0;
+    }
+
+    .ts-rank-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 8px;
+    }
+
+    .ts-rank-title {
+        font-size: 16px;
+        font-weight: 700;
+        color: #1d1d1f;
+    }
+
+    .ts-rank-date {
+        border: 1px solid #e5e7f0;
+        border-radius: 8px;
+        padding: 3px 8px;
+        font-size: 11px;
+        color: #666;
+        background: #fafafe;
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+    }
+
+    .ts-rank-date input {
+        border: none;
+        outline: none;
+        background: transparent;
+        color: #555;
+        font-size: 11px;
+        font-weight: 600;
+        min-width: 118px;
+        padding: 0;
+        margin: 0;
+        font-family: inherit;
+    }
+
+    .ts-rank-summary {
+        padding: 8px 0;
+        margin-bottom: 8px;
+        border-bottom: 1px solid #f0f1f6;
+    }
+
+    .ts-rank-kpi {
+        display: grid;
+        grid-template-columns: 1fr 1fr 1fr;
+        gap: 6px;
+        text-align: center;
+    }
+
+    .ts-rank-kpi .k {
+        font-size: 11px;
+        color: #666;
+        margin-bottom: 2px;
+    }
+
+    .ts-rank-kpi .v {
+        font-size: 11px;
+        font-weight: 500;
+        color: #888;
+    }
+
+    .ts-rank-kpi .v.up { color: #34c759; }
+    .ts-rank-kpi .v.down { color: #1e88ff; }
+    .ts-rank-kpi .v.all { color: #b16bff; }
+
+    .ts-rank-list {
+        overflow: auto;
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        scrollbar-width: none;
+        -ms-overflow-style: none;
+    }
+
+    .ts-rank-list::-webkit-scrollbar {
+        width: 0;
+        height: 0;
+        display: none;
+    }
+
+    .ts-rank-item {
+        border: 1px solid #eef0f5;
+        border-radius: 10px;
+        padding: 8px;
+        cursor: pointer;
+        transition: all .2s;
+        background: #fff;
+    }
+
+    .ts-rank-item:hover {
+        border-color: #b6d6ff;
+        box-shadow: 0 2px 8px rgba(0, 122, 255, 0.08);
+    }
+
+    .ts-rank-item.active {
+        border-color: #7cb4ff;
+        background: #f5faff;
+    }
+
+    .ts-rank-top {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+    }
+
+    .ts-rank-name {
+        font-size: 14px;
+        font-weight: 700;
+        color: #1d1d1f;
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+    }
+
+    .ts-rank-total {
+        font-size: 12px;
+        font-weight: 700;
+        color: #666;
+    }
+
+    .ts-rank-bar {
+        height: 6px;
+        border-radius: 5px;
+        background: #eef1f7;
+        margin-top: 7px;
+        overflow: hidden;
+    }
+
+    .ts-rank-bar-fill {
+        height: 100%;
+        display: flex;
+    }
+
+    .ts-rank-bar-up {
+        background: #34c759;
+    }
+
+    .ts-rank-bar-down {
+        background: #1e88ff;
+    }
+
+    .ts-rank-meta {
+        margin-top: 6px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 8px;
+        font-size: 11px;
+        color: #80808b;
+    }
+
+    .ts-status {
+        margin-top: 8px;
+        min-height: 16px;
+        color: #888;
+        font-size: 12px;
+    }
+
+    .ts-hidden {
+        display: none;
+    }
+
+    @media (max-width: 1200px) {
+        .ts-layout {
+            grid-template-columns: 1fr;
+            align-items: start;
+        }
+
+        .ts-left {
+            grid-template-rows: auto auto;
+            height: auto;
+        }
+
+        .ts-right {
+            min-height: 0;
+        }
+
+        .ts-panel-title,
+        .ts-rank-title,
+        .ts-selected-node {
+            font-size: 18px;
+        }
+    }
+
+    @media (max-width: 768px) {
+        .ts-layout {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .ts-right {
+            order: -1;
+            min-height: 0;
+        }
+
+        .ts-left {
+            order: 0;
+        }
+
+        .ts-svg {
+            flex: none;
+            height: clamp(220px, 34vh, 280px);
+            min-height: 220px;
+        }
+
+        .ts-rank-date input {
+            min-width: 108px;
+        }
+    }
+</style>
+
+<div class="sub-card traffic-stats-card" id="traffic-stats-card">
+    <div class="ts-layout">
+        <div class="ts-left">
+            <div class="ts-panel">
+                <div class="ts-panel-header">
+                    <div class="ts-head-left">
+                        <div class="ts-panel-title">📊 流量分布</div>
+                        <div class="ts-switch" id="ts-dist-switch">
+                            <button type="button" data-interval="2">2小时</button>
+                            <button type="button" data-interval="1" class="active">1小时</button>
+                        </div>
+                    </div>
+                    <div class="ts-head-right">
+                        <div class="ts-selected-node" id="ts-selected-node"><span class="dot"></span><span>--</span></div>
+                    </div>
+                </div>
+                <svg class="ts-svg" id="ts-bar-svg" viewBox="0 0 960 250" preserveAspectRatio="xMidYMid meet"></svg>
+                <div class="ts-legend">
+                    <span><i class="ts-dot" style="background:#34c759"></i>上传</span>
+                    <span><i class="ts-dot" style="background:#1e88ff"></i>下载</span>
+                </div>
+            </div>
+
+            <div class="ts-panel">
+                <div class="ts-panel-header">
+                    <div class="ts-head-left">
+                        <div class="ts-panel-title">📈 流量趋势</div>
+                        <div class="ts-switch" id="ts-trend-switch">
+                            <button type="button" data-mode="increment" class="active">增量</button>
+                            <button type="button" data-mode="total">总量</button>
+                        </div>
+                    </div>
+                    <div class="ts-head-right" style="font-size:12px; color:#8d8d98; font-weight:700;">⚗ <span id="ts-trend-ratio">0.00</span></div>
+                </div>
+                <svg class="ts-svg" id="ts-line-svg" viewBox="0 0 960 250" preserveAspectRatio="xMidYMid meet"></svg>
+                <div class="ts-legend">
+                    <span><i class="ts-dot" style="background:#34c759"></i>上传</span>
+                    <span><i class="ts-dot" style="background:#1e88ff"></i>下载</span>
+                    <span><i class="ts-dot" style="background:#b16bff"></i>总计</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="ts-right">
+            <div class="ts-rank-header">
+                <div class="ts-rank-title">📶 流量消耗</div>
+                <div class="ts-rank-date">
+                    <span>📅</span>
+                    <input type="date" id="ts-rank-date-picker" title="选择统计日期">
+                </div>
+            </div>
+
+            <div class="ts-rank-summary">
+                <div class="ts-rank-kpi">
+                    <div><div class="k">上传</div><div class="v up" id="ts-rank-total-up">0 B</div></div>
+                    <div><div class="k">下载</div><div class="v down" id="ts-rank-total-down">0 B</div></div>
+                    <div><div class="k">总计</div><div class="v all" id="ts-rank-total-all">0 B</div></div>
+                </div>
+            </div>
+
+            <div class="ts-rank-list" id="ts-rank-list"></div>
+        </div>
+    </div>
+
+    <div class="ts-status" id="ts-status">加载中...</div>
+    <select id="ts-node-select" class="ts-hidden"></select>
+</div>
+
+<script>
+    (function () {
+        const RANK_VISIBLE_COUNT = 10;
+        const RANK_REQUEST_LIMIT = 200;
+
+        const state = {
+            nodes: [],
+            nodeMap: {},
+            rank: null,
+            selectedNodeUUID: '',
+            rankDate: '',
+            barInterval: 1,
+            trendMode: 'increment',
+            barPoints: [],
+            linePoints: []
+        };
+
+        const nodeSelect = () => document.getElementById('ts-node-select');
+        const statusEl = () => document.getElementById('ts-status');
+        const barSvg = () => document.getElementById('ts-bar-svg');
+        const lineSvg = () => document.getElementById('ts-line-svg');
+        const rankDatePicker = () => document.getElementById('ts-rank-date-picker');
+
+        function todayDateStr() {
+            const d = new Date();
+            const y = d.getFullYear();
+            const m = String(d.getMonth() + 1).padStart(2, '0');
+            const day = String(d.getDate()).padStart(2, '0');
+            return `${y}-${m}-${day}`;
+        }
+
+        function getXAxisTickLimit() {
+            return window.innerWidth <= 768 ? 6 : 10;
+        }
+
+        function buildTickIndexSet(length, maxTicks) {
+            if (length <= 0) return new Set();
+            if (length <= maxTicks) {
+                return new Set(Array.from({ length }, (_, i) => i));
+            }
+            const step = Math.ceil((length - 1) / (maxTicks - 1));
+            const idx = [];
+            for (let i = 0; i < length; i += step) {
+                idx.push(i);
+            }
+            if (idx[idx.length - 1] !== length - 1) {
+                idx.push(length - 1);
+            }
+            return new Set(idx);
+        }
+
+        function fmtAxisLabel(raw) {
+            const label = String(raw || '');
+            if (window.innerWidth <= 768 && label.includes('~')) {
+                return label.split('~')[0] || label;
+            }
+            return (label.split(' ').pop() || label);
+        }
+
+        function syncRankListHeight() {
+            const list = document.getElementById('ts-rank-list');
+            if (!list) return;
+
+            // 移动端不固定高度，避免压缩阅读区域
+            if (window.innerWidth <= 1200) {
+                list.style.minHeight = '';
+                list.style.maxHeight = '';
+                return;
+            }
+
+            const rows = Array.from(list.querySelectorAll('.ts-rank-item'));
+            if (!rows.length) {
+                list.style.minHeight = '';
+                list.style.maxHeight = '';
+                return;
+            }
+
+            const count = Math.min(RANK_VISIBLE_COUNT, rows.length);
+            const gap = 6;
+            let height = 0;
+            for (let i = 0; i < count; i++) {
+                height += rows[i].offsetHeight;
+            }
+            height += Math.max(0, count - 1) * gap;
+
+            list.style.minHeight = `${height}px`;
+            list.style.maxHeight = `${height}px`;
+        }
+
+        function esc(s) {
+            return String(s || '')
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#39;');
+        }
+
+        function buildFlagFallbackDataUri(code) {
+            const upper = String(code || '').toUpperCase();
+            const isCountry = /^[A-Z]{2}$/.test(upper);
+            const emoji = isCountry
+                ? String.fromCodePoint(...upper.split('').map(c => 127397 + c.charCodeAt(0)))
+                : '🌐';
+            const label = isCountry ? upper : 'globe';
+            const svg = `
+                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="18" viewBox="0 0 24 18" role="img" aria-label="${label}">
+                    <rect x="0.5" y="0.5" width="23" height="17" rx="2" fill="#ffffff" stroke="#d8dbe3"/>
+                    <text x="12" y="12.4" text-anchor="middle" font-size="10.6" font-family="Segoe UI Emoji, Apple Color Emoji, Noto Color Emoji, sans-serif">${emoji}</text>
+                </svg>
+            `;
+            return `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`;
+        }
+
+        function flagEmoji(regionCode) {
+            const code = String(regionCode || '').trim().toUpperCase();
+            if (!/^[A-Z]{2}$/.test(code)) {
+                return `<img src="${buildFlagFallbackDataUri('')}" alt="globe" style="width: 16px; height: 12px; object-fit: cover; vertical-align: middle; display: inline-block; border-radius: 2px; box-shadow: 0 0 1px rgba(0,0,0,0.15);">`;
+            }
+
+            const isoCode = code.toLowerCase();
+            const fallback = buildFlagFallbackDataUri(code);
+            return `<img src="https://flagcdn.com/${isoCode}.svg" loading="lazy" alt="${isoCode}" onerror="this.onerror=null;this.src='${fallback}'" style="width: 16px; height: 12px; object-fit: cover; vertical-align: middle; display: inline-block; border-radius: 2px; box-shadow: 0 0 1px rgba(0,0,0,0.15);">`;
+        }
+
+        function fmtBytes(v, noUnit) {
+            const n = Number(v || 0);
+            const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+            let i = 0;
+            let val = n;
+            while (val >= 1024 && i < units.length - 1) {
+                val /= 1024;
+                i++;
+            }
+            if (noUnit) return val.toFixed(2);
+            return val.toFixed(2) + ' ' + units[i];
+        }
+
+        function fmtGb(v) {
+            const n = Number(v || 0);
+            return (n / 1024 / 1024 / 1024).toFixed(2) + ' GB';
+        }
+
+        function fmtAxisGb(v) {
+            const gb = Number(v || 0) / 1024 / 1024 / 1024;
+            if (gb >= 100) return gb.toFixed(0) + ' GB';
+            if (gb >= 10) return gb.toFixed(1) + ' GB';
+            return gb.toFixed(2) + ' GB';
+        }
+
+        function setStatus(msg, isErr) {
+            const el = statusEl();
+            if (!el) return;
+            el.textContent = msg || '';
+            el.style.color = isErr ? '#d74242' : '#86868b';
+        }
+
+        function updateSelectedBadge() {
+            const el = document.getElementById('ts-selected-node');
+            if (!el) return;
+            const node = state.nodeMap[state.selectedNodeUUID] || {};
+            el.innerHTML = `<span class="dot"></span><span class="ts-node-main">${flagEmoji(node.region)} <span class="ts-node-name">${esc(node.name || '--')}</span></span>`;
+        }
+
+        async function loadLandingNodes() {
+            const res = await fetch('/api/traffic/landing-nodes');
+            const data = await res.json();
+            if (!data || data.status !== 'success') throw new Error((data && data.message) || '读取节点失败');
+
+            state.nodes = Array.isArray(data.nodes) ? data.nodes : [];
+            state.nodeMap = {};
+            state.nodes.forEach(n => {
+                state.nodeMap[n.uuid] = { uuid: n.uuid, name: n.name, region: n.region || '' };
+            });
+
+            if (nodeSelect()) {
+                nodeSelect().innerHTML = state.nodes.map(n => `<option value="${esc(n.uuid)}">${esc(n.name || n.uuid)}</option>`).join('');
+            }
+        }
+
+        async function loadRank() {
+            const q = new URLSearchParams({
+                limit: String(RANK_REQUEST_LIMIT),
+                date: state.rankDate || todayDateStr()
+            });
+            const res = await fetch('/api/traffic/consumption-rank?' + q.toString());
+            const data = await res.json();
+            if (!data || data.status !== 'success') throw new Error((data && data.message) || '读取流量排行失败');
+
+            state.rank = data.rank || null;
+            state.rankDate = (state.rank && state.rank.generated_at) || state.rankDate || todayDateStr();
+            if (rankDatePicker()) rankDatePicker().value = state.rankDate;
+
+            const items = (state.rank && Array.isArray(state.rank.items)) ? state.rank.items : [];
+            items.forEach(it => {
+                if (!state.nodeMap[it.uuid]) {
+                    state.nodeMap[it.uuid] = { uuid: it.uuid, name: it.name, region: it.region || '' };
+                }
+            });
+
+            const inRank = items.some(x => x.uuid === state.selectedNodeUUID);
+            if (!state.selectedNodeUUID || !inRank) {
+                if (items.length) state.selectedNodeUUID = items[0].uuid;
+                else if (state.nodes.length) state.selectedNodeUUID = state.nodes[0].uuid;
+            }
+
+            document.getElementById('ts-rank-total-up').textContent = fmtBytes((state.rank && state.rank.total_up) || 0);
+            document.getElementById('ts-rank-total-down').textContent = fmtBytes((state.rank && state.rank.total_down) || 0);
+            document.getElementById('ts-rank-total-all').textContent = fmtBytes((state.rank && state.rank.total_bytes) || 0);
+        }
+
+        function renderRank() {
+            const list = document.getElementById('ts-rank-list');
+            const items = (state.rank && Array.isArray(state.rank.items)) ? state.rank.items : [];
+
+            if (!items.length) {
+                list.innerHTML = '<div style="padding:8px; color:#999; font-size:12px;">暂无流量数据</div>';
+                return;
+            }
+
+            const maxTotal = Math.max(1, ...items.map(x => Number(x.total_bytes || 0)));
+            list.innerHTML = items.map(item => {
+                const up = Number(item.traffic_up || 0);
+                const down = Number(item.traffic_down || 0);
+                const total = Number(item.total_bytes || 0);
+                const active = item.uuid === state.selectedNodeUUID ? 'active' : '';
+                const widthPct = Math.max(1, total / maxTotal * 100);
+                const upPct = total > 0 ? up / total * 100 : 0;
+
+                return `
+                    <div class="ts-rank-item ${active}" data-uuid="${esc(item.uuid)}">
+                        <div class="ts-rank-top">
+                            <div class="ts-rank-name">
+                                ${flagEmoji(item.region)} 
+                                <span style="margin-right:4px">${esc(item.name || item.uuid)}</span>
+                                ${active ? '<i class="ts-dot" style="background:#34c759; margin:0; width:6px; height:6px;"></i>' : ''}
+                            </div>
+                            <div class="ts-rank-total">${esc(fmtGb(total))}</div>
+                        </div>
+                        <div class="ts-rank-bar">
+                            <div class="ts-rank-bar-fill" style="width:${widthPct.toFixed(2)}%">
+                                <div class="ts-rank-bar-up" style="width:${upPct.toFixed(2)}%"></div>
+                                <div class="ts-rank-bar-down" style="width:${(100 - upPct).toFixed(2)}%"></div>
+                            </div>
+                        </div>
+                        <div class="ts-rank-meta">
+                            <div style="display:flex; gap:6px; align-items:center; font-size:10px;">
+                                <span style="color:#34c759;">↑ ${fmtGb(up)}</span>
+                                <span style="color:#1e88ff;">↓ ${fmtGb(down)}</span>
+                                <span style="color:#b16bff;">${esc(Number(item.upload_ratio || 0).toFixed(2))}</span>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+
+            list.querySelectorAll('.ts-rank-item').forEach(el => {
+                el.addEventListener('click', async function () {
+                    const uuid = String(el.getAttribute('data-uuid') || '');
+                    if (!uuid || uuid === state.selectedNodeUUID) return;
+                    state.selectedNodeUUID = uuid;
+                    if (nodeSelect()) nodeSelect().value = uuid;
+                    updateSelectedBadge();
+                    renderRank();
+                    await loadSeriesAndRender();
+                });
+            });
+
+            syncRankListHeight();
+        }
+
+        async function fetchSeries(mode, intervalHours) {
+            if (!state.selectedNodeUUID) return [];
+            const q = new URLSearchParams({
+                node_uuid: state.selectedNodeUUID,
+                mode: mode,
+                hours: '24',
+                interval_hours: String(intervalHours),
+                date: state.rankDate || todayDateStr()
+            });
+            const res = await fetch('/api/traffic/series?' + q.toString());
+            const data = await res.json();
+            if (!data || data.status !== 'success') throw new Error((data && data.message) || '读取统计失败');
+            return (data.series && Array.isArray(data.series.points)) ? data.series.points : [];
+        }
+
+        function getChartSize(svg) {
+            const w = Math.max(960, Math.floor((svg && svg.clientWidth) || 960));
+            const h = Math.max(250, Math.floor((svg && svg.clientHeight) || 280));
+            if (svg) {
+                svg.setAttribute('viewBox', `0 0 ${w} ${h}`);
+                svg.setAttribute('preserveAspectRatio', 'xMidYMid meet');
+            }
+            return { w, h };
+        }
+
+        function renderBar() {
+            const svg = barSvg();
+            const points = state.barPoints;
+            if (!points || !points.length) {
+                svg.innerHTML = '<text x="480" y="125" text-anchor="middle" fill="#999" font-size="13">暂无数据</text>';
+                return;
+            }
+
+            const size = getChartSize(svg);
+            const w = size.w, h = size.h, left = 64, right = 28, top = 12, bottom = 20;
+            const chartW = w - left - right;
+            const chartH = h - top - bottom;
+            const maxV = Math.max(1, ...points.map(p => Number(p.total_bytes || 0)));
+            const groupW = chartW / points.length;
+            const barW = Math.max(4, Math.min(20, groupW * 0.72));
+            const tickSet = buildTickIndexSet(points.length, getXAxisTickLimit());
+
+            let out = '';
+            for (let i = 0; i <= 5; i++) {
+                const y = top + chartH * i / 5;
+                const val = maxV * (5 - i) / 5;
+                out += `<line x1="${left}" y1="${y.toFixed(2)}" x2="${w - right}" y2="${y.toFixed(2)}" stroke="#f0f1f6"/>`;
+                out += `<text x="${left - 6}" y="${(y + 3).toFixed(2)}" text-anchor="end" fill="#8f8f9a" font-size="10.2" font-weight="600" font-family="Segoe UI, PingFang SC, Microsoft YaHei, sans-serif">${esc(fmtAxisGb(val))}</text>`;
+            }
+            out += `<line x1="${left}" y1="${h - bottom}" x2="${w - right}" y2="${h - bottom}" stroke="#d6d6de"/>`;
+            out += `<circle cx="${left}" cy="${h - bottom}" r="3.2" fill="#34c759" stroke="#fff" stroke-width="1"/>`;
+            out += `<circle cx="${w - right}" cy="${h - bottom}" r="3.2" fill="#ff6b6b" stroke="#fff" stroke-width="1"/>`;
+
+            points.forEach((p, i) => {
+                const up = Number(p.up_bytes || 0);
+                const down = Number(p.down_bytes || 0);
+                const total = Number(p.total_bytes || 0);
+                const x = left + i * groupW + (groupW - barW) / 2;
+                const totalH = Math.max(1, chartH * (total / maxV));
+                const upH = total > 0 ? totalH * (up / total) : 0;
+                const downH = totalH - upH;
+                const yDown = top + chartH - totalH;
+                const yUp = yDown + downH;
+
+                out += `<rect x="${x.toFixed(2)}" y="${yDown.toFixed(2)}" width="${barW.toFixed(2)}" height="${downH.toFixed(2)}" fill="#1e88ff" rx="2"/>`;
+                out += `<rect x="${x.toFixed(2)}" y="${yUp.toFixed(2)}" width="${barW.toFixed(2)}" height="${upH.toFixed(2)}" fill="#34c759" rx="2"/>`;
+
+                if (tickSet.has(i)) {
+                    const label = fmtAxisLabel(p.label);
+                    out += `<text x="${(left + i * groupW + groupW / 2).toFixed(2)}" y="${h - 6}" text-anchor="middle" fill="#70707c" font-size="11.5" font-weight="600" font-family="Segoe UI, PingFang SC, Microsoft YaHei, sans-serif">${esc(label)}</text>`;
+                }
+            });
+            svg.innerHTML = out;
+        }
+
+        function renderLine() {
+            const svg = lineSvg();
+            const points = state.linePoints;
+            if (!points || !points.length) {
+                svg.innerHTML = '<text x="480" y="125" text-anchor="middle" fill="#999" font-size="13">暂无数据</text>';
+                return;
+            }
+
+            const size = getChartSize(svg);
+            const w = size.w, h = size.h, left = 64, right = 28, top = 12, bottom = 20;
+            const chartW = w - left - right;
+            const chartH = h - top - bottom;
+            const maxV = Math.max(1, ...points.map(p => Number(p.total_bytes || 0)));
+            const tickSet = buildTickIndexSet(points.length, getXAxisTickLimit());
+
+            function xy(i, v) {
+                const x = left + (points.length <= 1 ? chartW / 2 : (chartW * i / (points.length - 1)));
+                const y = top + chartH - chartH * (v / maxV);
+                return [x, y];
+            }
+
+            let upPath = '';
+            let downPath = '';
+            let totalPath = '';
+            let dots = '';
+
+            points.forEach((p, i) => {
+                const up = Number(p.up_bytes || 0);
+                const down = Number(p.down_bytes || 0);
+                const total = Number(p.total_bytes || 0);
+                const [ux, uy] = xy(i, up);
+                const [dx, dy] = xy(i, down);
+                const [tx, ty] = xy(i, total);
+
+                upPath += (i === 0 ? `M ${ux} ${uy}` : ` L ${ux} ${uy}`);
+                downPath += (i === 0 ? `M ${dx} ${dy}` : ` L ${dx} ${dy}`);
+                totalPath += (i === 0 ? `M ${tx} ${ty}` : ` L ${tx} ${ty}`);
+
+                if (tickSet.has(i)) {
+                    const label = fmtAxisLabel(p.label);
+                    dots += `<text x="${ux}" y="${h - 6}" text-anchor="middle" fill="#70707c" font-size="11.5" font-weight="600" font-family="Segoe UI, PingFang SC, Microsoft YaHei, sans-serif">${esc(label)}</text>`;
+                }
+            });
+
+            const [fx] = xy(0, Number(points[0].total_bytes || 0));
+            const [lx] = xy(points.length - 1, Number(points[points.length - 1].total_bytes || 0));
+            const areaPath = `${totalPath} L ${lx} ${h - bottom} L ${fx} ${h - bottom} Z`;
+
+            let yGuides = '';
+            for (let i = 0; i <= 5; i++) {
+                const y = top + chartH * i / 5;
+                const val = maxV * (5 - i) / 5;
+                yGuides += `<line x1="${left}" y1="${y.toFixed(2)}" x2="${w - right}" y2="${y.toFixed(2)}" stroke="#f0f1f6"/>`;
+                yGuides += `<text x="${left - 6}" y="${(y + 3).toFixed(2)}" text-anchor="end" fill="#8f8f9a" font-size="10.2" font-weight="600" font-family="Segoe UI, PingFang SC, Microsoft YaHei, sans-serif">${esc(fmtAxisGb(val))}</text>`;
+            }
+
+            svg.innerHTML = `
+                ${yGuides}
+                <line x1="${left}" y1="${h - bottom}" x2="${w - right}" y2="${h - bottom}" stroke="#d6d6de"/>
+                <circle cx="${left}" cy="${h - bottom}" r="3.2" fill="#34c759" stroke="#fff" stroke-width="1"/>
+                <circle cx="${w - right}" cy="${h - bottom}" r="3.2" fill="#ff6b6b" stroke="#fff" stroke-width="1"/>
+                <path d="${areaPath}" fill="rgba(177,107,255,0.10)" stroke="none"/>
+                <path d="${upPath}" fill="none" stroke="#34c759" stroke-width="1.8"/>
+                <path d="${downPath}" fill="none" stroke="#1e88ff" stroke-width="1.8"/>
+                <path d="${totalPath}" fill="none" stroke="#b16bff" stroke-width="1.8" stroke-dasharray="4 3"/>
+                ${dots}
+            `;
+        }
+
+        async function loadSeriesAndRender() {
+            state.barPoints = await fetchSeries('increment', state.barInterval);
+            state.linePoints = await fetchSeries(state.trendMode, 1);
+
+            renderBar();
+            renderLine();
+
+            const latest = state.linePoints[state.linePoints.length - 1];
+            if (!latest) {
+                document.getElementById('ts-trend-ratio').textContent = '0.00';
+                setStatus('', false);
+                return;
+            }
+
+            const up = Number(latest.up_bytes || 0);
+            const down = Number(latest.down_bytes || 0);
+            const ratio = up > 0 ? (down / up) : 0;
+            document.getElementById('ts-trend-ratio').textContent = ratio.toFixed(2);
+            setStatus('', false);
+        }
+
+        function bindEvents() {
+            document.querySelectorAll('#ts-dist-switch button').forEach(btn => {
+                btn.addEventListener('click', async function () {
+                    const next = Number(btn.getAttribute('data-interval') || 1);
+                    if (next === state.barInterval) return;
+                    state.barInterval = next;
+                    document.querySelectorAll('#ts-dist-switch button').forEach(x => x.classList.toggle('active', x === btn));
+                    await loadSeriesAndRender();
+                });
+            });
+
+            document.querySelectorAll('#ts-trend-switch button').forEach(btn => {
+                btn.addEventListener('click', async function () {
+                    const mode = String(btn.getAttribute('data-mode') || 'increment');
+                    if (mode === state.trendMode) return;
+                    state.trendMode = mode;
+                    document.querySelectorAll('#ts-trend-switch button').forEach(x => x.classList.toggle('active', x === btn));
+                    await loadSeriesAndRender();
+                });
+            });
+
+            if (nodeSelect()) {
+                nodeSelect().addEventListener('change', async function () {
+                    state.selectedNodeUUID = nodeSelect().value || '';
+                    updateSelectedBadge();
+                    renderRank();
+                    await loadSeriesAndRender();
+                });
+            }
+
+            if (rankDatePicker()) {
+                rankDatePicker().addEventListener('change', async function () {
+                    state.rankDate = rankDatePicker().value || todayDateStr();
+                    await loadRank();
+                    if (nodeSelect()) nodeSelect().value = state.selectedNodeUUID;
+                    updateSelectedBadge();
+                    renderRank();
+                    await loadSeriesAndRender();
+                });
+            }
+
+            window.addEventListener('resize', function () {
+                renderBar();
+                renderLine();
+                syncRankListHeight();
+            });
+        }
+
+        window.trafficStatsRefresh = async function () {
+            await loadRank();
+            if (nodeSelect()) nodeSelect().value = state.selectedNodeUUID;
+            updateSelectedBadge();
+            renderRank();
+            await loadSeriesAndRender();
+        };
+
+        document.addEventListener('DOMContentLoaded', async function () {
+            try {
+                state.rankDate = todayDateStr();
+                if (rankDatePicker()) rankDatePicker().value = state.rankDate;
+                await loadLandingNodes();
+                await window.trafficStatsRefresh();
+                bindEvents();
+            } catch (e) {
+                setStatus((e && e.message) ? e.message : '初始化流量统计失败', true);
+            }
+        });
+    })();
+</script>
++{{end}}

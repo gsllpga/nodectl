@@ -1188,7 +1188,7 @@ func apiGetSettings(w http.ResponseWriter, r *http.Request) {
 		"panel_url", "sub_token", "proxy_port_ss", "proxy_port_hy2", "proxy_port_tuic",
 		"proxy_port_reality", "proxy_ss_method",
 		"proxy_port_socks5", "proxy_socks5_user", "proxy_socks5_pass", "pref_use_emoji_flag", "sub_custom_name", "pref_ip_strategy", "pref_default_install_protocols",
-		"sys_force_http", "sys_log_level", "cf_email", "cf_api_key", "cf_domain", "cf_auto_renew", "airport_filter_invalid", "pref_speed_test_mode", "pref_speed_test_file_size",
+		"sys_force_http", "sys_log_level", "cf_email", "cf_api_key", "cf_domain", "cf_auto_renew", "airport_filter_invalid", "pref_speed_test_mode", "pref_speed_test_file_size", "pref_traffic_stats_retention_days",
 		"tg_bot_enabled", "tg_bot_token", "tg_bot_whitelist", "tg_bot_register_commands", "clash_proxies_update_interval", "clash_rules_update_interval", "clash_public_rules_update_interval",
 		// 新增协议与内核优化配置
 		"proxy_port_trojan", "proxy_hy2_sni", "proxy_tuic_sni", "proxy_enable_bbr",
@@ -1246,7 +1246,7 @@ func apiUpdateSettings(w http.ResponseWriter, r *http.Request) {
 		"proxy_ss_method": true, "proxy_port_socks5": true, "proxy_socks5_user": true, "proxy_socks5_pass": true, "pref_use_emoji_flag": true,
 		"sub_custom_name": true, "pref_ip_strategy": true, "pref_default_install_protocols": true,
 		"sys_force_http": true, "sys_log_level": true, "cf_email": true, "cf_api_key": true, "cf_domain": true, "cf_auto_renew": true,
-		"airport_filter_invalid": true, "pref_speed_test_mode": true, "pref_speed_test_file_size": true,
+		"airport_filter_invalid": true, "pref_speed_test_mode": true, "pref_speed_test_file_size": true, "pref_traffic_stats_retention_days": true,
 		"tg_bot_enabled": true, "tg_bot_token": true, "tg_bot_whitelist": true, "tg_bot_register_commands": true,
 		"clash_proxies_update_interval": true, "clash_rules_update_interval": true, "clash_public_rules_update_interval": true,
 		// 新增协议与内核优化配置
@@ -1306,6 +1306,16 @@ func apiUpdateSettings(w http.ResponseWriter, r *http.Request) {
 					sendJSON(w, "error", "日志等级无效，仅支持: debug / info / warn / error")
 					return
 				}
+			}
+
+			if k == "pref_traffic_stats_retention_days" {
+				v = strings.TrimSpace(v)
+				days, err := strconv.Atoi(v)
+				if err != nil || days < 1 || days > 3650 {
+					sendJSON(w, "error", "流量记录保留天数无效，仅支持 1-3650 天")
+					return
+				}
+				v = strconv.Itoa(days)
 			}
 
 			if k != "sys_log_level" && oldValue == v {
@@ -2667,6 +2677,95 @@ func apiTestAirportNodes(w http.ResponseWriter, r *http.Request) {
 	)
 }
 
+// apiGetTrafficLandingNodes 返回用于流量统计的落地节点列表
+func apiGetTrafficLandingNodes(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	nodes, err := service.GetTrafficLandingNodes()
+	if err != nil {
+		logger.Log.Error("查询流量统计节点列表失败", "error", err)
+		sendJSON(w, "error", "读取节点列表失败")
+		return
+	}
+
+	sendJSON(w, "success", map[string]interface{}{
+		"nodes": nodes,
+	})
+}
+
+// apiGetTrafficSeries 查询节点流量时序统计（支持总量/增量、1h/2h）
+func apiGetTrafficSeries(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	nodeUUID := strings.TrimSpace(r.URL.Query().Get("node_uuid"))
+	hours := 24
+	if raw := strings.TrimSpace(r.URL.Query().Get("hours")); raw != "" {
+		if parsed, err := strconv.Atoi(raw); err == nil {
+			hours = parsed
+		}
+	}
+
+	intervalHours := 1
+	if raw := strings.TrimSpace(r.URL.Query().Get("interval_hours")); raw != "" {
+		if parsed, err := strconv.Atoi(raw); err == nil {
+			intervalHours = parsed
+		}
+	}
+
+	mode := strings.TrimSpace(r.URL.Query().Get("mode"))
+	rankDate := strings.TrimSpace(r.URL.Query().Get("date"))
+
+	result, err := service.QueryTrafficSeries(service.TrafficSeriesOptions{
+		NodeUUID:      nodeUUID,
+		Hours:         hours,
+		IntervalHours: intervalHours,
+		Mode:          mode,
+		Date:          rankDate,
+	})
+	if err != nil {
+		logger.Log.Warn("查询流量统计数据失败", "error", err, "node_uuid", nodeUUID, "date", rankDate)
+		sendJSON(w, "error", "查询流量统计失败")
+		return
+	}
+
+	sendJSON(w, "success", map[string]interface{}{
+		"series": result,
+	})
+}
+
+// apiGetTrafficConsumptionRank 返回节点流量消耗排行榜（支持按日期查询）
+func apiGetTrafficConsumptionRank(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	limit := 30
+	if raw := strings.TrimSpace(r.URL.Query().Get("limit")); raw != "" {
+		if parsed, err := strconv.Atoi(raw); err == nil {
+			limit = parsed
+		}
+	}
+	rankDate := strings.TrimSpace(r.URL.Query().Get("date"))
+
+	rank, err := service.GetTrafficConsumptionRank(limit, rankDate)
+	if err != nil {
+		logger.Log.Warn("查询流量消耗排行失败", "error", err, "date", rankDate)
+		sendJSON(w, "error", "读取流量消耗排行失败")
+		return
+	}
+
+	sendJSON(w, "success", map[string]interface{}{
+		"rank": rank,
+	})
+}
+
 // apiCallbackTraffic 处理节点定期的流量上报
 // 功能：接收节点服务器通过 crontab 脚本上报的本周期上传/下载流量并直接覆盖更新到数据库
 func apiCallbackTraffic(w http.ResponseWriter, r *http.Request) {
@@ -2700,25 +2799,15 @@ func apiCallbackTraffic(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 更新对应节点的流量信息
-	// 注意：因为计算逻辑交给了 Bash 脚本，所以这里直接接收并覆盖当期的流量消耗即可
-	result := database.DB.Model(&database.NodePool{}).
-		Where("install_id = ?", report.InstallID).
-		Updates(map[string]interface{}{
-			"traffic_down":      report.RXBytes,
-			"traffic_up":        report.TXBytes,
-			"traffic_update_at": time.Now(),
-			"updated_at":        time.Now(), // 刷新最后更新时间，方便前端判断节点是否离线
-		})
-
-	if result.Error != nil {
-		logger.Log.Error("更新节点流量失败", "error", result.Error, "install_id", report.InstallID)
+	found, err := service.SaveNodeTrafficReport(report.InstallID, report.RXBytes, report.TXBytes, time.Now())
+	if err != nil {
+		logger.Log.Error("更新节点流量失败", "error", err, "install_id", report.InstallID)
 		sendJSON(w, "error", "数据库更新失败")
 		return
 	}
 
-	// 如果没有影响任何行，说明没找到这个 InstallID 对应的节点
-	if result.RowsAffected == 0 {
+	// 如果没有找到对应节点，返回明确错误
+	if !found {
 		logger.Log.Warn("收到未知节点的流量上报", "install_id", report.InstallID, "ip", clientIP)
 		sendJSON(w, "error", "节点不存在")
 		return

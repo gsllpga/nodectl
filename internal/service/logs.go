@@ -43,6 +43,7 @@ var (
 		"pref_use_emoji_flag":                "国旗 Emoji 显示",
 		"pref_ip_strategy":                   "默认 IP 策略",
 		"pref_default_install_protocols":     "默认安装协议",
+		"pref_traffic_stats_retention_days":  "流量记录保留天数",
 		"pref_speed_test_mode":               "测速模式",
 		"pref_speed_test_file_size":          "测速文件大小",
 		"sys_force_http":                     "HTTP 风险放行",

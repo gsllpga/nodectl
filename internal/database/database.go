@@ -48,6 +48,26 @@ func (NodePool) TableName() string {
 	return "node_pool"
 }
 
+// NodeTrafficStat 节点流量历史原始记录表（仅存储上报原始值）
+type NodeTrafficStat struct {
+	ID         uint64    `gorm:"primaryKey;autoIncrement" json:"id"`
+	NodeUUID   string    `gorm:"column:node_uuid;type:varchar(36);not null;index:idx_nts_node_hour,priority:1;index:idx_nts_node_time,priority:1" json:"node_uuid"`
+	InstallID  string    `gorm:"column:install_id;type:varchar(8);index:idx_nts_install_id" json:"install_id"`
+	ReportedAt time.Time `gorm:"column:reported_at;not null;index:idx_nts_node_time,priority:2" json:"reported_at"`
+	HourKey    int       `gorm:"column:hour_key;not null;index:idx_nts_node_hour,priority:2" json:"hour_key"` // 时间字典: YYYYMMDDHH
+	TwoHourKey int       `gorm:"column:two_hour_key;not null;index:idx_nts_two_hour_key" json:"two_hour_key"` // 时间字典: YYYYMMDDHH(偶数小时)
+	DayKey     int       `gorm:"column:day_key;not null;index:idx_nts_day_key" json:"day_key"`                // 时间字典: YYYYMMDD
+	TXBytes    int64     `gorm:"column:tx_bytes;default:0" json:"tx_bytes"`                                   // 节点原始上报上传值
+	RXBytes    int64     `gorm:"column:rx_bytes;default:0" json:"rx_bytes"`                                   // 节点原始上报下载值
+	CreatedAt  time.Time `gorm:"column:created_at" json:"created_at"`
+
+	Node NodePool `gorm:"foreignKey:NodeUUID;references:UUID;constraint:OnUpdate:CASCADE,OnDelete:CASCADE;" json:"-"`
+}
+
+func (NodeTrafficStat) TableName() string {
+	return "node_traffic_stats"
+}
+
 func (n *NodePool) BeforeCreate(tx *gorm.DB) (err error) {
 	if n.UUID == "" {
 		n.UUID = uuid.New().String()
@@ -159,9 +179,13 @@ func InitDB() {
 	sqlDB.SetMaxIdleConns(1)
 	sqlDB.SetConnMaxLifetime(time.Hour)
 
+	// 启用 SQLite 外键约束
+	db.Exec("PRAGMA foreign_keys = ON")
+
 	// 3. 自动迁移所有的表
 	err = db.AutoMigrate(
 		&NodePool{},
+		&NodeTrafficStat{},
 		&SysConfig{},
 		&AirportSub{},
 		&AirportNode{},
