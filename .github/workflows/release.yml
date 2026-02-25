@@ -5,12 +5,13 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: '发布版本号 (必须以 v 开头，例如: v0.3.0)'
+        description: '发布版本号'
         required: true
         default: 'v0.3.0'
       agent_version:
-        description: 'Agent 版本号 (不填则跟随主版本)'
-        required: false
+        description: 'Agent 版本号'
+        required: true
+        default: 'v0.3.0'
 
 permissions:
   contents: write
