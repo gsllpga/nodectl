@@ -387,6 +387,33 @@ func isMySubscriptionChange(changesRaw string) bool {
 func enrichLogMessageWithContext(messageCN, rawMsg string, attrs map[string]string) string {
 	ip := strings.TrimSpace(attrs["ip"])
 
+	if strings.Contains(rawMsg, "Agent 版本已记录") || strings.Contains(rawMsg, "Agent 版本已更新") {
+		nodeName := strings.TrimSpace(attrs["node_name"])
+		agentVersion := strings.TrimSpace(attrs["agent_version"])
+		oldVersion := strings.TrimSpace(attrs["old_version"])
+		newVersion := strings.TrimSpace(attrs["new_version"])
+
+		if nodeName == "" {
+			nodeName = "unknown"
+		}
+
+		if strings.Contains(rawMsg, "Agent 版本已记录") {
+			parts := []string{fmt.Sprintf("节点 %s", nodeName), "Agent 版本已记录"}
+			if agentVersion != "" {
+				parts = append(parts, "版本: "+agentVersion)
+			}
+			return strings.Join(parts, "；")
+		}
+
+		parts := []string{fmt.Sprintf("节点 %s", nodeName), "Agent 版本已更新"}
+		if oldVersion != "" && newVersion != "" {
+			parts = append(parts, fmt.Sprintf("版本: %s -> %s", oldVersion, newVersion))
+		} else if newVersion != "" {
+			parts = append(parts, "版本: "+newVersion)
+		}
+		return strings.Join(parts, "；")
+	}
+
 	if strings.Contains(rawMsg, "未授权访问拦截") {
 		reason := strings.TrimSpace(attrs["reason"])
 		path := strings.TrimSpace(attrs["path"])
