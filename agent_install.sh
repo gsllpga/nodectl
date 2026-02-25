@@ -117,6 +117,14 @@ start_service_if_any() {
   nohup "${AGENT_BIN}" --config "${AGENT_CONF}" >/var/log/nodectl-agent.log 2>&1 &
 }
 
+is_elf_binary() {
+  local f="$1"
+  # 直接检查 ELF 魔数 0x7f 45 4c 46，避免依赖 file 命令
+  local magic
+  magic="$(dd if="${f}" bs=1 count=4 2>/dev/null | od -An -t x1 | tr -d ' \n')"
+  [ "${magic}" = "7f454c46" ]
+}
+
 main() {
   require_root
 
@@ -144,10 +152,18 @@ main() {
   curl -fL --connect-timeout 15 --max-time 180 -o "${tmp_file}" "${url}"
   chmod +x "${tmp_file}"
 
-  if ! file "${tmp_file}" 2>/dev/null | grep -Eq 'ELF|executable'; then
-    err "下载文件不是有效可执行文件，已中止"
+  if ! is_elf_binary "${tmp_file}"; then
+    err "下载文件不是有效 ELF 可执行文件，已中止"
+    if command -v file >/dev/null 2>&1; then
+      warn "file 检测结果: $(file "${tmp_file}" 2>/dev/null || echo unknown)"
+    fi
     rm -f "${tmp_file}"
     exit 1
+  fi
+
+  # 可选输出：便于现场确认
+  if command -v file >/dev/null 2>&1; then
+    log "文件类型: $(file "${tmp_file}" 2>/dev/null || echo unknown)"
   fi
 
   stop_service_if_any
