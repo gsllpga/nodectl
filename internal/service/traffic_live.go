@@ -72,6 +72,21 @@ type AgentCommandResult struct {
 }
 
 // TrafficHub 实时流量中枢：管理 Agent 连接与前端订阅
+// CommandLogEntry 命令日志条目
+type CommandLogEntry struct {
+	Type    string `json:"type"`              // "progress" / "result"
+	Message string `json:"message,omitempty"` // 日志内容
+	Status  string `json:"status,omitempty"`  // result 时: "ok" / "error"
+}
+
+// CommandLog 单个命令的日志记录
+type CommandLog struct {
+	mu      sync.Mutex
+	entries []CommandLogEntry
+	done    bool                              // 是否已收到 result
+	subs    map[chan CommandLogEntry]struct{} // SSE 订阅者
+}
+
 type TrafficHub struct {
 	mu sync.RWMutex
 
@@ -92,6 +107,10 @@ type TrafficHub struct {
 	// 命令结果回调通道：command_id → channel
 	cmdResults map[string]chan AgentCommandResult
 	cmdMu      sync.Mutex
+
+	// 命令日志：command_id → CommandLog（供 SSE 流式推送）
+	cmdLogs map[string]*CommandLog
+	logMu   sync.Mutex
 }
 
 // globalHub 全局单例（在 for 循环外持有生命周期）
@@ -107,6 +126,7 @@ func GetTrafficHub() *TrafficHub {
 			subscribers: make(map[string]map[chan FrontendPushMsg]struct{}),
 			agentConns:  make(map[string]*websocket.Conn),
 			cmdResults:  make(map[string]chan AgentCommandResult),
+			cmdLogs:     make(map[string]*CommandLog),
 		}
 	})
 	return globalHub
@@ -193,6 +213,10 @@ func HandleAgentWS(w http.ResponseWriter, r *http.Request) {
 		if msgType, ok := rawMsg["type"].(string); ok && (msgType == "accepted" || msgType == "progress" || msgType == "result") {
 			var cmdResult AgentCommandResult
 			json.Unmarshal(data, &cmdResult)
+
+			// 写入命令日志并通知 SSE 订阅者
+			hub.appendCommandLog(cmdResult)
+
 			hub.cmdMu.Lock()
 			if ch, exists := hub.cmdResults[cmdResult.CommandID]; exists {
 				select {
@@ -517,4 +541,130 @@ func IsNodeOnline(installID string) bool {
 	defer hub.agentMu.RUnlock()
 	_, ok := hub.agentConns[installID]
 	return ok
+}
+
+// ============================================================
+//  命令日志 & SSE 流式推送
+// ============================================================
+
+// FireCommandToNode 异步下发命令，立即返回 commandID（不等待结果）
+func FireCommandToNode(installID string, action string, payload interface{}) (string, error) {
+	hub := GetTrafficHub()
+
+	hub.agentMu.RLock()
+	conn, online := hub.agentConns[installID]
+	hub.agentMu.RUnlock()
+	if !online || conn == nil {
+		return "", fmt.Errorf("节点 %s 不在线", installID)
+	}
+
+	commandID := fmt.Sprintf("cmd-%s-%d", installID, time.Now().UnixNano())
+
+	cmd := AgentCommand{
+		Type:      "command",
+		CommandID: commandID,
+		Action:    action,
+		Payload:   payload,
+	}
+
+	// 预创建命令日志（SSE 订阅者可能在命令结果到来之前就连接）
+	hub.logMu.Lock()
+	hub.cmdLogs[commandID] = &CommandLog{
+		entries: make([]CommandLogEntry, 0, 64),
+		subs:    make(map[chan CommandLogEntry]struct{}),
+	}
+	hub.logMu.Unlock()
+
+	data, err := json.Marshal(cmd)
+	if err != nil {
+		return "", fmt.Errorf("命令序列化失败: %w", err)
+	}
+
+	writeCtx, writeCancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer writeCancel()
+	if err := conn.Write(writeCtx, websocket.MessageText, data); err != nil {
+		return "", fmt.Errorf("命令发送失败: %w", err)
+	}
+
+	logger.Log.Info("命令已异步下发", "install_id", installID, "action", action, "command_id", commandID)
+
+	// 5 分钟后自动清理日志
+	go func() {
+		time.Sleep(5 * time.Minute)
+		hub.logMu.Lock()
+		delete(hub.cmdLogs, commandID)
+		hub.logMu.Unlock()
+	}()
+
+	return commandID, nil
+}
+
+// appendCommandLog 将命令结果追加到日志并通知 SSE 订阅者
+func (hub *TrafficHub) appendCommandLog(result AgentCommandResult) {
+	hub.logMu.Lock()
+	cmdLog, exists := hub.cmdLogs[result.CommandID]
+	hub.logMu.Unlock()
+
+	if !exists {
+		return
+	}
+
+	entry := CommandLogEntry{
+		Type: result.Type,
+	}
+	if result.Type == "progress" {
+		entry.Message = result.Stage
+	} else if result.Type == "result" {
+		entry.Status = result.Status
+		entry.Message = result.Message
+	} else if result.Type == "accepted" {
+		entry.Message = "命令已接收"
+	}
+
+	cmdLog.mu.Lock()
+	cmdLog.entries = append(cmdLog.entries, entry)
+	if result.Type == "result" {
+		cmdLog.done = true
+	}
+	// 通知所有 SSE 订阅者
+	for ch := range cmdLog.subs {
+		select {
+		case ch <- entry:
+		default:
+		}
+	}
+	cmdLog.mu.Unlock()
+}
+
+// SubscribeCommandLog 订阅命令日志流
+// 返回: 历史条目切片, 实时通道, 是否已完成, 取消订阅函数
+func SubscribeCommandLog(commandID string) ([]CommandLogEntry, chan CommandLogEntry, bool, func()) {
+	hub := GetTrafficHub()
+
+	hub.logMu.Lock()
+	cmdLog, exists := hub.cmdLogs[commandID]
+	hub.logMu.Unlock()
+
+	if !exists {
+		return nil, nil, false, func() {}
+	}
+
+	ch := make(chan CommandLogEntry, 64)
+
+	cmdLog.mu.Lock()
+	history := make([]CommandLogEntry, len(cmdLog.entries))
+	copy(history, cmdLog.entries)
+	done := cmdLog.done
+	if !done {
+		cmdLog.subs[ch] = struct{}{}
+	}
+	cmdLog.mu.Unlock()
+
+	unsub := func() {
+		cmdLog.mu.Lock()
+		delete(cmdLog.subs, ch)
+		cmdLog.mu.Unlock()
+	}
+
+	return history, ch, done, unsub
 }

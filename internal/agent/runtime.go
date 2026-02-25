@@ -2,9 +2,11 @@
 package agent
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"os/exec"
@@ -254,96 +256,84 @@ func (rt *Runtime) deriveScriptURL() string {
 // executeResetLinks 重置节点链接
 // 后端下发 payload 中包含 {"protocols": ["ss", "hy2", ...]}，作为安装脚本的 CLI 参数
 func (rt *Runtime) executeResetLinks(cmd ServerCommand, reply func(CommandResult)) {
-	reply(CommandResult{
-		Type:  "progress",
-		Stage: "正在重新执行安装脚本...",
-	})
-
-	// 解析 payload 中的协议列表
 	var payload struct {
 		Protocols []string `json:"protocols"`
 	}
 	if len(cmd.Payload) > 0 {
-		if err := json.Unmarshal(cmd.Payload, &payload); err != nil {
-			log.Printf("[Agent] 解析 payload 失败: %v", err)
-		}
+		json.Unmarshal(cmd.Payload, &payload)
 	}
 	if len(payload.Protocols) == 0 {
-		reply(CommandResult{
-			Type:    "result",
-			Status:  "error",
-			Message: "未收到协议列表，无法重置",
-		})
+		reply(CommandResult{Type: "result", Status: "error", Message: "未收到协议列表，无法重置"})
 		return
 	}
 
 	scriptURL := rt.deriveScriptURL()
 	protoArgs := strings.Join(payload.Protocols, " ")
-
-	// curl 下载脚本 | bash -s -- ss hy2 vless ...
 	shellCmd := fmt.Sprintf(`curl -fsSL "%s" | bash -s -- %s`, scriptURL, protoArgs)
-	log.Printf("[Agent] 执行重置链接: %s", shellCmd)
 
-	out, err := exec.Command("/bin/sh", "-c", shellCmd).CombinedOutput()
-	if err != nil {
-		reply(CommandResult{
-			Type:    "result",
-			Status:  "error",
-			Message: fmt.Sprintf("重置链接失败: %v, 输出: %s", err, string(out)),
-		})
-		return
-	}
-
-	reply(CommandResult{
-		Type:    "result",
-		Status:  "ok",
-		Message: fmt.Sprintf("链接已重置\n%s", string(out)),
-	})
+	rt.execStreamingScript(shellCmd, "重置链接", reply)
 }
 
 // executeReinstallSingbox 重新安装 sing-box（复用安装脚本，同样从 payload 读取协议）
 func (rt *Runtime) executeReinstallSingbox(cmd ServerCommand, reply func(CommandResult)) {
-	reply(CommandResult{
-		Type:  "progress",
-		Stage: "正在重新安装 sing-box...",
-	})
-
 	var payload struct {
 		Protocols []string `json:"protocols"`
 	}
 	if len(cmd.Payload) > 0 {
-		if err := json.Unmarshal(cmd.Payload, &payload); err != nil {
-			log.Printf("[Agent] 解析 payload 失败: %v", err)
-		}
+		json.Unmarshal(cmd.Payload, &payload)
 	}
 	if len(payload.Protocols) == 0 {
-		reply(CommandResult{
-			Type:    "result",
-			Status:  "error",
-			Message: "未收到协议列表，无法重新安装",
-		})
+		reply(CommandResult{Type: "result", Status: "error", Message: "未收到协议列表，无法重新安装"})
 		return
 	}
 
 	scriptURL := rt.deriveScriptURL()
 	protoArgs := strings.Join(payload.Protocols, " ")
-
 	shellCmd := fmt.Sprintf(`curl -fsSL "%s" | bash -s -- %s`, scriptURL, protoArgs)
-	log.Printf("[Agent] 执行重装: %s", shellCmd)
 
-	out, err := exec.Command("/bin/sh", "-c", shellCmd).CombinedOutput()
-	if err != nil {
-		reply(CommandResult{
-			Type:    "result",
-			Status:  "error",
-			Message: fmt.Sprintf("重新安装失败: %v, 输出: %s", err, string(out)),
-		})
+	rt.execStreamingScript(shellCmd, "重新安装", reply)
+}
+
+// execStreamingScript 执行 shell 命令并逐行流式回传输出
+// 每行作为一个 progress 消息发送，最后发送 result
+func (rt *Runtime) execStreamingScript(shellCmd string, label string, reply func(CommandResult)) {
+	reply(CommandResult{Type: "progress", Stage: fmt.Sprintf("正在执行%s脚本...", label)})
+	log.Printf("[Agent] 执行%s: %s", label, shellCmd)
+
+	cmd := exec.Command("/bin/sh", "-c", shellCmd)
+
+	// 合并 stdout+stderr 到一个管道
+	pr, pw := io.Pipe()
+	cmd.Stdout = pw
+	cmd.Stderr = pw
+
+	if err := cmd.Start(); err != nil {
+		reply(CommandResult{Type: "result", Status: "error", Message: fmt.Sprintf("启动脚本失败: %v", err)})
 		return
 	}
 
-	reply(CommandResult{
-		Type:    "result",
-		Status:  "ok",
-		Message: "sing-box 已重新安装",
-	})
+	// 逐行读取输出并流式回传
+	go func() {
+		scanner := bufio.NewScanner(pr)
+		scanner.Buffer(make([]byte, 64*1024), 256*1024)
+		for scanner.Scan() {
+			line := scanner.Text()
+			reply(CommandResult{Type: "progress", Stage: line})
+		}
+	}()
+
+	// 等待脚本执行结束
+	err := cmd.Wait()
+	pw.Close()
+
+	// 给 scanner goroutine 一点时间把最后的行发完
+	time.Sleep(100 * time.Millisecond)
+
+	if err != nil {
+		// 即使 exit code 非零，也可能是 set -e 导致的，不一定是真正失败
+		log.Printf("[Agent] %s脚本退出: %v", label, err)
+		reply(CommandResult{Type: "result", Status: "error", Message: fmt.Sprintf("脚本执行完毕但退出码非零: %v", err)})
+	} else {
+		reply(CommandResult{Type: "result", Status: "ok", Message: fmt.Sprintf("%s完成", label)})
+	}
 }

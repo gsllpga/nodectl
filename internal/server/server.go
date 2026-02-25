@@ -134,6 +134,7 @@ func Start(tmplFS embed.FS) {
 	// ========== 节点控制 (Agent 命令下发) ==========
 	mux.HandleFunc("/api/node/control/reset-links", withAuthAndSecure(apiNodeControlResetLinks))      // 远程重置链接
 	mux.HandleFunc("/api/node/control/reinstall-singbox", withAuthAndSecure(apiNodeControlReinstall)) // 远程重装 sing-box
+	mux.HandleFunc("/api/node/control/stream", withAuthAndSecure(apiNodeControlStream))               // 命令执行 SSE 流
 	mux.HandleFunc("/api/node/online-status", withAuthAndSecure(apiNodeOnlineStatus))                 // 节点在线状态查询
 
 	// 订阅接口

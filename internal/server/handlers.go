@@ -2837,7 +2837,7 @@ func apiTrafficLive(w http.ResponseWriter, r *http.Request) {
 
 // ------------------- [节点控制接口] -------------------
 
-// apiNodeControlResetLinks 远程重置节点链接
+// apiNodeControlResetLinks 远程重置节点链接（异步下发 + 返回 command_id）
 // 路由: POST /api/node/control/reset-links
 // 请求体: { "uuid": "节点UUID" }
 func apiNodeControlResetLinks(w http.ResponseWriter, r *http.Request) {
@@ -2877,27 +2877,26 @@ func apiNodeControlResetLinks(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 将协议列表作为 payload 下发给 agent
+	// 将协议列表作为 payload 下发给 agent（异步，不等待结果）
 	payload := map[string]interface{}{
 		"protocols": protocols,
 	}
 
-	result, err := service.DispatchCommandToNode(node.InstallID, "reset-links", payload, 120*time.Second)
+	commandID, err := service.FireCommandToNode(node.InstallID, "reset-links", payload)
 	if err != nil {
-		logger.Log.Error("重置链接命令失败", "uuid", req.UUID, "error", err)
-		sendJSON(w, "error", fmt.Sprintf("命令执行失败: %v", err))
+		logger.Log.Error("重置链接命令下发失败", "uuid", req.UUID, "error", err)
+		sendJSON(w, "error", fmt.Sprintf("命令下发失败: %v", err))
 		return
 	}
 
-	if result.Status == "ok" {
-		logger.Log.Info("节点链接已重置", "uuid", req.UUID, "node_name", node.Name)
-		sendJSON(w, "success", "节点链接已重置")
-	} else {
-		sendJSON(w, "error", fmt.Sprintf("重置失败: %s", result.Message))
-	}
+	logger.Log.Info("重置链接命令已下发", "uuid", req.UUID, "command_id", commandID)
+	sendJSON(w, "success", map[string]interface{}{
+		"command_id": commandID,
+		"message":    "命令已下发，正在执行...",
+	})
 }
 
-// apiNodeControlReinstall 远程重新安装节点 sing-box
+// apiNodeControlReinstall 远程重新安装节点 sing-box（异步下发 + 返回 command_id）
 // 路由: POST /api/node/control/reinstall-singbox
 // 请求体: { "uuid": "节点UUID" }
 func apiNodeControlReinstall(w http.ResponseWriter, r *http.Request) {
@@ -2937,25 +2936,23 @@ func apiNodeControlReinstall(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 将协议列表作为 payload 下发给 agent
+	// 将协议列表作为 payload 下发给 agent（异步，不等待结果）
 	payload := map[string]interface{}{
 		"protocols": protocols,
 	}
 
-	// 下发命令（重装可能比较慢，给 120 秒超时）
-	result, err := service.DispatchCommandToNode(node.InstallID, "reinstall-singbox", payload, 120*time.Second)
+	commandID, err := service.FireCommandToNode(node.InstallID, "reinstall-singbox", payload)
 	if err != nil {
-		logger.Log.Error("重装 sing-box 命令失败", "uuid", req.UUID, "error", err)
-		sendJSON(w, "error", fmt.Sprintf("命令执行失败: %v", err))
+		logger.Log.Error("重装 sing-box 命令下发失败", "uuid", req.UUID, "error", err)
+		sendJSON(w, "error", fmt.Sprintf("命令下发失败: %v", err))
 		return
 	}
 
-	if result.Status == "ok" {
-		logger.Log.Info("节点已重装 sing-box", "uuid", req.UUID, "node_name", node.Name)
-		sendJSON(w, "success", "sing-box 已重新安装")
-	} else {
-		sendJSON(w, "error", fmt.Sprintf("重装失败: %s", result.Message))
-	}
+	logger.Log.Info("重装 sing-box 命令已下发", "uuid", req.UUID, "command_id", commandID)
+	sendJSON(w, "success", map[string]interface{}{
+		"command_id": commandID,
+		"message":    "命令已下发，正在执行...",
+	})
 }
 
 // apiNodeOnlineStatus 查询节点在线状态
@@ -3008,4 +3005,76 @@ func apiNodeOnlineStatus(w http.ResponseWriter, r *http.Request) {
 		result["last_live_at"] = live.LastLiveAt.Unix()
 	}
 	sendJSON(w, "success", result)
+}
+
+// apiNodeControlStream 命令执行日志 SSE 流式推送
+// 路由: GET /api/node/control/stream?command_id=xxx
+func apiNodeControlStream(w http.ResponseWriter, r *http.Request) {
+	commandID := strings.TrimSpace(r.URL.Query().Get("command_id"))
+	if commandID == "" {
+		http.Error(w, "缺少 command_id 参数", http.StatusBadRequest)
+		return
+	}
+
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		http.Error(w, "不支持 SSE", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+	w.Header().Set("X-Accel-Buffering", "no")
+	flusher.Flush()
+
+	history, ch, done, unsub := service.SubscribeCommandLog(commandID)
+	defer unsub()
+
+	// 如果命令不存在
+	if history == nil && ch == nil {
+		fmt.Fprintf(w, "data: %s\n\n", mustJSON(map[string]string{
+			"type": "error", "message": "命令不存在或已过期",
+		}))
+		flusher.Flush()
+		return
+	}
+
+	// 先发送历史条目
+	for _, entry := range history {
+		fmt.Fprintf(w, "data: %s\n\n", mustJSON(entry))
+		flusher.Flush()
+	}
+
+	// 如果命令已完成，直接结束
+	if done {
+		return
+	}
+
+	// 实时订阅
+	ctx := r.Context()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case entry, ok := <-ch:
+			if !ok {
+				return
+			}
+			fmt.Fprintf(w, "data: %s\n\n", mustJSON(entry))
+			flusher.Flush()
+			if entry.Type == "result" {
+				return
+			}
+		}
+	}
+}
+
+// mustJSON 辅助：序列化为 JSON 字符串，出错时返回空对象
+func mustJSON(v interface{}) string {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return "{}"
+	}
+	return string(b)
 }

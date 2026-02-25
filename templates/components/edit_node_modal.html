@@ -719,6 +719,97 @@
             overflow: visible;
         }
     }
+
+    /* ================= 命令执行日志弹窗 ================= */
+    .cmd-log-overlay {
+        display: none;
+        position: fixed;
+        top: 0; left: 0; width: 100%; height: 100%;
+        background: rgba(0,0,0,0.5);
+        backdrop-filter: blur(4px);
+        -webkit-backdrop-filter: blur(4px);
+        z-index: 3000;
+        align-items: center;
+        justify-content: center;
+        opacity: 0;
+        transition: opacity 0.25s ease;
+    }
+    .cmd-log-overlay.active { display: flex; opacity: 1; }
+    .cmd-log-card {
+        background: #1e1e2e;
+        width: 90%;
+        max-width: 640px;
+        height: 60vh;
+        border-radius: 12px;
+        box-shadow: 0 20px 60px rgba(0,0,0,0.4);
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+    }
+    .cmd-log-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 14px 20px;
+        background: #252536;
+        border-bottom: 1px solid #333;
+    }
+    .cmd-log-header .title {
+        color: #cdd6f4;
+        font-size: 14px;
+        font-weight: 600;
+    }
+    .cmd-log-header .status-dot {
+        width: 8px; height: 8px;
+        border-radius: 50%;
+        background: #a6e3a1;
+        animation: cmd-pulse 1.2s infinite;
+        margin-right: 8px;
+    }
+    .cmd-log-header .status-dot.done { animation: none; background: #94e2d5; }
+    .cmd-log-header .status-dot.error { animation: none; background: #f38ba8; }
+    @keyframes cmd-pulse {
+        0%, 100% { opacity: 1; }
+        50% { opacity: 0.3; }
+    }
+    .cmd-log-header .close-btn {
+        background: none; border: none; color: #6c7086; cursor: pointer;
+        font-size: 18px; line-height: 1; padding: 4px 8px; border-radius: 6px;
+        transition: all 0.15s;
+    }
+    .cmd-log-header .close-btn:hover { background: #313244; color: #cdd6f4; }
+    .cmd-log-body {
+        flex: 1;
+        overflow-y: auto;
+        padding: 12px 16px;
+        font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+        font-size: 12px;
+        line-height: 1.7;
+        color: #a6adc8;
+        white-space: pre-wrap;
+        word-break: break-all;
+    }
+    .cmd-log-body .line { padding: 1px 0; }
+    .cmd-log-body .line.result-ok { color: #a6e3a1; font-weight: 600; }
+    .cmd-log-body .line.result-error { color: #f38ba8; font-weight: 600; }
+    .cmd-log-footer {
+        padding: 10px 20px;
+        background: #252536;
+        border-top: 1px solid #333;
+        display: flex;
+        justify-content: flex-end;
+    }
+    .cmd-log-footer button {
+        background: #45475a;
+        color: #cdd6f4;
+        border: none;
+        padding: 6px 18px;
+        border-radius: 6px;
+        cursor: pointer;
+        font-size: 13px;
+        transition: background 0.15s;
+    }
+    .cmd-log-footer button:hover { background: #585b70; }
 </style>
 
 <div class="edit-modal-overlay" id="editNodeModal">
@@ -875,6 +966,23 @@
     <div id="protoSelectList"
         style="background:white; padding:10px; border-radius:12px; box-shadow:0 10px 40px rgba(0,0,0,0.2); border: 1px solid #eee; width: 200px; display:flex; flex-direction:column; gap:4px; animation: fadeIn 0.15s;"
         onclick="event.stopPropagation()">
+    </div>
+</div>
+
+<!-- 命令执行日志弹窗 -->
+<div class="cmd-log-overlay" id="cmdLogOverlay">
+    <div class="cmd-log-card">
+        <div class="cmd-log-header">
+            <div style="display:flex; align-items:center;">
+                <span class="status-dot" id="cmdLogDot"></span>
+                <span class="title" id="cmdLogTitle">执行中...</span>
+            </div>
+            <button class="close-btn" onclick="closeCmdLogModal()" title="关闭（不影响后台执行）">✕</button>
+        </div>
+        <div class="cmd-log-body" id="cmdLogBody"></div>
+        <div class="cmd-log-footer">
+            <button onclick="closeCmdLogModal()">关 闭</button>
+        </div>
     </div>
 </div>
 
@@ -1221,21 +1329,111 @@
         element.classList.toggle('expanded');
     }
 
-    // 远程重置节点链接
+    // ============ 命令日志弹窗 ============
+    let _cmdLogEventSource = null;
+
+    function openCmdLogModal(title) {
+        const overlay = document.getElementById('cmdLogOverlay');
+        const body = document.getElementById('cmdLogBody');
+        const dot = document.getElementById('cmdLogDot');
+        const titleEl = document.getElementById('cmdLogTitle');
+        body.innerHTML = '';
+        dot.className = 'status-dot';
+        titleEl.textContent = title || '执行中...';
+        overlay.classList.add('active');
+    }
+
+    function appendCmdLog(entry) {
+        const body = document.getElementById('cmdLogBody');
+        const dot = document.getElementById('cmdLogDot');
+        const titleEl = document.getElementById('cmdLogTitle');
+
+        if (entry.type === 'progress') {
+            const line = document.createElement('div');
+            line.className = 'line';
+            // 去除 ANSI 转义码
+            line.textContent = (entry.message || '').replace(/\x1b\[[0-9;]*m/g, '');
+            body.appendChild(line);
+        } else if (entry.type === 'result') {
+            const line = document.createElement('div');
+            if (entry.status === 'ok') {
+                line.className = 'line result-ok';
+                line.textContent = '✅ ' + (entry.message || '执行完成');
+                dot.classList.add('done');
+                titleEl.textContent = '执行完成';
+            } else {
+                line.className = 'line result-error';
+                line.textContent = '❌ ' + (entry.message || '执行出错');
+                dot.classList.add('error');
+                titleEl.textContent = '执行出错';
+            }
+            body.appendChild(line);
+        } else if (entry.type === 'accepted') {
+            const line = document.createElement('div');
+            line.className = 'line';
+            line.textContent = '⏳ 命令已接收，等待执行...';
+            body.appendChild(line);
+        } else if (entry.type === 'error') {
+            const line = document.createElement('div');
+            line.className = 'line result-error';
+            line.textContent = '❌ ' + (entry.message || '连接错误');
+            dot.classList.add('error');
+            titleEl.textContent = '连接错误';
+            body.appendChild(line);
+        }
+
+        // 自动滚动到底部
+        body.scrollTop = body.scrollHeight;
+    }
+
+    function closeCmdLogModal() {
+        document.getElementById('cmdLogOverlay').classList.remove('active');
+        if (_cmdLogEventSource) {
+            _cmdLogEventSource.close();
+            _cmdLogEventSource = null;
+        }
+    }
+
+    function streamCommandLog(commandID) {
+        if (_cmdLogEventSource) {
+            _cmdLogEventSource.close();
+        }
+        const es = new EventSource('/api/node/control/stream?command_id=' + encodeURIComponent(commandID));
+        _cmdLogEventSource = es;
+
+        es.onmessage = function(e) {
+            try {
+                const entry = JSON.parse(e.data);
+                appendCmdLog(entry);
+                if (entry.type === 'result' || entry.type === 'error') {
+                    es.close();
+                    _cmdLogEventSource = null;
+                }
+            } catch (err) {
+                console.warn('SSE parse error:', err);
+            }
+        };
+
+        es.onerror = function() {
+            es.close();
+            _cmdLogEventSource = null;
+        };
+    }
+
+    // 远程重置节点链接（流式输出版）
     function confirmResetNodeLinks() {
         const uuid = document.getElementById('editNodeUUID').value;
         const name = document.getElementById('editNodeName').value || uuid;
         if (!uuid) return;
 
-        if (!confirm('确定要远程重置「' + name + '」的链接？\n此操作将重写节点 sing-box 配置并重启服务。')) {
+        if (!confirm('确定要远程重置「' + name + '」的链接？\n此操作将重写节点 sing-box 配置并重启服务。\n关闭日志窗口不会中断执行。')) {
             return;
         }
 
         const btn = document.getElementById('btnResetNodeLinks');
-        if (btn) {
-            btn.disabled = true;
-            btn.style.opacity = '0.5';
-        }
+        if (btn) { btn.disabled = true; btn.style.opacity = '0.5'; }
+
+        openCmdLogModal('重置链接 - ' + name);
 
         fetch('/api/node/control/reset-links', {
             method: 'POST',
@@ -1244,25 +1442,17 @@
         })
         .then(res => res.json())
         .then(data => {
-            if (data.status === 'success') {
-                const indicator = document.getElementById('editSaveIndicator');
-                if (indicator) {
-                    indicator.innerHTML = '<span style="color:#34c759;">✓ 链接已重置</span>';
-                    indicator.style.opacity = '1';
-                    setTimeout(() => { indicator.style.opacity = '0'; }, 3000);
-                }
+            if (data.status === 'success' && data.command_id) {
+                streamCommandLog(data.command_id);
             } else {
-                alert('重置失败: ' + (data.message || '未知错误'));
+                appendCmdLog({ type: 'error', message: data.message || '命令下发失败' });
             }
         })
         .catch(err => {
-            alert('网络错误: ' + err.message);
+            appendCmdLog({ type: 'error', message: '网络错误: ' + err.message });
         })
         .finally(() => {
-            if (btn) {
-                btn.disabled = false;
-                btn.style.opacity = '1';
-            }
+            if (btn) { btn.disabled = false; btn.style.opacity = '1'; }
         });
     }
 
