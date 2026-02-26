@@ -888,7 +888,7 @@
                         <div
                             style="font-size: 13px; font-weight: 600; color: #666; margin-bottom: 10px; display: flex; justify-content: space-between;">
                             <span>流量消耗</span>
-                            <span id="editNodeTrafficTime"
+                            <span id="editNodeAgentVersion"
                                 style="font-size: 11px; color: #999; font-weight: normal;"></span>
                         </div>
 
@@ -1043,17 +1043,11 @@
             document.getElementById('editNodeTrafficUpText').innerText = formatBytes(upBytes);
             document.getElementById('editNodeTrafficDownText').innerText = formatBytes(downBytes);
 
-            // 格式化更新时间
-            if (node.traffic_update_at) {
-                const d = new Date(node.traffic_update_at);
-                const timeStr = d.getFullYear() + '-' +
-                    String(d.getMonth() + 1).padStart(2, '0') + '-' +
-                    String(d.getDate()).padStart(2, '0') + ' ' +
-                    String(d.getHours()).padStart(2, '0') + ':' +
-                    String(d.getMinutes()).padStart(2, '0');
-                document.getElementById('editNodeTrafficTime').innerText = `(更新于 ${timeStr})`;
+            // 显示 Agent 版本
+            if (node.agent_version) {
+                document.getElementById('editNodeAgentVersion').innerText = `Agent: ${node.agent_version}`;
             } else {
-                document.getElementById('editNodeTrafficTime').innerText = '';
+                document.getElementById('editNodeAgentVersion').innerText = 'Agent: 未知';
             }
         } else {
             trafficDetailsEl.style.display = 'none';
