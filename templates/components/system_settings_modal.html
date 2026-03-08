@@ -172,7 +172,7 @@
     /* ================= 右侧/内联详情面板 ================= */
     .sys-right-col {
         flex: 1;
-        padding: 20px 25px;
+        padding: 15px 20px;
         display: none;
         background: #fff;
     }
@@ -194,7 +194,7 @@
 
     /* 表单组件 */
     .sys-field {
-        margin-bottom: 24px;
+        margin-bottom: 14px;
     }
 
     .sys-label {
@@ -202,7 +202,7 @@
         font-size: 12px;
         font-weight: 600;
         color: #86868b;
-        margin-bottom: 8px;
+        margin-bottom: 5px;
         text-transform: uppercase;
     }
 
@@ -499,11 +499,11 @@
         display: flex;
         justify-content: space-between;
         align-items: center;
-        padding: 15px;
+        padding: 10px 14px;
         background: #f9f9fc;
         border: 1px solid #eee;
-        border-radius: 12px;
-        margin-bottom: 15px;
+        border-radius: 10px;
+        margin-bottom: 10px;
         transition: 0.2s;
     }
 
@@ -1395,7 +1395,7 @@
                 </div>
 
                 <div class="sys-nav-card" data-sys-id="mihomo" onclick="selectSysCategory('mihomo', this)">
-                    <div class="sys-nav-name">🐱 Mihomo 核心</div>
+                    <div class="sys-nav-name">🐱 Mihomo</div>
                     <div class="sys-expand-indicator"><svg viewBox="0 0 24 24" width="16" height="16" fill="none"
                             stroke="currentColor" stroke-width="2">
                             <polyline points="9 18 15 12 9 6"></polyline>
@@ -1654,27 +1654,23 @@
                         </div>
                     </div>
 
-                    <div class="sys-pref-row" style="flex-direction: column; align-items: flex-start; gap: 12px;">
-                        <div class="sys-pref-info"
-                            style="width: 100%; flex-direction: row; align-items: center; justify-content: space-between; gap: 6px;">
-                            <div style="display: flex; align-items: center; gap: 6px;">
-                                <span class="sys-pref-title">🛡️ 登录防暴力破解（同 IP）</span>
-                                <div class="sys-info-tooltip-wrap" tabindex="0">
-                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                                        <circle cx="12" cy="12" r="10"></circle>
-                                        <line x1="12" y1="8" x2="12" y2="12"></line>
-                                        <line x1="12" y1="16" x2="12.01" y2="16"></line>
-                                    </svg>
-                                    <div class="sys-tooltip-content">
-                                        <p style="margin: 0; padding-bottom: 4px; font-weight: 600; color: #fff;">登录限流参数</p>
-                                        <p style="margin: 0; padding-bottom: 4px;">• <b>计数窗口:</b> 在该时间段内累计失败次数</p>
-                                        <p style="margin: 0; padding-bottom: 4px;">• <b>最大重试:</b> 达到次数后立即封禁该 IP</p>
-                                        <p style="margin: 0;">• <b>封禁时长:</b> 封禁后需等待此时长才能继续尝试</p>
-                                    </div>
+                    <div class="sys-field">
+                        <label class="sys-label" style="display:flex;align-items:center;gap:4px;">
+                            登录防暴力破解（同 IP）
+                            <div class="sys-info-tooltip-wrap" tabindex="0">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                    <circle cx="12" cy="12" r="10"></circle>
+                                    <line x1="12" y1="8" x2="12" y2="12"></line>
+                                    <line x1="12" y1="16" x2="12.01" y2="16"></line>
+                                </svg>
+                                <div class="sys-tooltip-content">
+                                    <p style="margin: 0; padding-bottom: 4px; font-weight: 600; color: #fff;">登录限流参数</p>
+                                    <p style="margin: 0; padding-bottom: 4px;">• <b>计数窗口:</b> 在该时间段内累计失败次数</p>
+                                    <p style="margin: 0; padding-bottom: 4px;">• <b>最大重试:</b> 达到次数后立即封禁该 IP</p>
+                                    <p style="margin: 0;">• <b>封禁时长:</b> 封禁后需等待此时长才能继续尝试</p>
                                 </div>
                             </div>
-                        </div>
-
+                        </label>
                         <div style="display: flex; gap: 12px; width: 100%;">
                             <div style="flex: 1; display: flex; flex-direction: column; gap: 6px;">
                                 <span style="font-size: 12px; color: #666; font-weight: 600;">计数窗口（秒）</span>
@@ -1857,7 +1853,19 @@
 
                     <div class="sys-pref-row" style="align-items: center;">
                         <div class="sys-pref-info">
-                            <span class="sys-pref-title">🌍 节点名称显示国旗</span>
+                            <span class="sys-pref-title" style="display:flex;align-items:center;gap:4px;">
+                                🌍 节点名称显示国旗
+                                <div class="sys-info-tooltip-wrap" tabindex="0">
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                        <circle cx="12" cy="12" r="10"></circle>
+                                        <line x1="12" y1="8" x2="12" y2="12"></line>
+                                        <line x1="12" y1="16" x2="12.01" y2="16"></line>
+                                    </svg>
+                                    <div class="sys-tooltip-content">
+                                        开启后将在节点名称前自动添加对应国家/地区的国旗 Emoji。
+                                    </div>
+                                </div>
+                            </span>
                         </div>
                         <label class="sys-toggle-switch">
                             <input type="checkbox" id="sys_pref_flag" onchange="triggerSysAutoSave()">
@@ -1868,7 +1876,19 @@
                     <!-- 剔除无效机场节点 is a Toggler -->
                     <div class="sys-pref-row" style="align-items: center;">
                         <div class="sys-pref-info">
-                            <span class="sys-pref-title">🗑️ 剔除机场无效节点</span>
+                            <span class="sys-pref-title" style="display:flex;align-items:center;gap:4px;">
+                                🗑️ 剔除机场无效节点
+                                <div class="sys-info-tooltip-wrap" tabindex="0">
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                        <circle cx="12" cy="12" r="10"></circle>
+                                        <line x1="12" y1="8" x2="12" y2="12"></line>
+                                        <line x1="12" y1="16" x2="12.01" y2="16"></line>
+                                    </svg>
+                                    <div class="sys-tooltip-content">
+                                        开启后，导入机场订阅时将自动过滤流量用尽或已过期等无效节点。
+                                    </div>
+                                </div>
+                            </span>
                         </div>
                         <label class="sys-toggle-switch">
                             <input type="checkbox" id="sys_airport_filter_invalid" onchange="triggerSysAutoSave()">
@@ -1876,11 +1896,9 @@
                         </label>
                     </div>
 
-                    <!-- Selects -->
-                    <div class="sys-pref-row" style="flex-direction: column; align-items: flex-start; gap: 12px;">
-                        <div class="sys-pref-info"
-                            style="width: 100%; flex-direction: row; align-items: center; gap: 6px;">
-                            <span class="sys-pref-title">🌐 节点 IP 生成策略</span>
+                    <div class="sys-field">
+                        <label class="sys-label" style="display:flex;align-items:center;gap:4px;">
+                            节点 IP 生成策略
                             <div class="sys-info-tooltip-wrap" tabindex="0">
                                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
                                     stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -1897,7 +1915,7 @@
                                     <div><b>仅限 IPv6:</b> 只生成 v6 节点</div>
                                 </div>
                             </div>
-                        </div>
+                        </label>
                         <select id="sys_pref_ip_strategy" class="sys-select" onchange="triggerSysAutoSave()">
                             <option value="ipv4_prefer">IPv4 优先</option>
                             <option value="ipv6_prefer">IPv6 优先</option>
@@ -1907,32 +1925,25 @@
                         </select>
                     </div>
 
-                    <!-- Inputs & Info -->
-                    <div class="sys-pref-row" style="flex-direction: column; align-items: flex-start; gap: 12px;">
-                        <div class="sys-pref-info"
-                            style="width: 100%; flex-direction: row; align-items: center; justify-content: space-between; gap: 6px;">
-                            <div style="display: flex; align-items: center; gap: 6px;">
-                                <span class="sys-pref-title">⏱️ Clash 订阅更新间隔 (秒)</span>
-                                <div class="sys-info-tooltip-wrap" tabindex="0">
-                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                                        stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                                        <circle cx="12" cy="12" r="10"></circle>
-                                        <line x1="12" y1="8" x2="12" y2="12"></line>
-                                        <line x1="12" y1="16" x2="12.01" y2="16"></line>
-                                    </svg>
-                                    <div class="sys-tooltip-content">
-                                        <p style="margin: 0; padding-bottom: 4px; font-weight: 600; color: #fff;">刷新间隔
-                                        </p>
-                                        <p style="margin: 0; padding-bottom: 4px;">决定客户端在后台多久拉取一次最新数据。</p>
-                                        <p style="margin: 0; padding-bottom: 4px;">• <b>节点更新:</b> 中转/落地机场 (默认 300 秒)</p>
-                                        <p style="margin: 0; padding-bottom: 4px;">• <b>私有规则:</b> 用户自定义的分流/直连规则 (默认 3600
-                                            秒)</p>
-                                        <p style="margin: 0;">• <b>公共规则:</b> 系统自带的公共规则集 (强制最小 86400 秒 / 24小时)</p>
-                                    </div>
+                    <div class="sys-field">
+                        <label class="sys-label" style="display:flex;align-items:center;gap:4px;">
+                            Clash 订阅更新间隔 (秒)
+                            <div class="sys-info-tooltip-wrap" tabindex="0">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                    stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                    <circle cx="12" cy="12" r="10"></circle>
+                                    <line x1="12" y1="8" x2="12" y2="12"></line>
+                                    <line x1="12" y1="16" x2="12.01" y2="16"></line>
+                                </svg>
+                                <div class="sys-tooltip-content">
+                                    <p style="margin: 0; padding-bottom: 4px; font-weight: 600; color: #fff;">刷新间隔</p>
+                                    <p style="margin: 0; padding-bottom: 4px;">决定客户端在后台多久拉取一次最新数据。</p>
+                                    <p style="margin: 0; padding-bottom: 4px;">• <b>节点更新:</b> 中转/落地机场 (默认 300 秒)</p>
+                                    <p style="margin: 0; padding-bottom: 4px;">• <b>私有规则:</b> 用户自定义的分流/直连规则 (默认 3600 秒)</p>
+                                    <p style="margin: 0;">• <b>公共规则:</b> 系统自带的公共规则集 (强制最小 86400 秒 / 24小时)</p>
                                 </div>
                             </div>
-                        </div>
-
+                        </label>
                         <div style="display: flex; gap: 12px; width: 100%;">
                             <div style="flex: 1; display: flex; flex-direction: column; gap: 6px;">
                                 <span style="font-size: 12px; color: #666; font-weight: 600;">节点更新</span>
@@ -1955,44 +1966,29 @@
                         </div>
                     </div>
 
-                    <div class="sys-pref-row" style="flex-direction: column; align-items: flex-start; gap: 12px;">
-                        <div class="sys-pref-info"
-                            style="width: 100%; flex-direction: row; align-items: center; justify-content: space-between; gap: 6px;">
-                            <div style="display: flex; align-items: center; gap: 6px;">
-                                <span class="sys-pref-title">📊 流量与离线判定</span>
-                                <div class="sys-info-tooltip-wrap" tabindex="0">
-                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                                        stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                                        <circle cx="12" cy="12" r="10"></circle>
-                                        <line x1="12" y1="8" x2="12" y2="12"></line>
-                                        <line x1="12" y1="16" x2="12.01" y2="16"></line>
-                                    </svg>
-                                    <div class="sys-tooltip-content">
-                                        <p style="margin: 0; padding-bottom: 4px; font-weight: 600; color: #fff;">参数说明
-                                        </p>
-                                        <p style="margin: 0; padding-bottom: 4px;">• <b>流量记录最长保存时间:</b> 仅保留最近 N
-                                            天历史数据，超期自动清理。</p>
-                                        <p style="margin: 0;">• <b>节点在线状态:</b> 由 WS 连接实时判定，不再使用全局离线宽限期。</p>
-                                    </div>
+                    <div class="sys-field">
+                        <label class="sys-label" style="display:flex;align-items:center;gap:4px;">
+                            流量记录保存时间
+                            <div class="sys-info-tooltip-wrap" tabindex="0">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                    stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                    <circle cx="12" cy="12" r="10"></circle>
+                                    <line x1="12" y1="8" x2="12" y2="12"></line>
+                                    <line x1="12" y1="16" x2="12.01" y2="16"></line>
+                                </svg>
+                                <div class="sys-tooltip-content">
+                                    <p style="margin: 0; padding-bottom: 4px; font-weight: 600; color: #fff;">参数说明</p>
+                                    <p style="margin: 0; padding-bottom: 4px;">• <b>流量记录最长保存时间:</b> 仅保留最近 N 天历史数据，超期自动清理。</p>
+                                    <p style="margin: 0;">• <b>节点在线状态:</b> 由 WS 连接实时判定，不再使用全局离线宽限期。</p>
                                 </div>
                             </div>
-                        </div>
-
-                        <div style="display: flex; gap: 12px; width: 100%;">
-                            <div style="flex: 1; display: flex; flex-direction: column; gap: 6px; max-width: 360px;">
-                                <span style="font-size: 12px; color: #666; font-weight: 600;">流量记录最长保存时间（天）</span>
-                                <input type="number" id="sys_pref_traffic_stats_retention_days" class="sys-input"
-                                    placeholder="默认: 30" min="1" max="3650" oninput="triggerSysAutoSave()"
-                                    style="width: 100%; border-radius: 6px;">
-                            </div>
-                        </div>
+                        </label>
+                        <input type="number" id="sys_pref_traffic_stats_retention_days" class="sys-input"
+                            placeholder="默认: 30" min="1" max="3650" oninput="triggerSysAutoSave()">
                     </div>
 
-                    <div class="sys-pref-row" style="flex-direction: column; align-items: flex-start; gap: 12px;">
-                        <div class="sys-pref-info"
-                            style="width: 100%; flex-direction: row; align-items: center; gap: 6px;">
-                            <span class="sys-pref-title">🚀 默认安装协议</span>
-                        </div>
+                    <div class="sys-field">
+                        <label class="sys-label">默认安装协议</label>
                         <div class="sys-proto-groups-wrap" id="sysDefaultInstallProtocolGroups"></div>
                     </div>
 
@@ -2002,23 +1998,32 @@
                 <div class="sys-form-section" id="sys-form-offline-notify" style="display:none;">
                     <div class="sys-field">
                         <div class="sys-offline-head">
-                            <label class="sys-label" style="margin-bottom:0;">节点离线通知设置</label>
+                            <label class="sys-label" style="margin-bottom:0;display:flex;align-items:center;gap:4px;">
+                                节点离线通知设置
+                                <div class="sys-info-tooltip-wrap" tabindex="0">
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                        <circle cx="12" cy="12" r="10"></circle>
+                                        <line x1="12" y1="8" x2="12" y2="12"></line>
+                                        <line x1="12" y1="16" x2="12.01" y2="16"></line>
+                                    </svg>
+                                    <div class="sys-tooltip-content">
+                                        节点在线状态由 WS 连接实时判定。仅在状态变化时通知：离线超过该节点宽限期发送一次离线通知，恢复在线后发送一次上线通知。
+                                    </div>
+                                </div>
+                            </label>
                             <button type="button" class="sys-offline-batch-btn" onclick="openOfflineNotifyBatchModal()">批量修改</button>
-                        </div>
-                        <div class="sys-desc" style="margin-bottom: 12px;">
-                            节点在线状态由 WS 连接实时判定。仅在状态变化时通知：离线超过该节点宽限期发送一次离线通知，恢复在线后发送一次上线通知。
                         </div>
 
                         <div style="border: 1px solid #e5e5ea; border-radius: 10px; overflow: hidden;">
                             <table style="width: 100%; border-collapse: collapse; font-size: 13px;">
                                 <thead>
                                     <tr style="background: #f0f7ff; color: #0f3b73;">
-                                        <th style="padding: 10px 8px; text-align: center; font-weight: 600; width: 42px;">
+                                        <th style="padding: 8px 6px; text-align: center; font-weight: 600; width: 36px;">
                                             <input id="sysOfflineNotifySelectAll" type="checkbox" onchange="toggleOfflineNotifySelectAll(this.checked)">
                                         </th>
-                                        <th style="padding: 10px 12px; text-align: left; font-weight: 600;">服务器</th>
-                                        <th style="padding: 10px 12px; text-align: center; font-weight: 600; width: 120px;">状态</th>
-                                        <th style="padding: 10px 12px; text-align: center; font-weight: 600; width: 170px;">宽限期</th>
+                                        <th style="padding: 8px 10px; text-align: left; font-weight: 600;">服务器</th>
+                                        <th style="padding: 8px 10px; text-align: center; font-weight: 600; width: 100px;">状态</th>
+                                        <th style="padding: 8px 10px; text-align: center; font-weight: 600; width: 140px;">宽限期</th>
                                     </tr>
                                 </thead>
                                 <tbody id="sysOfflineNotifyTableBody">
@@ -2046,7 +2051,19 @@
                         </div>
                     </div>
                     <div class="sys-field">
-                        <label class="sys-label">状态与操作</label>
+                        <label class="sys-label" style="display:flex;align-items:center;gap:4px;">
+                            状态与操作
+                            <div class="sys-info-tooltip-wrap" tabindex="0">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                    <circle cx="12" cy="12" r="10"></circle>
+                                    <line x1="12" y1="8" x2="12" y2="12"></line>
+                                    <line x1="12" y1="16" x2="12.01" y2="16"></line>
+                                </svg>
+                                <div class="sys-tooltip-content" id="sysGeoActionDesc">
+                                    连接 API 获取版本信息中...
+                                </div>
+                            </div>
+                        </label>
                         <button type="button" id="btnSysGeoUpdate" class="btn-sys-geo-action btn-sys-geo-loading"
                             onclick="handleGeoBtnClick()">
                             <svg class="sys-spin" style="width:16px;height:16px;" viewBox="0 0 24 24" fill="none"
@@ -2056,18 +2073,13 @@
                             </svg>
                             正在比对版本...
                         </button>
-                        <div class="sys-desc" id="sysGeoActionDesc"
-                            style="text-align: center; background: transparent; border: none; padding: 0;">连接 API
-                            获取版本信息中...</div>
                     </div>
                 </div>
 
                 <div class="sys-form-section" id="sys-form-mihomo" style="display:none;">
-                    <!-- Selects -->
-                    <div class="sys-pref-row" style="flex-direction: column; align-items: flex-start; gap: 12px;">
-                        <div class="sys-pref-info"
-                            style="width: 100%; flex-direction: row; align-items: center; gap: 6px;">
-                            <span class="sys-pref-title">⚡ 节点测速模式</span>
+                    <div class="sys-field">
+                        <label class="sys-label" style="display:flex;align-items:center;gap:4px;">
+                            节点测速模式
                             <div class="sys-info-tooltip-wrap" tabindex="0">
                                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
                                     stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -2082,7 +2094,7 @@
                                     <div><b>全面测试:</b> 完整测试 Ping、TCP 延迟以及真实带宽</div>
                                 </div>
                             </div>
-                        </div>
+                        </label>
                         <select id="sys_pref_speed_test_mode" class="sys-select" onchange="triggerSysAutoSave()">
                             <option value="ping_only">仅 Ping 延迟</option>
                             <option value="ping_speed">Ping + 真实带宽 (推荐)</option>
@@ -2409,7 +2421,6 @@
                                 style="background: #007aff; color: white; font-size: 13px;" disabled>
                                 🔄 切换到 PostgreSQL
                             </button>
-                            <div class="sys-desc" style="margin-top: 8px;">切换前请确保已通过连接测试。切换后系统将使用新数据库。</div>
                         </div>
                     </div>
 
@@ -2419,15 +2430,24 @@
                             style="background: #f5f5f7; color: #333; border: 1px solid #e5e5ea; font-size: 13px;">
                             ↩️ 切换回 SQLite
                         </button>
-                        <div class="sys-desc" style="margin-top: 8px;">将数据库引擎切换回内置的 SQLite。注意：切换后将使用本地 SQLite 数据。</div>
                     </div>
 
                     <!-- ====== 数据迁移区域 ====== -->
                     <div id="dbMigrateSection" style="display: none;">
                         <div class="sys-field">
-                            <label class="sys-label">📦 数据迁移 (SQLite → PostgreSQL)</label>
-                            <div class="sys-desc" style="margin-bottom: 12px;">将当前 SQLite 数据库中的所有数据迁移到
-                                PostgreSQL。迁移过程中会先清空目标库中的数据再写入。</div>
+                            <label class="sys-label" style="display:flex;align-items:center;gap:4px;">
+                                📦 数据迁移 (SQLite → PostgreSQL)
+                                <div class="sys-info-tooltip-wrap" tabindex="0">
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                        <circle cx="12" cy="12" r="10"></circle>
+                                        <line x1="12" y1="8" x2="12" y2="12"></line>
+                                        <line x1="12" y1="16" x2="12.01" y2="16"></line>
+                                    </svg>
+                                    <div class="sys-tooltip-content">
+                                        将当前 SQLite 数据库中的所有数据迁移到 PostgreSQL。迁移过程中会先清空目标库中的数据再写入。
+                                    </div>
+                                </div>
+                            </label>
                             <button type="button" id="btnDBMigrate" class="btn-sys-geo-action btn-sys-geo-update"
                                 onclick="migrateDatabaseAction()" style="font-size: 13px;">
                                 🚀 开始迁移数据
@@ -2934,21 +2954,21 @@
 
                 return `
                 <tr style="border-top: 1px solid #f0f2f5;">
-                    <td style="padding: 12px 8px; text-align: center;">
+                    <td style="padding: 8px 6px; text-align: center;">
                         <input id="offline_select_${uuid}" type="checkbox" ${checked ? 'checked' : ''} onchange="toggleOfflineNotifyRowSelect('${uuid}', this.checked)">
                     </td>
-                    <td style="padding: 12px;">
-                        <div style="font-weight:600;color:#1d1d1f;">${name}</div>
+                    <td style="padding: 8px 10px;">
+                        <div style="font-weight:600;color:#1d1d1f;font-size:13px;">${name}</div>
                     </td>
-                    <td style="padding: 12px; text-align: center;">
+                    <td style="padding: 8px 10px; text-align: center;">
                         <span
                             onclick="toggleOfflineNotifyEnabled('${uuid}', ${enabled ? 'true' : 'false'})"
-                            style="display:inline-block;min-width:56px;padding:5px 10px;border-radius:999px;font-weight:600;cursor:pointer;user-select:none;${statusStyle}">
+                            style="display:inline-block;min-width:48px;padding:4px 8px;border-radius:999px;font-weight:600;cursor:pointer;user-select:none;font-size:12px;${statusStyle}">
                             ${statusText}
                         </span>
                     </td>
-                    <td style="padding: 12px; text-align: center;">
-                        <input type="number" min="1" max="86400" value="${grace}" id="offline_grace_${uuid}" class="sys-input" oninput="queueOfflineNotifyGraceSave('${uuid}')" style="width:96px;padding:7px 8px;text-align:center;display:inline-block;">
+                    <td style="padding: 8px 10px; text-align: center;">
+                        <input type="number" min="1" max="86400" value="${grace}" id="offline_grace_${uuid}" class="sys-input" oninput="queueOfflineNotifyGraceSave('${uuid}')" style="width:80px;padding:5px 6px;text-align:center;display:inline-block;font-size:12px;">
                     </td>
                 </tr>`;
             }).join('');
