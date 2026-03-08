@@ -83,6 +83,7 @@ type TrafficConsumptionItem struct {
 	InstallID       string `json:"install_id"`
 	Name            string `json:"name"`
 	Region          string `json:"region"`
+	Offline         bool   `json:"offline"`
 	TrafficUp       int64  `json:"traffic_up"`
 	TrafficDown     int64  `json:"traffic_down"`
 	TotalBytes      int64  `json:"total_bytes"`
@@ -380,6 +381,8 @@ func GetTrafficConsumptionRank(limit int, rankDate string) (*TrafficConsumptionR
 		down := downByNode[n.UUID]
 		total := up + down
 
+		offline := !IsNodeOnline(n.InstallID)
+
 		ratio := "0.00"
 		if up > 0 {
 			ratio = fmt.Sprintf("%.2f", float64(down)/float64(up))
@@ -395,6 +398,7 @@ func GetTrafficConsumptionRank(limit int, rankDate string) (*TrafficConsumptionR
 			InstallID:       n.InstallID,
 			Name:            n.Name,
 			Region:          strings.ToUpper(strings.TrimSpace(n.Region)),
+			Offline:         offline,
 			TrafficUp:       up,
 			TrafficDown:     down,
 			TotalBytes:      total,

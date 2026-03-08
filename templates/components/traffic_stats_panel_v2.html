@@ -557,12 +557,11 @@
             trendMode: 'increment',
             barPoints: [],
             linePoints: [],
-            // 实时速率（来自 WS 推送）: install_id -> { uuid, rx_rate_bps, tx_rate_bps, last_live_at }
+            // 实时速率（来自 WS 推送）: node_uuid -> { rx_rate_bps, tx_rate_bps, last_live_at }
             liveRates: {},
-            offlineGraceSec: 20,
+            // 节点在线状态（由后端判定）: node_uuid -> { offline, last_live_at }
+            nodeStatus: {},
             liveWs: null,
-            liveReady: false,
-            wsConnectedAt: 0
         };
 
         const nodeSelect = () => document.getElementById('ts-node-select');
@@ -723,20 +722,6 @@
             return kbs.toFixed(2) + ' KB/s';
         }
 
-        // 判断节点是否离线
-        function isNodeOffline(nodeUUID) {
-            // WS 刚连上时先进入预热期，避免首屏/切换节点出现“离线→立马上线”闪烁
-            if (!state.liveReady) {
-                const warmupElapsed = Date.now() / 1000 - (state.wsConnectedAt || 0);
-                if (warmupElapsed <= state.offlineGraceSec) return false;
-            }
-
-            const live = state.liveRates[nodeUUID];
-            if (!live || !live.last_live_at) return true;
-            const elapsed = Date.now() / 1000 - live.last_live_at;
-            return elapsed > state.offlineGraceSec;
-        }
-
         // 连接实时流量 WebSocket
         function connectLiveWS() {
             if (state.liveWs) {
@@ -746,25 +731,24 @@
             const wsUrl = proto + '//' + location.host + '/api/traffic/live';
             const ws = new WebSocket(wsUrl);
             state.liveWs = ws;
-            state.liveReady = false;
 
-            ws.onopen = function() {
-                state.wsConnectedAt = Date.now() / 1000;
-            };
+            ws.onopen = function() {};
 
             ws.onmessage = function(evt) {
                 try {
                     const msg = JSON.parse(evt.data);
                     if (msg.node_uuid) {
-                        // 使用“本地接收时间”作为在线判定基准，避免手机端时钟漂移导致误判离线
-                        const nowSec = Date.now() / 1000;
                         state.liveRates[msg.node_uuid] = {
-                            uuid: msg.node_uuid,
                             rx_rate_bps: msg.rx_rate_bps || 0,
                             tx_rate_bps: msg.tx_rate_bps || 0,
-                            last_live_at: nowSec
+                            last_live_at: msg.last_live_at || 0
                         };
-                        state.liveReady = true;
+                        if (typeof msg.offline === 'boolean') {
+                            state.nodeStatus[msg.node_uuid] = {
+                                offline: msg.offline,
+                                last_live_at: msg.last_live_at || 0
+                            };
+                        }
                         // 仅更新该节点的速率文字和离线状态，不整体重渲染
                         updateRankItemLive(msg.node_uuid);
                     }
@@ -786,7 +770,8 @@
             const el = document.querySelector('.ts-rank-item[data-uuid="' + nodeUUID + '"]');
             if (!el) return;
 
-            const offline = isNodeOffline(nodeUUID);
+            const nodeStatus = state.nodeStatus[nodeUUID];
+            const offline = nodeStatus ? !!nodeStatus.offline : false;
             el.classList.toggle('offline', offline);
 
             const rateEl = el.querySelector('.ts-live-rate');
@@ -845,6 +830,12 @@
 
             const items = (state.rank && Array.isArray(state.rank.items)) ? state.rank.items : [];
             items.forEach(it => {
+                state.nodeStatus[it.uuid] = {
+                    offline: !!it.offline,
+                    last_live_at: 0
+                };
+            });
+            items.forEach(it => {
                 if (!state.nodeMap[it.uuid]) {
                     state.nodeMap[it.uuid] = { uuid: it.uuid, name: it.name, region: it.region || '' };
                 }
@@ -878,7 +869,9 @@
                 const active = item.uuid === state.selectedNodeUUID ? 'active' : '';
                 const widthPct = Math.max(1, total / maxTotal * 100);
                 const upPct = total > 0 ? up / total * 100 : 0;
-                const offline = isNodeOffline(item.uuid);
+                const offline = state.nodeStatus[item.uuid]
+                    ? !!state.nodeStatus[item.uuid].offline
+                    : !!item.offline;
                 const offlineCls = offline ? 'offline' : '';
 
                 // 实时速率
@@ -1251,16 +1244,6 @@
             try {
                 state.rankDate = todayDateStr();
                 if (rankDatePicker()) rankDatePicker().value = state.rankDate;
-
-                // 加载离线宽限期配置
-                try {
-                    const settingsRes = await fetch('/api/get-settings');
-                    const settingsData = await settingsRes.json();
-                    if (settingsData && settingsData.status === 'success' && settingsData.settings) {
-                        const graceSec = Number(settingsData.settings['pref_traffic_offline_grace_sec']);
-                        if (graceSec > 0) state.offlineGraceSec = graceSec;
-                    }
-                } catch(e) {}
 
                 await loadLandingNodes();
                 await window.trafficStatsRefresh();

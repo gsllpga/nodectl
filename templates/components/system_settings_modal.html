@@ -366,6 +366,98 @@
         flex: 1;
     }
 
+    .sys-offline-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+        margin-bottom: 8px;
+    }
+
+    .sys-offline-batch-btn {
+        border: 1px solid #007aff;
+        background: #007aff;
+        color: #fff;
+        font-size: 12px;
+        font-weight: 600;
+        padding: 8px 14px;
+        border-radius: 8px;
+        cursor: pointer;
+    }
+
+    .sys-offline-batch-btn:hover {
+        background: #0066d6;
+        border-color: #0066d6;
+    }
+
+    .sys-batch-overlay {
+        position: fixed;
+        inset: 0;
+        background: rgba(0, 0, 0, 0.35);
+        display: none;
+        align-items: center;
+        justify-content: center;
+        z-index: 3200;
+    }
+
+    .sys-batch-overlay.active {
+        display: flex;
+    }
+
+    .sys-batch-card {
+        width: min(860px, 92vw);
+        background: #fff;
+        border-radius: 14px;
+        box-shadow: 0 20px 40px rgba(0, 0, 0, 0.18);
+        padding: 28px 36px;
+    }
+
+    .sys-batch-title {
+        font-size: 34px;
+        font-weight: 700;
+        color: #111;
+        margin: 0 0 28px 0;
+    }
+
+    .sys-batch-row {
+        margin-bottom: 20px;
+    }
+
+    .sys-batch-label {
+        display: block;
+        font-size: 16px;
+        color: #1c1c1e;
+        margin-bottom: 10px;
+    }
+
+    .sys-batch-actions {
+        display: flex;
+        justify-content: flex-end;
+        gap: 14px;
+        margin-top: 24px;
+    }
+
+    .sys-batch-cancel,
+    .sys-batch-save {
+        min-width: 84px;
+        height: 42px;
+        border-radius: 10px;
+        border: none;
+        font-size: 16px;
+        cursor: pointer;
+        padding: 0 20px;
+    }
+
+    .sys-batch-cancel {
+        background: #f0f1f5;
+        color: #7a7d86;
+    }
+
+    .sys-batch-save {
+        background: #1f8fff;
+        color: #fff;
+    }
+
     .btn-sys-token-confirm {
         background: #f0f0f5;
         border: 1px solid #d1d1d6;
@@ -1286,6 +1378,14 @@
                         </svg></div>
                 </div>
 
+                <div class="sys-nav-card" data-sys-id="offline-notify" onclick="selectSysCategory('offline-notify', this)">
+                    <div class="sys-nav-name">📡 离线通知</div>
+                    <div class="sys-expand-indicator"><svg viewBox="0 0 24 24" width="16" height="16" fill="none"
+                            stroke="currentColor" stroke-width="2">
+                            <polyline points="9 18 15 12 9 6"></polyline>
+                        </svg></div>
+                </div>
+
                 <div class="sys-nav-card" data-sys-id="geo" onclick="selectSysCategory('geo', this)">
                     <div class="sys-nav-name">🌍 Geo 管理</div>
                     <div class="sys-expand-indicator"><svg viewBox="0 0 24 24" width="16" height="16" fill="none"
@@ -1323,38 +1423,108 @@
                 <label class="sys-section-label" id="sysRightTitle" style="display: none;">设置详情</label>
 
                 <div class="sys-form-section" id="sys-form-basic" style="display:none;">
+                    <!-- Selects -->
                     <div class="sys-field">
-                        <label class="sys-label">面板外部访问地址 (Panel URL)</label>
-                        <input type="text" id="sys_panel_url" class="sys-input"
-                            placeholder="例如: https://www.yourdomain.com" oninput="triggerSysAutoSave()">
-                        <div class="sys-desc">用于脚本一键部署时的回调状态上报，以及订阅链接的生成基地址。</div>
-                    </div>
-                    <div class="sys-field">
-                        <label class="sys-label">订阅安全凭证 (Sub Token)</label>
-                        <div class="sys-input-group">
-                            <input type="text" id="sys_sub_token" class="sys-input" placeholder="用于拉取订阅的安全校验码"
-                                oninput="triggerSysAutoSave()">
-                            <button type="button" class="btn-sys-regen" onclick="generateNewSubToken()">重新生成</button>
-                        </div>
-                        <div class="sys-desc">这是您的核心订阅鉴权标识。如遭泄露，请点击重新生成，旧链接将立即失效。</div>
-                    </div>
-                    <div class="sys-field">
-                        <label class="sys-label">系统日志等级</label>
+                        <label class="sys-label" style="display:flex;align-items:center;gap:4px;">
+                            系统日志等级
+                            <div class="sys-info-tooltip-wrap" tabindex="0">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                    <circle cx="12" cy="12" r="10"></circle>
+                                    <line x1="12" y1="8" x2="12" y2="12"></line>
+                                    <line x1="12" y1="16" x2="12.01" y2="16"></line>
+                                </svg>
+                                <div class="sys-tooltip-content">
+                                    修改后立即热切换生效，无需重启服务。
+                                </div>
+                            </div>
+                        </label>
                         <select id="sys_log_level" class="sys-select" onchange="triggerSysAutoSave()">
                             <option value="debug">DEBUG（最详细）</option>
                             <option value="info">INFO（推荐）</option>
                             <option value="warn">WARN（仅警告与错误）</option>
                             <option value="error">ERROR（仅错误）</option>
                         </select>
-                        <div class="sys-desc">修改后立即热切换生效，无需重启服务。</div>
+                    </div>
+
+                    <div class="sys-field">
+                        <label class="sys-label" style="display:flex;align-items:center;gap:4px;">
+                            登录 Cookie 有效期
+                            <div class="sys-info-tooltip-wrap" tabindex="0">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                    <circle cx="12" cy="12" r="10"></circle>
+                                    <line x1="12" y1="8" x2="12" y2="12"></line>
+                                    <line x1="12" y1="16" x2="12.01" y2="16"></line>
+                                </svg>
+                                <div class="sys-tooltip-content">
+                                    控制后台登录态保持时长。为提升安全性，建议优先使用 1 天或 3 天。
+                                </div>
+                            </div>
+                        </label>
+                        <select id="sys_auth_cookie_ttl_mode" class="sys-select" onchange="triggerSysAutoSave()">
+                            <option value="1d">1 天</option>
+                            <option value="3d">3 天</option>
+                            <option value="7d">7 天</option>
+                            <option value="never">不过期（长期）</option>
+                        </select>
+                    </div>
+
+                    <!-- Inputs -->
+                    <div class="sys-field">
+                        <label class="sys-label" style="display:flex;align-items:center;gap:4px;">
+                            面板外部访问地址 (Panel URL)
+                            <div class="sys-info-tooltip-wrap" tabindex="0">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                    <circle cx="12" cy="12" r="10"></circle>
+                                    <line x1="12" y1="8" x2="12" y2="12"></line>
+                                    <line x1="12" y1="16" x2="12.01" y2="16"></line>
+                                </svg>
+                                <div class="sys-tooltip-content">
+                                    用于脚本一键部署时的回调状态上报，以及订阅链接的生成基地址。
+                                </div>
+                            </div>
+                        </label>
+                        <input type="text" id="sys_panel_url" class="sys-input"
+                            placeholder="例如: https://www.yourdomain.com" oninput="triggerSysAutoSave()">
+                    </div>
+                    <div class="sys-field">
+                        <label class="sys-label" style="display:flex;align-items:center;gap:4px;">
+                            订阅安全凭证 (Sub Token)
+                            <div class="sys-info-tooltip-wrap" tabindex="0">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                    <circle cx="12" cy="12" r="10"></circle>
+                                    <line x1="12" y1="8" x2="12" y2="12"></line>
+                                    <line x1="12" y1="16" x2="12.01" y2="16"></line>
+                                </svg>
+                                <div class="sys-tooltip-content">
+                                    这是您的核心订阅鉴权标识。如遭泄露，请点击重新生成，旧链接将立即失效。
+                                </div>
+                            </div>
+                        </label>
+                        <div class="sys-input-group">
+                            <input type="text" id="sys_sub_token" class="sys-input" placeholder="用于拉取订阅的安全校验码"
+                                oninput="triggerSysAutoSave()">
+                            <button type="button" class="btn-sys-regen" onclick="generateNewSubToken()">重新生成</button>
+                        </div>
                     </div>
                 </div>
 
                 <div class="sys-form-section" id="sys-form-tgbot" style="display:none;">
+                    <!-- Togglers -->
                     <div class="sys-pref-row" style="align-items: center; margin-bottom: 20px;">
                         <div class="sys-pref-info">
-                            <span class="sys-pref-title">🚀 启用 Telegram Bot</span>
-                            <span class="sys-pref-desc">开启后，管理面板将运行一个 TG 机器人。关闭后则停止机器人。</span>
+                            <span class="sys-pref-title" style="display:flex;align-items:center;gap:4px;">
+                                🚀 启用 Telegram Bot
+                                <div class="sys-info-tooltip-wrap" tabindex="0">
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                        <circle cx="12" cy="12" r="10"></circle>
+                                        <line x1="12" y1="8" x2="12" y2="12"></line>
+                                        <line x1="12" y1="16" x2="12.01" y2="16"></line>
+                                    </svg>
+                                    <div class="sys-tooltip-content">
+                                        开启后，管理面板将运行一个 TG 机器人。关闭后则停止机器人。
+                                    </div>
+                                </div>
+                            </span>
                         </div>
                         <label class="sys-toggle-switch">
                             <input type="checkbox" id="sys_tg_bot_enabled" onchange="triggerSysAutoSave()">
@@ -1364,8 +1534,19 @@
 
                     <div class="sys-pref-row" style="align-items: center; margin-bottom: 20px;">
                         <div class="sys-pref-info">
-                            <span class="sys-pref-title">🧹 清理菜单并注册面板</span>
-                            <span class="sys-pref-desc">开启后，更新为 Nodectl 管理面板的订阅菜单。</span>
+                            <span class="sys-pref-title" style="display:flex;align-items:center;gap:4px;">
+                                🧹 清理菜单并注册面板
+                                <div class="sys-info-tooltip-wrap" tabindex="0">
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                        <circle cx="12" cy="12" r="10"></circle>
+                                        <line x1="12" y1="8" x2="12" y2="12"></line>
+                                        <line x1="12" y1="16" x2="12.01" y2="16"></line>
+                                    </svg>
+                                    <div class="sys-tooltip-content">
+                                        开启后，更新为 Nodectl 管理面板的订阅菜单。
+                                    </div>
+                                </div>
+                            </span>
                         </div>
                         <label class="sys-toggle-switch">
                             <input type="checkbox" id="sys_tg_bot_register_commands" onchange="triggerSysAutoSave()">
@@ -1373,8 +1554,21 @@
                         </label>
                     </div>
 
+                    <!-- Inputs -->
                     <div class="sys-field">
-                        <label class="sys-label">Telegram Bot Token</label>
+                        <label class="sys-label" style="display:flex;align-items:center;gap:4px;">
+                            Telegram Bot Token
+                            <div class="sys-info-tooltip-wrap" tabindex="0">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                    <circle cx="12" cy="12" r="10"></circle>
+                                    <line x1="12" y1="8" x2="12" y2="12"></line>
+                                    <line x1="12" y1="16" x2="12.01" y2="16"></line>
+                                </svg>
+                                <div class="sys-tooltip-content">
+                                    通过 BotFather 创建机器人获取的 Token。修改后需点击「确认」按钮生效。
+                                </div>
+                            </div>
+                        </label>
                         <div class="sys-token-group">
                             <input type="password" id="sys_tg_bot_token" class="sys-input"
                                 placeholder="例如: 123456789:ABCdefGHIjklMNOpqrSTUvwxyz"
@@ -1382,16 +1576,27 @@
                             <button type="button" id="btn_tg_token_confirm" class="btn-sys-token-confirm"
                                 onclick="confirmTokenSave('sys_tg_bot_token', 'btn_tg_token_confirm')">确认</button>
                         </div>
-                        <div class="sys-desc">通过 BotFather 创建机器人获取的 Token。修改后需点击「确认」按钮生效。</div>
                     </div>
 
                     <div class="sys-field">
-                        <label class="sys-label">允许查询的 TG 用户白名单</label>
+                        <label class="sys-label" style="display:flex;align-items:center;gap:4px;">
+                            允许查询的 TG 用户白名单
+                            <div class="sys-info-tooltip-wrap" tabindex="0">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                    <circle cx="12" cy="12" r="10"></circle>
+                                    <line x1="12" y1="8" x2="12" y2="12"></line>
+                                    <line x1="12" y1="16" x2="12.01" y2="16"></line>
+                                </svg>
+                                <div class="sys-tooltip-content">
+                                    只有在此列表中的 TG 用户可通过机器人获取订阅。
+                                </div>
+                            </div>
+                        </label>
                         <div id="tgWhitelistContainer" class="sys-no-scrollbar"
                             style="max-height: 250px; display: flex; flex-direction: column; gap: 6px; margin-bottom: 0;">
                             <!-- rows injected here -->
                         </div>
-                        <button type="button" class="sys-btn-add-dashed" onclick="addTgWhitelistItem()">
+                        <button type="button" class="sys-btn-add-dashed" onclick="addTgWhitelistItem()" style="margin-top:10px;">
                             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
                                 stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
                                 <line x1="12" y1="5" x2="12" y2="19"></line>
@@ -1399,12 +1604,34 @@
                             </svg>
                             添加白名单用户
                         </button>
-                        <div class="sys-desc" style="margin-top:10px;">只有在此列表中的 TG
-                            用户可通过机器人获取订阅。</div>
                     </div>
                 </div>
 
                 <div class="sys-form-section" id="sys-form-cert" style="display:none;">
+                    <!-- Togglers -->
+                    <div class="sys-pref-row" id="rowForceHttp">
+                        <div class="sys-pref-info">
+                            <span class="sys-pref-title" style="color:#d73a49;display:flex;align-items:center;gap:4px;">
+                                强制使用 HTTP (忽略安全)
+                                <div class="sys-info-tooltip-wrap" tabindex="0">
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                        <circle cx="12" cy="12" r="10"></circle>
+                                        <line x1="12" y1="8" x2="12" y2="12"></line>
+                                        <line x1="12" y1="16" x2="12.01" y2="16"></line>
+                                    </svg>
+                                    <div class="sys-tooltip-content">
+                                        忽略 HTTPS 强制跳转，允许纯明文访问
+                                    </div>
+                                </div>
+                            </span>
+                        </div>
+                        <label class="sys-toggle-switch">
+                            <input type="checkbox" id="sys_force_http" onchange="triggerSysAutoSave()">
+                            <span class="sys-toggle-slider"></span>
+                        </label>
+                    </div>
+
+                    <!-- Inputs & Info Views -->
                     <div class="sys-field">
                         <label class="sys-label">当前证书状态</label>
                         <div class="cert-status-card">
@@ -1433,15 +1660,13 @@
                             <div style="display: flex; align-items: center; gap: 6px;">
                                 <span class="sys-pref-title">🛡️ 登录防暴力破解（同 IP）</span>
                                 <div class="sys-info-tooltip-wrap" tabindex="0">
-                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                                        stroke-width="2">
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                                         <circle cx="12" cy="12" r="10"></circle>
-                                        <path d="M12 16v-4"></path>
-                                        <path d="M12 8h.01"></path>
+                                        <line x1="12" y1="8" x2="12" y2="12"></line>
+                                        <line x1="12" y1="16" x2="12.01" y2="16"></line>
                                     </svg>
                                     <div class="sys-tooltip-content">
-                                        <p style="margin: 0; padding-bottom: 4px; font-weight: 600; color: #fff;">登录限流参数
-                                        </p>
+                                        <p style="margin: 0; padding-bottom: 4px; font-weight: 600; color: #fff;">登录限流参数</p>
                                         <p style="margin: 0; padding-bottom: 4px;">• <b>计数窗口:</b> 在该时间段内累计失败次数</p>
                                         <p style="margin: 0; padding-bottom: 4px;">• <b>最大重试:</b> 达到次数后立即封禁该 IP</p>
                                         <p style="margin: 0;">• <b>封禁时长:</b> 封禁后需等待此时长才能继续尝试</p>
@@ -1470,17 +1695,6 @@
                                     style="width: 100%; border-radius: 6px;">
                             </div>
                         </div>
-                    </div>
-
-                    <div class="sys-pref-row" id="rowForceHttp">
-                        <div class="sys-pref-info">
-                            <span class="sys-pref-title" style="color:#d73a49;">强制使用 HTTP (忽略安全)</span>
-                            <span class="sys-pref-desc">忽略 HTTPS 强制跳转，允许纯明文访问</span>
-                        </div>
-                        <label class="sys-toggle-switch">
-                            <input type="checkbox" id="sys_force_http" onchange="triggerSysAutoSave()">
-                            <span class="sys-toggle-slider"></span>
-                        </label>
                     </div>
 
                     <hr style="border:0; border-top:1px dashed #eee; margin: 20px 0;">
@@ -1525,11 +1739,45 @@
                     </details>
 
                     <details class="sys-details">
-                        <summary class="sys-summary">☁️ Cloudflare 申请</summary>
-                        <div class="sys-details-content">
-                            <div class="sys-desc" style="margin-bottom:15px;">
-                                使用 Cloudflare DNS API 自动申请和续期证书。请确保域名已托管在 CF。
+                        <summary class="sys-summary" style="display:flex;align-items:center;gap:4px;">
+                            ☁️ Cloudflare 申请
+                            <div class="sys-info-tooltip-wrap" tabindex="0">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                    <circle cx="12" cy="12" r="10"></circle>
+                                    <line x1="12" y1="8" x2="12" y2="12"></line>
+                                    <line x1="12" y1="16" x2="12.01" y2="16"></line>
+                                </svg>
+                                <div class="sys-tooltip-content">
+                                    使用 Cloudflare DNS API 自动申请和续期证书。请确保域名已托管在 CF。
+                                </div>
                             </div>
+                        </summary>
+                        <div class="sys-details-content">
+                            <!-- Togglers inside details -->
+                            <div class="sys-pref-row"
+                                style="padding: 10px 15px; margin-bottom: 15px; border-radius: 8px;">
+                                <div class="sys-pref-info">
+                                    <span class="sys-pref-title" style="font-size: 13px;display:flex;align-items:center;gap:4px;">
+                                        🔄 开启自动续订
+                                        <div class="sys-info-tooltip-wrap" tabindex="0">
+                                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                                <circle cx="12" cy="12" r="10"></circle>
+                                                <line x1="12" y1="8" x2="12" y2="12"></line>
+                                                <line x1="12" y1="16" x2="12.01" y2="16"></line>
+                                            </svg>
+                                            <div class="sys-tooltip-content">
+                                                有效期不足 7 天时自动续期
+                                            </div>
+                                        </div>
+                                    </span>
+                                </div>
+                                <label class="sys-toggle-switch">
+                                    <input type="checkbox" id="sys_cf_auto_renew" onchange="triggerSysAutoSave()">
+                                    <span class="sys-toggle-slider"></span>
+                                </label>
+                            </div>
+
+                            <!-- Inputs inside details -->
                             <div class="sys-field">
                                 <label class="sys-label">CF 邮箱 (Email)</label>
                                 <input type="text" id="sys_cf_email" class="sys-input"
@@ -1551,19 +1799,6 @@
                                     placeholder="例如: node.example.com" oninput="triggerSysAutoSave()">
                             </div>
 
-                            <div class="sys-pref-row"
-                                style="padding: 10px 15px; margin-top: 10px; margin-bottom: 15px; border-radius: 8px;">
-                                <div class="sys-pref-info">
-                                    <span class="sys-pref-title" style="font-size: 13px;">🔄 开启自动续订</span>
-                                    <span class="sys-pref-desc" style="font-size: 11px; margin-top: 2px;">有效期不足 7
-                                        天时自动续期</span>
-                                </div>
-                                <label class="sys-toggle-switch">
-                                    <input type="checkbox" id="sys_cf_auto_renew" onchange="triggerSysAutoSave()">
-                                    <span class="sys-toggle-slider"></span>
-                                </label>
-                            </div>
-
                             <button type="button" id="btnApplyCf" class="btn-sys-regen"
                                 style="width:100%; padding:10px;" onclick="applyCfCert()">
                                 🚀 提交申请任务
@@ -1575,23 +1810,44 @@
                     <hr style="border:0; border-top:1px dashed #eee; margin: 20px 0;">
 
                     <div class="sys-field">
-                        <label class="sys-label">系统状态控制</label>
+                        <label class="sys-label" style="display:flex;align-items:center;gap:4px;">
+                            系统状态控制
+                            <div class="sys-info-tooltip-wrap" tabindex="0">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                    <circle cx="12" cy="12" r="10"></circle>
+                                    <line x1="12" y1="8" x2="12" y2="12"></line>
+                                    <line x1="12" y1="16" x2="12.01" y2="16"></line>
+                                </svg>
+                                <div class="sys-tooltip-content" id="restartCoreDesc">
+                                    系统正在检测证书状态。只有在证书配置正确且有效时，才允许重启应用以切换协议。
+                                </div>
+                            </div>
+                        </label>
                         <button type="button" id="btnRestartCore" class="btn-sys-regen"
                             style="width:100%; padding:12px; background:#f5f5f5; border-color:#ddd; color:#999; font-size:14px; cursor:not-allowed;"
                             disabled onclick="triggerCoreRestart()">
                             🚫 证书无效或未就绪，禁止切换
                         </button>
-                        <div class="sys-desc" id="restartCoreDesc" style="color: #666; background: #f9f9fc;">
-                            系统正在检测证书状态。只有在证书配置正确且有效时，才允许重启应用以切换协议。
-                        </div>
                     </div>
                 </div>
 
                 <div class="sys-form-section" id="sys-form-pref" style="display:none;">
+                    <!-- Togglers -->
                     <div class="sys-pref-row" style="align-items: center;">
                         <div class="sys-pref-info">
-                            <span class="sys-pref-title">🔗 强制添加协议前缀</span>
-                            <span class="sys-pref-desc">强制保护重名；关闭则单协议节点省略协议前缀。</span>
+                            <span class="sys-pref-title" style="display:flex;align-items:center;gap:4px;">
+                                🔗 强制添加协议前缀
+                                <div class="sys-info-tooltip-wrap" tabindex="0">
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                        <circle cx="12" cy="12" r="10"></circle>
+                                        <line x1="12" y1="8" x2="12" y2="12"></line>
+                                        <line x1="12" y1="16" x2="12.01" y2="16"></line>
+                                    </svg>
+                                    <div class="sys-tooltip-content">
+                                        强制保护重名；关闭则单协议节点省略协议前缀。
+                                    </div>
+                                </div>
+                            </span>
                         </div>
                         <label class="sys-toggle-switch">
                             <input type="checkbox" id="sys_pref_force_protocol_prefix" onchange="triggerSysAutoSave()">
@@ -1609,12 +1865,24 @@
                         </label>
                     </div>
 
+                    <!-- 剔除无效机场节点 is a Toggler -->
+                    <div class="sys-pref-row" style="align-items: center;">
+                        <div class="sys-pref-info">
+                            <span class="sys-pref-title">🗑️ 剔除机场无效节点</span>
+                        </div>
+                        <label class="sys-toggle-switch">
+                            <input type="checkbox" id="sys_airport_filter_invalid" onchange="triggerSysAutoSave()">
+                            <span class="sys-toggle-slider"></span>
+                        </label>
+                    </div>
+
+                    <!-- Selects -->
                     <div class="sys-pref-row" style="flex-direction: column; align-items: flex-start; gap: 12px;">
                         <div class="sys-pref-info"
                             style="width: 100%; flex-direction: row; align-items: center; gap: 6px;">
                             <span class="sys-pref-title">🌐 节点 IP 生成策略</span>
                             <div class="sys-info-tooltip-wrap" tabindex="0">
-                                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
                                     stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                                     <circle cx="12" cy="12" r="10"></circle>
                                     <line x1="12" y1="8" x2="12" y2="12"></line>
@@ -1639,6 +1907,7 @@
                         </select>
                     </div>
 
+                    <!-- Inputs & Info -->
                     <div class="sys-pref-row" style="flex-direction: column; align-items: flex-start; gap: 12px;">
                         <div class="sys-pref-info"
                             style="width: 100%; flex-direction: row; align-items: center; justify-content: space-between; gap: 6px;">
@@ -1646,10 +1915,10 @@
                                 <span class="sys-pref-title">⏱️ Clash 订阅更新间隔 (秒)</span>
                                 <div class="sys-info-tooltip-wrap" tabindex="0">
                                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                                        stroke-width="2">
+                                        stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                                         <circle cx="12" cy="12" r="10"></circle>
-                                        <path d="M12 16v-4"></path>
-                                        <path d="M12 8h.01"></path>
+                                        <line x1="12" y1="8" x2="12" y2="12"></line>
+                                        <line x1="12" y1="16" x2="12.01" y2="16"></line>
                                     </svg>
                                     <div class="sys-tooltip-content">
                                         <p style="margin: 0; padding-bottom: 4px; font-weight: 600; color: #fff;">刷新间隔
@@ -1686,17 +1955,6 @@
                         </div>
                     </div>
 
-                    <!-- 测速配置 -->
-                    <div class="sys-pref-row" style="align-items: center;">
-                        <div class="sys-pref-info">
-                            <span class="sys-pref-title">🗑️ 剔除机场无效节点</span>
-                        </div>
-                        <label class="sys-toggle-switch">
-                            <input type="checkbox" id="sys_airport_filter_invalid" onchange="triggerSysAutoSave()">
-                            <span class="sys-toggle-slider"></span>
-                        </label>
-                    </div>
-
                     <div class="sys-pref-row" style="flex-direction: column; align-items: flex-start; gap: 12px;">
                         <div class="sys-pref-info"
                             style="width: 100%; flex-direction: row; align-items: center; justify-content: space-between; gap: 6px;">
@@ -1704,33 +1962,27 @@
                                 <span class="sys-pref-title">📊 流量与离线判定</span>
                                 <div class="sys-info-tooltip-wrap" tabindex="0">
                                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                                        stroke-width="2">
+                                        stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                                         <circle cx="12" cy="12" r="10"></circle>
-                                        <path d="M12 16v-4"></path>
-                                        <path d="M12 8h.01"></path>
+                                        <line x1="12" y1="8" x2="12" y2="12"></line>
+                                        <line x1="12" y1="16" x2="12.01" y2="16"></line>
                                     </svg>
                                     <div class="sys-tooltip-content">
                                         <p style="margin: 0; padding-bottom: 4px; font-weight: 600; color: #fff;">参数说明
                                         </p>
                                         <p style="margin: 0; padding-bottom: 4px;">• <b>流量记录最长保存时间:</b> 仅保留最近 N
                                             天历史数据，超期自动清理。</p>
-                                        <p style="margin: 0;">• <b>节点离线宽限期:</b> 超过该秒数无心跳即标记离线（建议 10~60 秒）。</p>
+                                        <p style="margin: 0;">• <b>节点在线状态:</b> 由 WS 连接实时判定，不再使用全局离线宽限期。</p>
                                     </div>
                                 </div>
                             </div>
                         </div>
 
                         <div style="display: flex; gap: 12px; width: 100%;">
-                            <div style="flex: 1; display: flex; flex-direction: column; gap: 6px;">
+                            <div style="flex: 1; display: flex; flex-direction: column; gap: 6px; max-width: 360px;">
                                 <span style="font-size: 12px; color: #666; font-weight: 600;">流量记录最长保存时间（天）</span>
                                 <input type="number" id="sys_pref_traffic_stats_retention_days" class="sys-input"
                                     placeholder="默认: 30" min="1" max="3650" oninput="triggerSysAutoSave()"
-                                    style="width: 100%; border-radius: 6px;">
-                            </div>
-                            <div style="flex: 1; display: flex; flex-direction: column; gap: 6px;">
-                                <span style="font-size: 12px; color: #666; font-weight: 600;">节点离线宽限期（秒）</span>
-                                <input type="number" id="sys_pref_traffic_offline_grace_sec" class="sys-input"
-                                    placeholder="默认: 20" min="5" max="300" oninput="triggerSysAutoSave()"
                                     style="width: 100%; border-radius: 6px;">
                             </div>
                         </div>
@@ -1745,6 +1997,38 @@
                     </div>
 
 
+                </div>
+
+                <div class="sys-form-section" id="sys-form-offline-notify" style="display:none;">
+                    <div class="sys-field">
+                        <div class="sys-offline-head">
+                            <label class="sys-label" style="margin-bottom:0;">节点离线通知设置</label>
+                            <button type="button" class="sys-offline-batch-btn" onclick="openOfflineNotifyBatchModal()">批量修改</button>
+                        </div>
+                        <div class="sys-desc" style="margin-bottom: 12px;">
+                            节点在线状态由 WS 连接实时判定。仅在状态变化时通知：离线超过该节点宽限期发送一次离线通知，恢复在线后发送一次上线通知。
+                        </div>
+
+                        <div style="border: 1px solid #e5e5ea; border-radius: 10px; overflow: hidden;">
+                            <table style="width: 100%; border-collapse: collapse; font-size: 13px;">
+                                <thead>
+                                    <tr style="background: #f0f7ff; color: #0f3b73;">
+                                        <th style="padding: 10px 8px; text-align: center; font-weight: 600; width: 42px;">
+                                            <input id="sysOfflineNotifySelectAll" type="checkbox" onchange="toggleOfflineNotifySelectAll(this.checked)">
+                                        </th>
+                                        <th style="padding: 10px 12px; text-align: left; font-weight: 600;">服务器</th>
+                                        <th style="padding: 10px 12px; text-align: center; font-weight: 600; width: 120px;">状态</th>
+                                        <th style="padding: 10px 12px; text-align: center; font-weight: 600; width: 170px;">宽限期</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="sysOfflineNotifyTableBody">
+                                    <tr>
+                                        <td colspan="4" style="padding: 16px; text-align: center; color: #999;">加载中...</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
                 </div>
 
                 <div class="sys-form-section" id="sys-form-geo" style="display:none;">
@@ -1779,19 +2063,13 @@
                 </div>
 
                 <div class="sys-form-section" id="sys-form-mihomo" style="display:none;">
-                    <div class="sys-field">
-                        <label class="sys-label">节点测速文件大小 (MB)</label>
-                        <input type="number" id="sys_pref_speed_test_file_size" class="sys-input" placeholder="默认: 50"
-                            min="1" max="1000" oninput="triggerSysAutoSave()">
-                        <div class="sys-desc">控制全面测速或真实带宽测速时，所下载测试文件的体积大小。较大文件更能测出准确实时的峰值带宽，但会消耗更多流量和时间。</div>
-                    </div>
-
+                    <!-- Selects -->
                     <div class="sys-pref-row" style="flex-direction: column; align-items: flex-start; gap: 12px;">
                         <div class="sys-pref-info"
                             style="width: 100%; flex-direction: row; align-items: center; gap: 6px;">
                             <span class="sys-pref-title">⚡ 节点测速模式</span>
                             <div class="sys-info-tooltip-wrap" tabindex="0">
-                                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
                                     stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                                     <circle cx="12" cy="12" r="10"></circle>
                                     <line x1="12" y1="8" x2="12" y2="12"></line>
@@ -1812,6 +2090,26 @@
                         </select>
                     </div>
 
+                    <!-- Inputs -->
+                    <div class="sys-field">
+                        <label class="sys-label" style="display:flex;align-items:center;gap:4px;">
+                            节点测速文件大小 (MB)
+                            <div class="sys-info-tooltip-wrap" tabindex="0">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                    <circle cx="12" cy="12" r="10"></circle>
+                                    <line x1="12" y1="8" x2="12" y2="12"></line>
+                                    <line x1="12" y1="16" x2="12.01" y2="16"></line>
+                                </svg>
+                                <div class="sys-tooltip-content">
+                                    控制全面测速或真实带宽测速时，所下载测试文件的体积大小。较大文件更能测出准确实时的峰值带宽，但会消耗更多流量和时间。
+                                </div>
+                            </div>
+                        </label>
+                        <input type="number" id="sys_pref_speed_test_file_size" class="sys-input" placeholder="默认: 50"
+                            min="1" max="1000" oninput="triggerSysAutoSave()">
+                    </div>
+
+                    <!-- Info Views & Buttons -->
                     <div class="sys-field">
                         <label class="sys-label">核心版本信息</label>
                         <div class="sys-geo-info-card">
@@ -1826,7 +2124,19 @@
                         </div>
                     </div>
                     <div class="sys-field">
-                        <label class="sys-label">状态与操作</label>
+                        <label class="sys-label" style="display:flex;align-items:center;gap:4px;">
+                            状态与操作
+                            <div class="sys-info-tooltip-wrap" tabindex="0">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                    <circle cx="12" cy="12" r="10"></circle>
+                                    <line x1="12" y1="8" x2="12" y2="12"></line>
+                                    <line x1="12" y1="16" x2="12.01" y2="16"></line>
+                                </svg>
+                                <div class="sys-tooltip-content" id="sysMihomoActionDesc">
+                                    连接 API 获取版本信息中...
+                                </div>
+                            </div>
+                        </label>
                         <button type="button" id="btnSysMihomoUpdate" class="btn-sys-geo-action btn-sys-geo-loading"
                             onclick="handleMihomoBtnClick()">
                             <svg class="sys-spin" style="width:16px;height:16px;" viewBox="0 0 24 24" fill="none"
@@ -1836,9 +2146,6 @@
                             </svg>
                             正在比对版本...
                         </button>
-                        <div class="sys-desc" id="sysMihomoActionDesc"
-                            style="text-align: center; background: transparent; border: none; padding: 0;">连接 API
-                            获取版本信息中...</div>
                     </div>
                 </div>
 
@@ -2139,6 +2446,27 @@
     </div>
 </div>
 
+<div class="sys-batch-overlay" id="sysOfflineBatchOverlay" onclick="if(event.target===this) closeOfflineNotifyBatchModal()">
+    <div class="sys-batch-card">
+        <h3 class="sys-batch-title">批量修改</h3>
+        <div class="sys-batch-row">
+            <label class="sys-batch-label" style="font-size:14px;">状态</label>
+            <label class="sys-toggle-switch" style="transform:scale(1.2); transform-origin:left center;">
+                <input type="checkbox" id="sysBatchOfflineNotifyEnabled">
+                <span class="sys-toggle-slider"></span>
+            </label>
+        </div>
+        <div class="sys-batch-row">
+            <label class="sys-batch-label" style="font-size:14px;">宽限期</label>
+            <input type="number" id="sysBatchOfflineNotifyGrace" class="sys-input" min="1" max="86400" value="180">
+        </div>
+        <div class="sys-batch-actions">
+            <button type="button" class="sys-batch-cancel" style="font-size:16px;" onclick="closeOfflineNotifyBatchModal()">取消</button>
+            <button type="button" class="sys-batch-save" style="font-size:16px;" onclick="saveOfflineNotifyBatchUpdate()">保存</button>
+        </div>
+    </div>
+</div>
+
 <script>
     const sysModal = document.getElementById('systemSettingsModal');
     const sysModalCard = document.getElementById('sysModalCard');
@@ -2178,6 +2506,8 @@
             checkGeoStatus();
         } else if (catId === 'mihomo' && !hasCheckedMihomo) {
             checkMihomoStatus();
+        } else if (catId === 'offline-notify') {
+            loadOfflineNotifySettings();
         } else if (catId === 'monitor') {
             startSysMonitor(); // ✨ 开启系统实时监控
         } else if (catId === 'database') {
@@ -2347,7 +2677,7 @@
                 document.getElementById('sys_pref_speed_test_mode').value = data.pref_speed_test_mode || 'ping_speed';
                 document.getElementById('sys_pref_speed_test_file_size').value = data.pref_speed_test_file_size || '50';
                 document.getElementById('sys_pref_traffic_stats_retention_days').value = data.pref_traffic_stats_retention_days || '30';
-                document.getElementById('sys_pref_traffic_offline_grace_sec').value = data.pref_traffic_offline_grace_sec || '20';
+                document.getElementById('sys_auth_cookie_ttl_mode').value = data.auth_cookie_ttl_mode || '1d';
                 document.getElementById('sys_login_ip_retry_window_sec').value = data.login_ip_retry_window_sec || '600';
                 document.getElementById('sys_login_ip_max_retries').value = data.login_ip_max_retries || '5';
                 document.getElementById('sys_login_ip_block_ttl_sec').value = data.login_ip_block_ttl_sec || '900';
@@ -2552,6 +2882,253 @@
         }
     }
 
+    function escapeHtml(text) {
+        return String(text || '').replace(/[&<>"']/g, function (s) {
+            return ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[s] || s;
+        });
+    }
+
+    const offlineNotifySelectedUUIDs = new Set();
+    let offlineNotifyRows = [];
+
+    async function loadOfflineNotifySettings() {
+        const tbody = document.getElementById('sysOfflineNotifyTableBody');
+        if (!tbody) return;
+
+        tbody.innerHTML = `<tr><td colspan="4" style="padding: 16px; text-align: center; color: #999;">加载中...</td></tr>`;
+        try {
+            const res = await fetch('/api/offline-notify/settings');
+            const result = await res.json();
+            if (result.status !== 'success') {
+                throw new Error(result.message || 'load failed');
+            }
+
+            const nodes = Array.isArray(result.nodes) ? result.nodes : [];
+            offlineNotifyRows = nodes.map(n => ({
+                uuid: String(n.uuid || ''),
+                enabled: !!n.offline_notify_enabled,
+                grace: Number(n.offline_notify_grace_sec || 180),
+            })).filter(n => n.uuid);
+
+            const validUUIDs = new Set(offlineNotifyRows.map(n => n.uuid));
+            Array.from(offlineNotifySelectedUUIDs).forEach(uuid => {
+                if (!validUUIDs.has(uuid)) offlineNotifySelectedUUIDs.delete(uuid);
+            });
+
+            if (nodes.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="4" style="padding: 16px; text-align: center; color: #999;">暂无节点</td></tr>`;
+                updateOfflineNotifySelectAllState();
+                return;
+            }
+
+            tbody.innerHTML = nodes.map(n => {
+                const name = escapeHtml(n.name || '-');
+                const uuid = escapeHtml(n.uuid || '');
+                const enabled = !!n.offline_notify_enabled;
+                const grace = Number(n.offline_notify_grace_sec || 180);
+                const checked = offlineNotifySelectedUUIDs.has(String(n.uuid || ''));
+                const statusText = enabled ? '启用' : '禁用';
+                const statusStyle = enabled
+                    ? 'color:#1f8f4a;background:#e8f7ed;border:1px solid #c9ebd6;'
+                    : 'color:#b05700;background:#fff3e6;border:1px solid #ffd7b0;';
+
+                return `
+                <tr style="border-top: 1px solid #f0f2f5;">
+                    <td style="padding: 12px 8px; text-align: center;">
+                        <input id="offline_select_${uuid}" type="checkbox" ${checked ? 'checked' : ''} onchange="toggleOfflineNotifyRowSelect('${uuid}', this.checked)">
+                    </td>
+                    <td style="padding: 12px;">
+                        <div style="font-weight:600;color:#1d1d1f;">${name}</div>
+                    </td>
+                    <td style="padding: 12px; text-align: center;">
+                        <span
+                            onclick="toggleOfflineNotifyEnabled('${uuid}', ${enabled ? 'true' : 'false'})"
+                            style="display:inline-block;min-width:56px;padding:5px 10px;border-radius:999px;font-weight:600;cursor:pointer;user-select:none;${statusStyle}">
+                            ${statusText}
+                        </span>
+                    </td>
+                    <td style="padding: 12px; text-align: center;">
+                        <input type="number" min="1" max="86400" value="${grace}" id="offline_grace_${uuid}" class="sys-input" oninput="queueOfflineNotifyGraceSave('${uuid}')" style="width:96px;padding:7px 8px;text-align:center;display:inline-block;">
+                    </td>
+                </tr>`;
+            }).join('');
+
+            updateOfflineNotifySelectAllState();
+        } catch (e) {
+            tbody.innerHTML = `<tr><td colspan="4" style="padding: 16px; text-align: center; color: #d74242;">加载失败，请稍后重试</td></tr>`;
+            updateOfflineNotifySelectAllState();
+        }
+    }
+
+    function toggleOfflineNotifyRowSelect(uuid, checked) {
+        if (checked) offlineNotifySelectedUUIDs.add(uuid);
+        else offlineNotifySelectedUUIDs.delete(uuid);
+        updateOfflineNotifySelectAllState();
+    }
+
+    function toggleOfflineNotifySelectAll(checked) {
+        if (checked) {
+            offlineNotifyRows.forEach(n => offlineNotifySelectedUUIDs.add(n.uuid));
+        } else {
+            offlineNotifySelectedUUIDs.clear();
+        }
+
+        offlineNotifyRows.forEach(n => {
+            const cb = document.getElementById('offline_select_' + n.uuid);
+            if (cb) cb.checked = checked;
+        });
+        updateOfflineNotifySelectAllState();
+    }
+
+    function updateOfflineNotifySelectAllState() {
+        const all = document.getElementById('sysOfflineNotifySelectAll');
+        if (!all) return;
+        if (offlineNotifyRows.length === 0) {
+            all.checked = false;
+            all.indeterminate = false;
+            return;
+        }
+        const selectedCount = offlineNotifyRows.filter(n => offlineNotifySelectedUUIDs.has(n.uuid)).length;
+        all.checked = selectedCount > 0 && selectedCount === offlineNotifyRows.length;
+        all.indeterminate = selectedCount > 0 && selectedCount < offlineNotifyRows.length;
+    }
+
+    const offlineNotifyGraceTimers = {};
+
+    function showOfflineNotifySaving() {
+        const indicator = document.getElementById('sysSaveIndicator');
+        if (!indicator) return;
+        indicator.innerHTML = '<span style="color:#888;">保存中...</span>';
+        indicator.style.opacity = '1';
+    }
+
+    function showOfflineNotifySaved() {
+        const indicator = document.getElementById('sysSaveIndicator');
+        if (!indicator) return;
+        indicator.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"></path></svg> 已保存`;
+        setTimeout(() => indicator.style.opacity = '0', 1200);
+    }
+
+    function showOfflineNotifySaveFailed() {
+        const indicator = document.getElementById('sysSaveIndicator');
+        if (!indicator) return;
+        indicator.innerHTML = '<span style="color:#ff3b30;">保存失败</span>';
+        indicator.style.opacity = '1';
+        setTimeout(() => indicator.style.opacity = '0', 1600);
+    }
+
+    async function toggleOfflineNotifyEnabled(uuid, currentEnabled) {
+        showOfflineNotifySaving();
+        try {
+            const res = await fetch('/api/offline-notify/update', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ uuid, offline_notify_enabled: !currentEnabled })
+            });
+            const result = await res.json();
+            if (result.status !== 'success') throw new Error(result.message || 'save failed');
+            showOfflineNotifySaved();
+            await loadOfflineNotifySettings();
+        } catch (e) {
+            showOfflineNotifySaveFailed();
+            await loadOfflineNotifySettings();
+        }
+    }
+
+    function queueOfflineNotifyGraceSave(uuid) {
+        const input = document.getElementById('offline_grace_' + uuid);
+        if (!input) return;
+
+        showOfflineNotifySaving();
+        if (offlineNotifyGraceTimers[uuid]) {
+            clearTimeout(offlineNotifyGraceTimers[uuid]);
+        }
+        offlineNotifyGraceTimers[uuid] = setTimeout(() => {
+            saveOfflineNotifyGrace(uuid);
+        }, 600);
+    }
+
+    async function saveOfflineNotifyGrace(uuid) {
+        const input = document.getElementById('offline_grace_' + uuid);
+        if (!input) return;
+        let grace = parseInt(input.value, 10);
+        if (Number.isNaN(grace) || grace < 1) grace = 1;
+        if (grace > 86400) grace = 86400;
+        input.value = String(grace);
+
+        try {
+            const res = await fetch('/api/offline-notify/update', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ uuid, offline_notify_grace_sec: grace })
+            });
+            const result = await res.json();
+            if (result.status !== 'success') throw new Error(result.message || 'save failed');
+            showOfflineNotifySaved();
+        } catch (e) {
+            showOfflineNotifySaveFailed();
+        }
+    }
+
+    function openOfflineNotifyBatchModal() {
+        if (offlineNotifySelectedUUIDs.size === 0) {
+            alert('请先勾选要批量修改的节点');
+            return;
+        }
+
+        const selected = offlineNotifyRows.filter(n => offlineNotifySelectedUUIDs.has(n.uuid));
+        if (selected.length === 0) {
+            alert('未找到已选节点，请刷新后重试');
+            return;
+        }
+
+        const allEnabled = selected.every(n => n.enabled);
+        document.getElementById('sysBatchOfflineNotifyEnabled').checked = allEnabled;
+        document.getElementById('sysBatchOfflineNotifyGrace').value = String(selected[0].grace || 180);
+        document.getElementById('sysOfflineBatchOverlay').classList.add('active');
+    }
+
+    function closeOfflineNotifyBatchModal() {
+        document.getElementById('sysOfflineBatchOverlay').classList.remove('active');
+    }
+
+    async function saveOfflineNotifyBatchUpdate() {
+        const enabled = !!document.getElementById('sysBatchOfflineNotifyEnabled').checked;
+        let grace = parseInt(document.getElementById('sysBatchOfflineNotifyGrace').value, 10);
+        if (Number.isNaN(grace) || grace < 1) grace = 1;
+        if (grace > 86400) grace = 86400;
+        document.getElementById('sysBatchOfflineNotifyGrace').value = String(grace);
+
+        const uuids = offlineNotifyRows
+            .filter(n => offlineNotifySelectedUUIDs.has(n.uuid))
+            .map(n => n.uuid);
+        if (uuids.length === 0) {
+            alert('请先勾选要批量修改的节点');
+            return;
+        }
+
+        showOfflineNotifySaving();
+        try {
+            await Promise.all(uuids.map(uuid => fetch('/api/offline-notify/update', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    uuid,
+                    offline_notify_enabled: enabled,
+                    offline_notify_grace_sec: grace,
+                })
+            }).then(r => r.json()).then(result => {
+                if (result.status !== 'success') throw new Error(result.message || 'save failed');
+            })));
+
+            showOfflineNotifySaved();
+            closeOfflineNotifyBatchModal();
+            await loadOfflineNotifySettings();
+        } catch (e) {
+            showOfflineNotifySaveFailed();
+        }
+    }
+
     function triggerSysAutoSave() {
         if (!document.getElementById('systemSettingsModal').classList.contains('active')) {
             return;
@@ -2574,7 +3151,7 @@
                 "pref_speed_test_mode": document.getElementById('sys_pref_speed_test_mode').value,
                 "pref_speed_test_file_size": document.getElementById('sys_pref_speed_test_file_size').value,
                 "pref_traffic_stats_retention_days": document.getElementById('sys_pref_traffic_stats_retention_days').value,
-                "pref_traffic_offline_grace_sec": document.getElementById('sys_pref_traffic_offline_grace_sec').value,
+                "auth_cookie_ttl_mode": document.getElementById('sys_auth_cookie_ttl_mode').value,
                 "login_ip_retry_window_sec": document.getElementById('sys_login_ip_retry_window_sec').value,
                 "login_ip_max_retries": document.getElementById('sys_login_ip_max_retries').value,
                 "login_ip_block_ttl_sec": document.getElementById('sys_login_ip_block_ttl_sec').value,

@@ -67,6 +67,7 @@ func initBasicSettings() {
 		{Key: "pref_speed_test_mode", Value: "ping_speed", Description: "节点测速模式"},
 		{Key: "pref_speed_test_file_size", Value: "50", Description: "节点测速文件大小(MB)"},
 		{Key: "pref_traffic_stats_retention_days", Value: "30", Description: "流量统计记录最长保留天数"},
+		{Key: "auth_cookie_ttl_mode", Value: "1d", Description: "后台登录 Cookie 有效期选项(1d/3d/7d/never)"},
 		{Key: "login_ip_retry_window_sec", Value: "600", Description: "同IP登录失败计数窗口时长(秒)"},
 		{Key: "login_ip_max_retries", Value: "5", Description: "同IP登录失败最大重试次数"},
 		{Key: "login_ip_block_ttl_sec", Value: "900", Description: "同IP登录失败触发后封禁时长(秒)"},
@@ -81,7 +82,6 @@ func initBasicSettings() {
 		{Key: "agent_snapshot_interval_sec", Value: "300", Description: "Agent 累计流量快照间隔 (秒)"},
 		{Key: "agent_ws_reconnect_max_backoff_sec", Value: "60", Description: "Agent WS 重连最大退避时间 (秒)"},
 		{Key: "agent_ws_read_timeout_sec", Value: "20", Description: "Agent WS 读取超时 (秒)"},
-		{Key: "pref_traffic_offline_grace_sec", Value: "20", Description: "节点离线宽限期 (秒)，超过此时间无心跳则标记离线"},
 	}
 
 	for _, config := range defaultConfigs {

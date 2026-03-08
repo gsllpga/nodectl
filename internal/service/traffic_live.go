@@ -74,6 +74,7 @@ type FrontendPushMsg struct {
 	RXRateBps  int64  `json:"rx_rate_bps"`
 	TXRateBps  int64  `json:"tx_rate_bps"`
 	LastLiveAt int64  `json:"last_live_at"` // Unix 秒
+	Offline    bool   `json:"offline"`
 }
 
 // ============================================================
@@ -257,6 +258,7 @@ func HandleAgentWS(w http.ResponseWriter, r *http.Request) {
 				hub.agentMu.Lock()
 				delete(hub.agentConns, agentInstallID)
 				hub.agentMu.Unlock()
+				OnNodeConnectionStatusChanged(agentInstallID, false)
 			}
 			return
 		}
@@ -311,6 +313,7 @@ func HandleAgentWS(w http.ResponseWriter, r *http.Request) {
 			hub.agentMu.Lock()
 			hub.agentConns[installID] = conn
 			hub.agentMu.Unlock()
+			OnNodeConnectionStatusChanged(agentInstallID, true)
 
 			nodeName := hub.resolveNodeNameByInstallID(installID)
 			if nodeName == "" {
@@ -401,6 +404,7 @@ func HandleAgentWS(w http.ResponseWriter, r *http.Request) {
 			RXRateBps:  msg.RXRateBps,
 			TXRateBps:  msg.TXRateBps,
 			LastLiveAt: time.Now().Unix(),
+			Offline:    false,
 		}
 		hub.broadcast(nodeUUID, pushMsg)
 	}
@@ -449,28 +453,59 @@ func HandleTrafficLive(w http.ResponseWriter, r *http.Request) {
 	hub.subscribe(subKey, ch)
 	defer hub.unsubscribe(subKey, ch)
 
-	// 先推送当前快照（让前端立即看到最新状态）
-	hub.mu.RLock()
-	for _, state := range hub.nodes {
-		if nodeUUID == "" || state.NodeUUID == nodeUUID {
+	sendSnapshot := func() error {
+		hub.mu.RLock()
+		defer hub.mu.RUnlock()
+
+		for _, state := range hub.nodes {
+			if nodeUUID != "" && state.NodeUUID != nodeUUID {
+				continue
+			}
+
+			isOffline := !IsNodeOnline(state.InstallID)
+			outRX := state.RXRateBps
+			outTX := state.TXRateBps
+			if isOffline {
+				outRX = 0
+				outTX = 0
+			}
+
 			initMsg := FrontendPushMsg{
 				InstallID:  state.InstallID,
 				NodeUUID:   state.NodeUUID,
-				RXRateBps:  state.RXRateBps,
-				TXRateBps:  state.TXRateBps,
+				RXRateBps:  outRX,
+				TXRateBps:  outTX,
 				LastLiveAt: state.LastLiveAt.Unix(),
+				Offline:    isOffline,
 			}
+
 			data, _ := json.Marshal(initMsg)
-			conn.Write(ctx, websocket.MessageText, data)
+			if err := conn.Write(ctx, websocket.MessageText, data); err != nil {
+				return err
+			}
 		}
+
+		return nil
 	}
-	hub.mu.RUnlock()
+
+	// 先推送当前快照（让前端立即看到最新状态）
+	if err := sendSnapshot(); err != nil {
+		return
+	}
+
+	// 周期推送快照：由后端统一判定离线，避免前端自行计时
+	ticker := time.NewTicker(3 * time.Second)
+	defer ticker.Stop()
 
 	// 持续推送
 	for {
 		select {
 		case <-ctx.Done():
 			return
+		case <-ticker.C:
+			if err := sendSnapshot(); err != nil {
+				return
+			}
 		case msg, ok := <-ch:
 			if !ok {
 				return

@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"nodectl/internal/database"
@@ -19,7 +20,240 @@ import (
 
 var (
 	tgBotCancel context.CancelFunc
+
+	offlineNotifyMu       sync.Mutex
+	offlineNotifyState    = make(map[string]*offlineNotifyRuntime)
+	offlineNotifyLoopOnce sync.Once
 )
+
+type offlineNotifyRuntime struct {
+	initialized      bool
+	online           bool
+	pendingOfflineAt time.Time
+	lastNotified     string // offline | online | ""
+}
+
+func NormalizeNodeOfflineGraceSec(v int) int {
+	if v < 1 {
+		return 180
+	}
+	if v > 86400 {
+		return 86400
+	}
+	return v
+}
+
+func StartOfflineNotifyLoop() {
+	offlineNotifyLoopOnce.Do(func() {
+		go runOfflineNotifyLoop()
+	})
+}
+
+func runOfflineNotifyLoop() {
+	ticker := time.NewTicker(2 * time.Second)
+	defer ticker.Stop()
+
+	for now := range ticker.C {
+		handleOfflineNotifyTick(now)
+	}
+}
+
+func handleOfflineNotifyTick(now time.Time) {
+	candidates := make([]string, 0)
+
+	offlineNotifyMu.Lock()
+	for installID, st := range offlineNotifyState {
+		if st == nil || !st.initialized || st.online {
+			continue
+		}
+		if st.pendingOfflineAt.IsZero() || now.Before(st.pendingOfflineAt) {
+			continue
+		}
+		if st.lastNotified == "offline" {
+			st.pendingOfflineAt = time.Time{}
+			continue
+		}
+		candidates = append(candidates, installID)
+	}
+	offlineNotifyMu.Unlock()
+
+	for _, installID := range candidates {
+		notifyOfflineIfDue(installID, now)
+	}
+}
+
+func notifyOfflineIfDue(installID string, now time.Time) {
+	if IsNodeOnline(installID) {
+		return
+	}
+
+	node, ok := getNodeNotifyConfigByInstallID(installID)
+	if !ok || !node.OfflineNotifyEnabled {
+		return
+	}
+
+	if sendNodeStatusNotification(node.Name, false, now) {
+		updateNodeOfflineLastNotifyAt(node.UUID, now)
+	}
+
+	offlineNotifyMu.Lock()
+	st := offlineNotifyState[installID]
+	if st == nil {
+		st = &offlineNotifyRuntime{}
+		offlineNotifyState[installID] = st
+	}
+	st.lastNotified = "offline"
+	st.pendingOfflineAt = time.Time{}
+	offlineNotifyMu.Unlock()
+}
+
+func getNodeNotifyConfigByInstallID(installID string) (database.NodePool, bool) {
+	var node database.NodePool
+	if err := database.DB.Select("uuid", "install_id", "name", "offline_notify_enabled", "offline_notify_grace_sec").Where("install_id = ?", installID).First(&node).Error; err != nil {
+		return database.NodePool{}, false
+	}
+	node.OfflineNotifyGraceSec = NormalizeNodeOfflineGraceSec(node.OfflineNotifyGraceSec)
+	return node, true
+}
+
+func updateNodeOfflineLastNotifyAt(nodeUUID string, at time.Time) {
+	if err := database.DB.Model(&database.NodePool{}).
+		Where("uuid = ?", nodeUUID).
+		Update("offline_last_notify_at", at).Error; err != nil {
+		logger.Log.Warn("更新节点最后通知时间失败", "uuid", nodeUUID, "error", err)
+	}
+}
+
+func parseTGNotifyUsers(raw string) []int64 {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return nil
+	}
+	parts := strings.Split(raw, ",")
+	out := make([]int64, 0, len(parts))
+	for _, p := range parts {
+		p = strings.TrimSpace(p)
+		if p == "" {
+			continue
+		}
+		entry := strings.SplitN(p, "=", 2)
+		idStr := strings.TrimSpace(entry[0])
+		id, err := strconv.ParseInt(idStr, 10, 64)
+		if err != nil {
+			continue
+		}
+		out = append(out, id)
+	}
+	return out
+}
+
+func sendNodeStatusNotification(nodeName string, online bool, eventTime time.Time) bool {
+	keys := []string{"tg_bot_enabled", "tg_bot_token", "tg_bot_whitelist"}
+	var cfgList []database.SysConfig
+	if err := database.DB.Where("key IN ?", keys).Find(&cfgList).Error; err != nil {
+		logger.Log.Warn("读取 TG 通知配置失败", "error", err)
+		return false
+	}
+
+	cfg := map[string]string{}
+	for _, c := range cfgList {
+		cfg[c.Key] = strings.TrimSpace(c.Value)
+	}
+
+	if cfg["tg_bot_enabled"] != "true" {
+		return false
+	}
+	token := cfg["tg_bot_token"]
+	if token == "" {
+		return false
+	}
+	users := parseTGNotifyUsers(cfg["tg_bot_whitelist"])
+	if len(users) == 0 {
+		return false
+	}
+
+	bot, err := tgbotapi.NewBotAPI(token)
+	if err != nil {
+		logger.Log.Warn("初始化 TG Bot 失败，无法发送节点状态通知", "error", err)
+		return false
+	}
+
+	statusText := "离线"
+	timeLabel := "离线时间"
+	emoji := "🔴"
+	if online {
+		statusText = "上线"
+		timeLabel = "上线时间"
+		emoji = "🟢"
+	}
+
+	if strings.TrimSpace(nodeName) == "" {
+		nodeName = "未命名节点"
+	}
+
+	msgText := fmt.Sprintf("%s 节点%s通知\n节点名称：%s\n%s：%s", emoji, statusText, nodeName, timeLabel, eventTime.Format("2006-01-02 15:04:05"))
+
+	sentAny := false
+	for _, uid := range users {
+		msg := tgbotapi.NewMessage(uid, msgText)
+		if _, err := bot.Send(msg); err != nil {
+			logger.Log.Warn("发送 TG 节点状态通知失败", "user_id", uid, "node_name", nodeName, "status", statusText, "error", err)
+			continue
+		}
+		sentAny = true
+	}
+
+	return sentAny
+}
+
+// OnNodeConnectionStatusChanged 在节点 WS 连接状态变化时触发。
+func OnNodeConnectionStatusChanged(installID string, online bool) {
+	installID = strings.TrimSpace(installID)
+	if installID == "" {
+		return
+	}
+
+	StartOfflineNotifyLoop()
+	now := time.Now()
+	node, nodeFound := getNodeNotifyConfigByInstallID(installID)
+
+	offlineNotifyMu.Lock()
+	st := offlineNotifyState[installID]
+	if st == nil {
+		st = &offlineNotifyRuntime{}
+		offlineNotifyState[installID] = st
+	}
+	prevOnline := st.online
+	wasInitialized := st.initialized
+	st.initialized = true
+	st.online = online
+	if online {
+		st.pendingOfflineAt = time.Time{}
+	} else {
+		graceSec := 180
+		if nodeFound {
+			graceSec = NormalizeNodeOfflineGraceSec(node.OfflineNotifyGraceSec)
+		}
+		st.pendingOfflineAt = now.Add(time.Duration(graceSec) * time.Second)
+	}
+	lastNotified := st.lastNotified
+	offlineNotifyMu.Unlock()
+
+	if !nodeFound || !node.OfflineNotifyEnabled {
+		return
+	}
+
+	if online && wasInitialized && !prevOnline && lastNotified == "offline" {
+		if sendNodeStatusNotification(node.Name, true, now) {
+			updateNodeOfflineLastNotifyAt(node.UUID, now)
+		}
+		offlineNotifyMu.Lock()
+		if latest := offlineNotifyState[installID]; latest != nil {
+			latest.lastNotified = "online"
+		}
+		offlineNotifyMu.Unlock()
+	}
+}
 
 // StartTelegramBot 初始化并启动 Telegram Bot 监听协程
 func StartTelegramBot() {

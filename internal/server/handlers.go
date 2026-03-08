@@ -245,6 +245,38 @@ func nodeRoutingTypeLabel(rt int) string {
 	}
 }
 
+func normalizeAuthCookieTTLMode(raw string) string {
+	raw = strings.ToLower(strings.TrimSpace(raw))
+	switch raw {
+	case "1d", "3d", "7d", "never":
+		return raw
+	default:
+		return "1d"
+	}
+}
+
+func loadAuthCookieTTLMode() string {
+	var cfg database.SysConfig
+	if err := database.DB.Where("key = ?", "auth_cookie_ttl_mode").First(&cfg).Error; err != nil {
+		return "1d"
+	}
+	return normalizeAuthCookieTTLMode(cfg.Value)
+}
+
+func resolveAuthCookieTTL(mode string) (expiresAt time.Time, maxAge int, persistent bool) {
+	now := time.Now()
+	switch normalizeAuthCookieTTLMode(mode) {
+	case "3d":
+		return now.Add(72 * time.Hour), 72 * 3600, true
+	case "7d":
+		return now.Add(7 * 24 * time.Hour), 7 * 24 * 3600, true
+	case "never":
+		return now.AddDate(20, 0, 0), 20 * 365 * 24 * 3600, true
+	default:
+		return now.Add(24 * time.Hour), 24 * 3600, true
+	}
+}
+
 // ------------------- [页面渲染逻辑] -------------------
 
 // loginHandler 处理登录页面渲染和表单提交
@@ -316,11 +348,15 @@ func loginHandler(w http.ResponseWriter, r *http.Request) {
 		middleware.ClearLoginFailureRecord(clientIP)
 
 		database.DB.Where("key = ?", "jwt_secret").First(&secretConfig)
+		ttlMode := loadAuthCookieTTLMode()
+		expireAt, maxAge, persistent := resolveAuthCookieTTL(ttlMode)
 
 		claims := jwt.MapClaims{
 			"username": username,
-			"exp":      time.Now().Add(24 * time.Hour).Unix(),
 			"iat":      time.Now().Unix(),
+		}
+		if persistent {
+			claims["exp"] = expireAt.Unix()
 		}
 		token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
 		tokenString, err := token.SignedString([]byte(secretConfig.Value))
@@ -336,8 +372,8 @@ func loginHandler(w http.ResponseWriter, r *http.Request) {
 			Path:     "/",
 			HttpOnly: true,
 			Secure:   false,
-			MaxAge:   86400,
-			Expires:  time.Now().Add(24 * time.Hour),
+			MaxAge:   maxAge,
+			Expires:  expireAt,
 			SameSite: http.SameSiteLaxMode,
 		})
 
@@ -963,6 +999,97 @@ func apiGetNodes(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// apiGetOfflineNotifySettings 获取节点离线通知设置列表
+func apiGetOfflineNotifySettings(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var nodes []database.NodePool
+	if err := database.DB.Select("uuid", "name", "install_id", "offline_notify_enabled", "offline_notify_grace_sec", "offline_last_notify_at", "sort_index", "updated_at").
+		Order("sort_index ASC, updated_at DESC").
+		Find(&nodes).Error; err != nil {
+		sendJSON(w, "error", "读取离线通知配置失败")
+		return
+	}
+
+	items := make([]map[string]interface{}, 0, len(nodes))
+	for _, n := range nodes {
+		grace := service.NormalizeNodeOfflineGraceSec(n.OfflineNotifyGraceSec)
+		item := map[string]interface{}{
+			"uuid":                     n.UUID,
+			"install_id":               n.InstallID,
+			"name":                     n.Name,
+			"offline_notify_enabled":   n.OfflineNotifyEnabled,
+			"offline_notify_grace_sec": grace,
+			"online":                   service.IsNodeOnline(n.InstallID),
+		}
+		if n.OfflineLastNotifyAt != nil && !n.OfflineLastNotifyAt.IsZero() {
+			item["offline_last_notify_at"] = n.OfflineLastNotifyAt.Format("2006-01-02 15:04:05")
+		} else {
+			item["offline_last_notify_at"] = "-"
+		}
+		items = append(items, item)
+	}
+
+	sendJSON(w, "success", map[string]interface{}{"nodes": items})
+}
+
+// apiUpdateOfflineNotifySetting 更新单个节点离线通知设置
+func apiUpdateOfflineNotifySetting(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var req struct {
+		UUID                  string `json:"uuid"`
+		OfflineNotifyEnabled  *bool  `json:"offline_notify_enabled"`
+		OfflineNotifyGraceSec *int   `json:"offline_notify_grace_sec"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		sendJSON(w, "error", "请求格式错误")
+		return
+	}
+	req.UUID = strings.TrimSpace(req.UUID)
+	if req.UUID == "" {
+		sendJSON(w, "error", "缺少节点 UUID")
+		return
+	}
+
+	updates := map[string]interface{}{}
+	if req.OfflineNotifyEnabled != nil {
+		updates["offline_notify_enabled"] = *req.OfflineNotifyEnabled
+	}
+	if req.OfflineNotifyGraceSec != nil {
+		updates["offline_notify_grace_sec"] = service.NormalizeNodeOfflineGraceSec(*req.OfflineNotifyGraceSec)
+	}
+	if len(updates) == 0 {
+		sendJSON(w, "error", "没有可更新的字段")
+		return
+	}
+
+	res := database.DB.Model(&database.NodePool{}).Where("uuid = ?", req.UUID).Updates(updates)
+	if res.Error != nil {
+		sendJSON(w, "error", "更新失败")
+		return
+	}
+	if res.RowsAffected == 0 {
+		sendJSON(w, "error", "节点不存在")
+		return
+	}
+
+	if req.OfflineNotifyEnabled != nil {
+		var node database.NodePool
+		if err := database.DB.Select("install_id").Where("uuid = ?", req.UUID).First(&node).Error; err == nil {
+			service.OnNodeConnectionStatusChanged(node.InstallID, service.IsNodeOnline(node.InstallID))
+		}
+	}
+
+	sendJSON(w, "success", "设置已更新")
+}
+
 func apiReorderNodes(w http.ResponseWriter, r *http.Request) {
 	clientIP := r.RemoteAddr
 	reqPath := r.URL.Path
@@ -1260,7 +1387,7 @@ func apiGetSettings(w http.ResponseWriter, r *http.Request) {
 		"proxy_port_reality", "proxy_ss_method",
 		"proxy_port_socks5", "proxy_socks5_user", "proxy_socks5_pass", "proxy_socks5_random_auth", "pref_use_emoji_flag", "pref_force_protocol_prefix", "sub_custom_name", "pref_ip_strategy", "pref_default_install_protocols",
 		"sys_force_http", "sys_log_level", "cf_email", "cf_api_key", "cf_domain", "cf_auto_renew", "airport_filter_invalid", "pref_speed_test_mode", "pref_speed_test_file_size", "pref_traffic_stats_retention_days",
-		"login_ip_retry_window_sec", "login_ip_max_retries", "login_ip_block_ttl_sec",
+		"auth_cookie_ttl_mode", "login_ip_retry_window_sec", "login_ip_max_retries", "login_ip_block_ttl_sec",
 		"tg_bot_enabled", "tg_bot_token", "tg_bot_whitelist", "tg_bot_register_commands", "clash_proxies_update_interval", "clash_rules_update_interval", "clash_public_rules_update_interval",
 		// 新增协议与内核优化配置
 		"proxy_port_trojan", "proxy_hy2_sni", "proxy_tuic_sni", "proxy_enable_bbr",
@@ -1319,7 +1446,7 @@ func apiUpdateSettings(w http.ResponseWriter, r *http.Request) {
 		"sub_custom_name": true, "pref_ip_strategy": true, "pref_default_install_protocols": true,
 		"sys_force_http": true, "sys_log_level": true, "cf_email": true, "cf_api_key": true, "cf_domain": true, "cf_auto_renew": true,
 		"airport_filter_invalid": true, "pref_speed_test_mode": true, "pref_speed_test_file_size": true, "pref_traffic_stats_retention_days": true,
-		"login_ip_retry_window_sec": true, "login_ip_max_retries": true, "login_ip_block_ttl_sec": true,
+		"auth_cookie_ttl_mode": true, "login_ip_retry_window_sec": true, "login_ip_max_retries": true, "login_ip_block_ttl_sec": true,
 		"tg_bot_enabled": true, "tg_bot_token": true, "tg_bot_whitelist": true, "tg_bot_register_commands": true,
 		"clash_proxies_update_interval": true, "clash_rules_update_interval": true, "clash_public_rules_update_interval": true,
 		// 新增协议与内核优化配置
@@ -1390,6 +1517,10 @@ func apiUpdateSettings(w http.ResponseWriter, r *http.Request) {
 					return
 				}
 				v = strconv.Itoa(days)
+			}
+
+			if k == "auth_cookie_ttl_mode" {
+				v = normalizeAuthCookieTTLMode(v)
 			}
 
 			if k == "login_ip_retry_window_sec" {

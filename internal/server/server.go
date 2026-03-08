@@ -167,6 +167,7 @@ func Start(tmplFS embed.FS) {
 	service.InitCertManager() // 初始化证书目录
 	//避免空指针报错
 	service.InitMihomo()
+	service.StartOfflineNotifyLoop()
 	if err := middleware.ReloadLoginRateLimitConfigFromDB(); err != nil {
 		logger.Log.Warn("加载登录IP限流配置失败，已使用默认策略", "error", err)
 	}
@@ -190,6 +191,8 @@ func Start(tmplFS embed.FS) {
 
 	// 节点管理
 	mux.HandleFunc("/api/get-nodes", withAuthAndSecure(apiGetNodes))
+	mux.HandleFunc("/api/offline-notify/settings", withAuthAndSecure(apiGetOfflineNotifySettings))
+	mux.HandleFunc("/api/offline-notify/update", withAuthAndSecure(apiUpdateOfflineNotifySetting))
 	mux.HandleFunc("/api/add-node", withAuthAndSecure(apiAddNode))
 	mux.HandleFunc("/api/update-node", withAuthAndSecure(apiUpdateNode))
 	mux.HandleFunc("/api/delete-node", withAuthAndSecure(apiDeleteNode))
