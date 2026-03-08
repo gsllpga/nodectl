@@ -383,6 +383,9 @@
         padding: 8px 14px;
         border-radius: 8px;
         cursor: pointer;
+        white-space: nowrap;
+        transition: background 0.2s, border-color 0.2s;
+        flex-shrink: 0;
     }
 
     .sys-offline-batch-btn:hover {
@@ -390,72 +393,159 @@
         border-color: #0066d6;
     }
 
-    .sys-batch-overlay {
-        position: fixed;
-        inset: 0;
-        background: rgba(0, 0, 0, 0.35);
-        display: none;
+    .sys-offline-batch-btn.is-confirm {
+        background: #34c759;
+        border-color: #34c759;
+    }
+
+    .sys-offline-batch-btn.is-confirm:hover {
+        background: #2da44e;
+        border-color: #2da44e;
+    }
+
+    .sys-batch-inline-wrap {
+        display: flex;
         align-items: center;
-        justify-content: center;
-        z-index: 3200;
+        gap: 8px;
+        flex-shrink: 0;
     }
 
-    .sys-batch-overlay.active {
+    .sys-batch-inline-controls {
         display: flex;
+        align-items: center;
+        gap: 8px;
+        max-width: 0;
+        overflow: hidden;
+        opacity: 0;
+        transition: max-width 0.35s cubic-bezier(.4,0,.2,1), opacity 0.25s ease, padding 0.3s ease;
+        padding: 0;
+        white-space: nowrap;
     }
 
-    .sys-batch-card {
-        width: min(860px, 92vw);
-        background: #fff;
-        border-radius: 14px;
-        box-shadow: 0 20px 40px rgba(0, 0, 0, 0.18);
-        padding: 28px 36px;
+    .sys-batch-inline-controls.expanded {
+        max-width: 400px;
+        opacity: 1;
+        padding-right: 4px;
     }
 
-    .sys-batch-title {
-        font-size: 34px;
-        font-weight: 700;
-        color: #111;
-        margin: 0 0 28px 0;
-    }
-
-    .sys-batch-row {
-        margin-bottom: 20px;
-    }
-
-    .sys-batch-label {
-        display: block;
-        font-size: 16px;
-        color: #1c1c1e;
-        margin-bottom: 10px;
-    }
-
-    .sys-batch-actions {
+    .sys-batch-inline-controls .sys-batch-inline-item {
         display: flex;
-        justify-content: flex-end;
-        gap: 14px;
-        margin-top: 24px;
+        align-items: center;
+        gap: 4px;
+        font-size: 12px;
+        color: #555;
     }
 
-    .sys-batch-cancel,
-    .sys-batch-save {
-        min-width: 84px;
-        height: 42px;
-        border-radius: 10px;
-        border: none;
-        font-size: 16px;
+    .sys-batch-inline-controls .sys-batch-inline-item label {
+        font-weight: 600;
+        color: #333;
+        white-space: nowrap;
+    }
+
+    .sys-batch-inline-select {
+        appearance: none;
+        -webkit-appearance: none;
+        border: 1px solid #d1d1d6;
+        border-radius: 6px;
+        padding: 5px 26px 5px 8px;
+        font-size: 12px;
+        background: #fff url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%23666'/%3E%3C/svg%3E") no-repeat right 8px center;
         cursor: pointer;
-        padding: 0 20px;
+        color: #333;
+        min-width: 68px;
+        height: 30px;
     }
 
-    .sys-batch-cancel {
-        background: #f0f1f5;
-        color: #7a7d86;
+    .sys-batch-inline-select:focus {
+        outline: none;
+        border-color: #007aff;
+        box-shadow: 0 0 0 2px rgba(0,122,255,0.15);
     }
 
-    .sys-batch-save {
-        background: #1f8fff;
-        color: #fff;
+    .sys-batch-inline-input {
+        border: 1px solid #d1d1d6;
+        border-radius: 6px;
+        padding: 5px 8px;
+        font-size: 12px;
+        width: 64px;
+        height: 30px;
+        color: #333;
+        text-align: center;
+    }
+
+    .sys-batch-inline-input:focus {
+        outline: none;
+        border-color: #007aff;
+        box-shadow: 0 0 0 2px rgba(0,122,255,0.15);
+    }
+
+    .sys-batch-inline-unit {
+        font-size: 11px;
+        color: #888;
+        white-space: nowrap;
+    }
+
+    .sys-batch-inline-cancel {
+        border: 1px solid #d1d1d6;
+        background: #f5f5f7;
+        color: #666;
+        font-size: 12px;
+        font-weight: 600;
+        padding: 5px 10px;
+        border-radius: 6px;
+        cursor: pointer;
+        white-space: nowrap;
+        height: 30px;
+        transition: background 0.2s;
+    }
+
+    .sys-batch-inline-cancel:hover {
+        background: #e8e8ed;
+    }
+
+    @media (max-width: 768px) {
+        .sys-offline-head {
+            flex-wrap: wrap;
+            gap: 6px;
+        }
+
+        /* 展开时隐藏标题文字 */
+        .sys-offline-head.batch-expanded > .sys-label {
+            display: none !important;
+        }
+
+        /* 展开时让 inline-wrap 占满宽度 */
+        .sys-offline-head.batch-expanded .sys-batch-inline-wrap {
+            width: 100%;
+            justify-content: flex-end;
+        }
+
+        /* 隐藏内联控件中的文字标签 */
+        .sys-batch-inline-controls.expanded .sys-batch-inline-item > label {
+            display: none;
+        }
+
+        .sys-batch-inline-select {
+            min-width: 60px;
+        }
+
+        .sys-batch-inline-input {
+            width: 54px;
+        }
+
+        .sys-batch-inline-controls.expanded {
+            max-width: 320px;
+        }
+
+        .sys-offline-batch-btn {
+            padding: 6px 10px;
+            font-size: 11px;
+        }
+
+        .sys-batch-inline-cancel {
+            padding: 4px 8px;
+            font-size: 11px;
+        }
     }
 
     .btn-sys-token-confirm {
@@ -2011,7 +2101,24 @@
                                     </div>
                                 </div>
                             </label>
-                            <button type="button" class="sys-offline-batch-btn" onclick="openOfflineNotifyBatchModal()">批量修改</button>
+                            <div class="sys-batch-inline-wrap">
+                                <div class="sys-batch-inline-controls" id="sysBatchInlineControls">
+                                    <div class="sys-batch-inline-item">
+                                        <label>状态</label>
+                                        <select id="sysBatchOfflineNotifyEnabled" class="sys-batch-inline-select">
+                                            <option value="1">启用</option>
+                                            <option value="0">禁用</option>
+                                        </select>
+                                    </div>
+                                    <div class="sys-batch-inline-item">
+                                        <label>宽限</label>
+                                        <input type="number" id="sysBatchOfflineNotifyGrace" class="sys-batch-inline-input" min="1" max="86400" value="180">
+                                        <span class="sys-batch-inline-unit">秒</span>
+                                    </div>
+                                    <button type="button" class="sys-batch-inline-cancel" onclick="closeBatchInline()">取消</button>
+                                </div>
+                                <button type="button" class="sys-offline-batch-btn" id="sysBatchToggleBtn" onclick="toggleBatchInline()">批量修改</button>
+                            </div>
                         </div>
 
                         <div style="border: 1px solid #e5e5ea; border-radius: 10px; overflow: hidden;">
@@ -2466,26 +2573,7 @@
     </div>
 </div>
 
-<div class="sys-batch-overlay" id="sysOfflineBatchOverlay" onclick="if(event.target===this) closeOfflineNotifyBatchModal()">
-    <div class="sys-batch-card">
-        <h3 class="sys-batch-title">批量修改</h3>
-        <div class="sys-batch-row">
-            <label class="sys-batch-label" style="font-size:14px;">状态</label>
-            <label class="sys-toggle-switch" style="transform:scale(1.2); transform-origin:left center;">
-                <input type="checkbox" id="sysBatchOfflineNotifyEnabled">
-                <span class="sys-toggle-slider"></span>
-            </label>
-        </div>
-        <div class="sys-batch-row">
-            <label class="sys-batch-label" style="font-size:14px;">宽限期</label>
-            <input type="number" id="sysBatchOfflineNotifyGrace" class="sys-input" min="1" max="86400" value="180">
-        </div>
-        <div class="sys-batch-actions">
-            <button type="button" class="sys-batch-cancel" style="font-size:16px;" onclick="closeOfflineNotifyBatchModal()">取消</button>
-            <button type="button" class="sys-batch-save" style="font-size:16px;" onclick="saveOfflineNotifyBatchUpdate()">保存</button>
-        </div>
-    </div>
-</div>
+
 
 <script>
     const sysModal = document.getElementById('systemSettingsModal');
@@ -3090,30 +3178,47 @@
         }
     }
 
-    function openOfflineNotifyBatchModal() {
-        if (offlineNotifySelectedUUIDs.size === 0) {
-            alert('请先勾选要批量修改的节点');
-            return;
-        }
+    let batchInlineExpanded = false;
 
-        const selected = offlineNotifyRows.filter(n => offlineNotifySelectedUUIDs.has(n.uuid));
-        if (selected.length === 0) {
-            alert('未找到已选节点，请刷新后重试');
-            return;
+    function toggleBatchInline() {
+        if (!batchInlineExpanded) {
+            // 展开模式
+            if (offlineNotifySelectedUUIDs.size === 0) {
+                alert('请先勾选要批量修改的节点');
+                return;
+            }
+            const selected = offlineNotifyRows.filter(n => offlineNotifySelectedUUIDs.has(n.uuid));
+            if (selected.length === 0) {
+                alert('未找到已选节点，请刷新后重试');
+                return;
+            }
+            const allEnabled = selected.every(n => n.enabled);
+            document.getElementById('sysBatchOfflineNotifyEnabled').value = allEnabled ? '1' : '0';
+            document.getElementById('sysBatchOfflineNotifyGrace').value = String(selected[0].grace || 180);
+            document.getElementById('sysBatchInlineControls').classList.add('expanded');
+            document.querySelector('.sys-offline-head').classList.add('batch-expanded');
+            const btn = document.getElementById('sysBatchToggleBtn');
+            btn.textContent = '确认保存';
+            btn.classList.add('is-confirm');
+            btn.onclick = saveBatchInline;
+            batchInlineExpanded = true;
+        } else {
+            saveBatchInline();
         }
-
-        const allEnabled = selected.every(n => n.enabled);
-        document.getElementById('sysBatchOfflineNotifyEnabled').checked = allEnabled;
-        document.getElementById('sysBatchOfflineNotifyGrace').value = String(selected[0].grace || 180);
-        document.getElementById('sysOfflineBatchOverlay').classList.add('active');
     }
 
-    function closeOfflineNotifyBatchModal() {
-        document.getElementById('sysOfflineBatchOverlay').classList.remove('active');
+    function closeBatchInline() {
+        document.getElementById('sysBatchInlineControls').classList.remove('expanded');
+        document.querySelector('.sys-offline-head').classList.remove('batch-expanded');
+        const btn = document.getElementById('sysBatchToggleBtn');
+        btn.textContent = '批量修改';
+        btn.classList.remove('is-confirm');
+        btn.onclick = toggleBatchInline;
+        batchInlineExpanded = false;
     }
 
-    async function saveOfflineNotifyBatchUpdate() {
-        const enabled = !!document.getElementById('sysBatchOfflineNotifyEnabled').checked;
+    async function saveBatchInline() {
+        const enabled = document.getElementById('sysBatchOfflineNotifyEnabled').value === '1';
         let grace = parseInt(document.getElementById('sysBatchOfflineNotifyGrace').value, 10);
         if (Number.isNaN(grace) || grace < 1) grace = 1;
         if (grace > 86400) grace = 86400;
@@ -3142,7 +3247,7 @@
             })));
 
             showOfflineNotifySaved();
-            closeOfflineNotifyBatchModal();
+            closeBatchInline();
             await loadOfflineNotifySettings();
         } catch (e) {
             showOfflineNotifySaveFailed();
