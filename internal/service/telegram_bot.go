@@ -124,25 +124,73 @@ func updateNodeOfflineLastNotifyAt(nodeUUID string, at time.Time) {
 	}
 }
 
-func parseTGNotifyUsers(raw string) []int64 {
+type tgNotifyTarget struct {
+	UserID     int64
+	AllowNode  bool
+	AllowLogin bool
+}
+
+func parseTGNotifyTargets(raw string) []tgNotifyTarget {
 	raw = strings.TrimSpace(raw)
 	if raw == "" {
 		return nil
 	}
+
 	parts := strings.Split(raw, ",")
-	out := make([]int64, 0, len(parts))
+	out := make([]tgNotifyTarget, 0, len(parts))
+
 	for _, p := range parts {
 		p = strings.TrimSpace(p)
 		if p == "" {
 			continue
 		}
+
 		entry := strings.SplitN(p, "=", 2)
 		idStr := strings.TrimSpace(entry[0])
 		id, err := strconv.ParseInt(idStr, 10, 64)
 		if err != nil {
 			continue
 		}
-		out = append(out, id)
+
+		target := tgNotifyTarget{UserID: id, AllowNode: true, AllowLogin: true}
+
+		if len(entry) == 2 {
+			rest := strings.TrimSpace(entry[1])
+			if rest != "" {
+				metaParts := strings.Split(rest, "|")
+				for i := 1; i < len(metaParts); i++ {
+					meta := strings.TrimSpace(metaParts[i])
+					if meta == "" {
+						continue
+					}
+					kv := strings.SplitN(meta, "=", 2)
+					if len(kv) != 2 {
+						continue
+					}
+					k := strings.ToLower(strings.TrimSpace(kv[0]))
+					v := strings.ToLower(strings.TrimSpace(kv[1]))
+					allow := v == "1" || v == "true"
+					switch k {
+					case "node", "node_status":
+						target.AllowNode = allow
+					case "login", "login_notify":
+						target.AllowLogin = allow
+					}
+				}
+			}
+		}
+
+		out = append(out, target)
+	}
+
+	return out
+}
+
+func parseTGNotifyUsers(raw string) []int64 {
+	targets := parseTGNotifyTargets(raw)
+	out := make([]int64, 0, len(targets))
+	for _, t := range targets {
+		out = append(out, t.UserID)
 	}
 	return out
 }
@@ -167,7 +215,13 @@ func sendNodeStatusNotification(nodeName string, online bool, eventTime time.Tim
 	if token == "" {
 		return false
 	}
-	users := parseTGNotifyUsers(cfg["tg_bot_whitelist"])
+	targets := parseTGNotifyTargets(cfg["tg_bot_whitelist"])
+	users := make([]int64, 0, len(targets))
+	for _, t := range targets {
+		if t.AllowNode {
+			users = append(users, t.UserID)
+		}
+	}
 	if len(users) == 0 {
 		return false
 	}
@@ -260,16 +314,18 @@ func SendAdminLoginNotification(username, loginIP string, loginTime time.Time, s
 		reason = ""
 	}
 
-	if cfg["tg_bot_enabled"] != "true" {
-		return false
-	}
-
 	token := cfg["tg_bot_token"]
 	if token == "" {
 		return false
 	}
 
-	users := parseTGNotifyUsers(cfg["tg_bot_whitelist"])
+	targets := parseTGNotifyTargets(cfg["tg_bot_whitelist"])
+	users := make([]int64, 0, len(targets))
+	for _, t := range targets {
+		if t.AllowLogin {
+			users = append(users, t.UserID)
+		}
+	}
 	if len(users) == 0 {
 		return false
 	}

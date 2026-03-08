@@ -1390,12 +1390,15 @@
     /* ================= TG Bot 白名单列表界面 ================= */
     .sys-list-row {
         display: flex;
+        flex-direction: column;
         gap: 8px;
-        align-items: center;
+        align-items: stretch;
         background: #f4f5f7;
         padding: 4px 10px;
         border-radius: 6px;
         transition: 0.2s;
+        width: 100%;
+        box-sizing: border-box;
     }
 
     .sys-list-row:hover {
@@ -1411,6 +1414,7 @@
         transition: 0.2s;
         color: #333;
         font-size: 13px;
+        min-width: 0;
     }
 
     .sys-list-input:focus {
@@ -1422,7 +1426,7 @@
         color: #ff3b30;
         cursor: pointer;
         padding: 6px;
-        opacity: 0;
+        opacity: 1;
         transition: 0.2s;
         display: flex;
         align-items: center;
@@ -1435,6 +1439,75 @@
     .sys-list-del:hover {
         background: #ffe5e5;
         border-radius: 4px;
+    }
+
+    .sys-list-main-row {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+        width: 100%;
+        min-width: 0;
+        flex-wrap: nowrap;
+    }
+
+    .sys-list-fields {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+        min-width: 0;
+        flex: 1;
+    }
+
+    .sys-list-fields.hidden {
+        display: none;
+    }
+
+    .sys-list-expand-btn {
+        border: 1px solid #c9dfff;
+        background: #eaf3ff;
+        color: #0b63c9;
+        font-size: 12px;
+        font-weight: 600;
+        border-radius: 6px;
+        padding: 6px 8px;
+        white-space: nowrap;
+        cursor: pointer;
+        flex-shrink: 0;
+    }
+
+    .sys-list-expand-btn:hover {
+        background: #dcecff;
+    }
+
+    .sys-list-notify-panel {
+        display: none;
+        width: 100%;
+        box-sizing: border-box;
+        border: 1px dashed #cfe1ff;
+        border-radius: 6px;
+        padding: 8px;
+        background: #f7fbff;
+    }
+
+    .sys-list-notify-panel.active {
+        display: block;
+    }
+
+    .sys-list-notify-options {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px 12px;
+        width: 100%;
+    }
+
+    .sys-list-notify-item {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        font-size: 12px;
+        color: #555;
+        white-space: nowrap;
+        max-width: 100%;
     }
 
     .sys-btn-add-dashed {
@@ -1537,6 +1610,40 @@
         .sys-mon-detail-row:nth-last-child(2) {
             border-bottom: 1px dashed #f0f0f5;
             padding-bottom: 6px;
+        }
+
+        .sys-list-row {
+            padding: 6px 8px;
+        }
+
+        .sys-list-main-row {
+            gap: 6px;
+        }
+
+        .sys-list-fields {
+            gap: 6px;
+        }
+
+        .sys-list-input {
+            font-size: 12px;
+            padding: 6px;
+        }
+
+        .sys-list-expand-btn {
+            padding: 5px 7px;
+            font-size: 11px;
+        }
+
+        .sys-list-notify-panel {
+            padding: 6px;
+        }
+
+        .sys-list-notify-options {
+            gap: 6px 10px;
+        }
+
+        .sys-list-notify-item {
+            font-size: 11px;
         }
     }
 </style>
@@ -2998,8 +3105,27 @@
                 const wListStr = data.tg_bot_whitelist || '';
                 tgBotWhitelistItems = wListStr.split(',').filter(Boolean).map(s => {
                     const idx = s.indexOf('=');
-                    if (idx === -1) return { id: s.trim(), remark: '' };
-                    return { id: s.substring(0, idx).trim(), remark: s.substring(idx + 1).trim() };
+                    if (idx === -1) return { id: s.trim(), remark: '', notify_node: true, notify_login: true, notify_open: false };
+
+                    const id = s.substring(0, idx).trim();
+                    const rest = s.substring(idx + 1).trim();
+                    const parts = rest.split('|');
+                    const remark = (parts[0] || '').trim();
+                    const item = { id, remark, notify_node: true, notify_login: true, notify_open: false };
+
+                    for (let i = 1; i < parts.length; i++) {
+                        const seg = (parts[i] || '').trim();
+                        if (!seg) continue;
+                        const kvIdx = seg.indexOf('=');
+                        if (kvIdx === -1) continue;
+                        const key = seg.substring(0, kvIdx).trim().toLowerCase();
+                        const val = seg.substring(kvIdx + 1).trim().toLowerCase();
+                        const allow = (val === '1' || val === 'true');
+                        if (key === 'node' || key === 'node_status') item.notify_node = allow;
+                        if (key === 'login' || key === 'login_notify') item.notify_login = allow;
+                    }
+
+                    return item;
                 });
                 renderTgWhitelist();
 
@@ -3482,9 +3608,11 @@
                 "cf_auto_renew": document.getElementById('sys_cf_auto_renew').checked ? 'true' : 'false', // ✨ 新增
                 "tg_bot_enabled": document.getElementById('sys_tg_bot_enabled').checked ? 'true' : 'false',
                 "tg_bot_whitelist": tgBotWhitelistItems.filter(item => item.id.trim() !== '').map(item => {
-                    const id = item.id.trim().replace(/[,=]/g, '');
-                    const remark = item.remark.trim().replace(/,/g, '');
-                    return id + (remark ? '=' + remark : '');
+                    const id = item.id.trim().replace(/[^0-9-]/g, '');
+                    const remark = item.remark.trim().replace(/[|,=]/g, '');
+                    const node = item.notify_node ? '1' : '0';
+                    const login = item.notify_login ? '1' : '0';
+                    return id + '=' + remark + '|node=' + node + '|login=' + login;
                 }).join(','),
                 "tg_bot_register_commands": document.getElementById('sys_tg_bot_register_commands').checked ? 'true' : 'false',
                 "tg_login_notify_mode": document.getElementById('sys_tg_login_notify_mode').value,
@@ -3959,6 +4087,14 @@
         const container = document.getElementById('tgWhitelistContainer');
         if (!container) return;
 
+        tgBotWhitelistItems = tgBotWhitelistItems.map(item => ({
+			id: item.id || '',
+			remark: item.remark || '',
+			notify_node: item.notify_node !== false,
+			notify_login: item.notify_login !== false,
+            notify_open: item.notify_open === true,
+		}));
+
         if (tgBotWhitelistItems.length === 0) {
             container.innerHTML = '<div style="text-align: center; color: #999; font-size: 12px; padding: 10px;">暂无允许查询的白名单用户</div>';
             return;
@@ -3966,10 +4102,27 @@
 
         container.innerHTML = tgBotWhitelistItems.map((item, index) => `
             <div class="sys-list-row">
-                <input type="text" class="sys-list-input" data-idx="${index}" value="${escTgAttr(item.remark)}" placeholder="备注 (例如: 张三)" style="flex: 1;" oninput="tgBotWhitelistItems[${index}].remark = this.value; triggerSysAutoSave();" onblur="scheduleCleanEmptyTgWhitelist()">
-                <input type="text" class="sys-list-input" data-idx="${index}" value="${escTgAttr(item.id)}" placeholder="TG ID" style="flex: 2; font-family: monospace;" oninput="tgBotWhitelistItems[${index}].id = this.value; triggerSysAutoSave();" onblur="scheduleCleanEmptyTgWhitelist()">
-                <div class="sys-list-del" onclick="deleteTgWhitelistItem(${index})" title="删除">
-                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+                <div class="sys-list-main-row">
+                    <div class="sys-list-fields ${item.notify_open ? 'hidden' : ''}">
+                        <input type="text" class="sys-list-input" data-idx="${index}" value="${escTgAttr(item.remark)}" placeholder="备注 (例如: 张三)" style="flex: 1;" oninput="tgBotWhitelistItems[${index}].remark = this.value; triggerSysAutoSave();" onblur="scheduleCleanEmptyTgWhitelist()">
+                        <input type="text" class="sys-list-input" data-idx="${index}" value="${escTgAttr(item.id)}" placeholder="TG ID" style="flex: 2; font-family: monospace;" oninput="tgBotWhitelistItems[${index}].id = this.value; triggerSysAutoSave();" onblur="scheduleCleanEmptyTgWhitelist()">
+                    </div>
+                    <button type="button" class="sys-list-expand-btn" onclick="toggleTgNotifySettings(${index})">${item.notify_open ? '收起通知' : '通知设置'}</button>
+                    <div class="sys-list-del" onclick="deleteTgWhitelistItem(${index})" title="删除">
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+                    </div>
+                </div>
+                <div class="sys-list-notify-panel ${item.notify_open ? 'active' : ''}">
+                    <div class="sys-list-notify-options">
+                        <label class="sys-list-notify-item">
+                            <input type="checkbox" ${item.notify_node ? 'checked' : ''} onchange="tgBotWhitelistItems[${index}].notify_node = this.checked; triggerSysAutoSave();">
+                            节点状态通知
+                        </label>
+                        <label class="sys-list-notify-item">
+                            <input type="checkbox" ${item.notify_login ? 'checked' : ''} onchange="tgBotWhitelistItems[${index}].notify_login = this.checked; triggerSysAutoSave();">
+                            登录通知
+                        </label>
+                    </div>
                 </div>
             </div>
         `).join('');
@@ -4029,7 +4182,7 @@
     }
 
     function addTgWhitelistItem() {
-        tgBotWhitelistItems.push({ id: '', remark: '' });
+        tgBotWhitelistItems.push({ id: '', remark: '', notify_node: true, notify_login: true, notify_open: false });
         renderTgWhitelist();
 
         setTimeout(() => {
@@ -4046,6 +4199,12 @@
         tgBotWhitelistItems.splice(index, 1);
         renderTgWhitelist();
         triggerSysAutoSave();
+    }
+
+    function toggleTgNotifySettings(index) {
+        if (!tgBotWhitelistItems[index]) return;
+        tgBotWhitelistItems[index].notify_open = !tgBotWhitelistItems[index].notify_open;
+        renderTgWhitelist();
     }
     // ================= 🗄️ 数据库配置管理 =================
     let dbCurrentType = 'sqlite'; // 当前数据库类型
