@@ -85,6 +85,15 @@ func initBasicSettings() {
 		{Key: "agent_snapshot_interval_sec", Value: "300", Description: "Agent 累计流量快照间隔 (秒)"},
 		{Key: "agent_ws_reconnect_max_backoff_sec", Value: "60", Description: "Agent WS 重连最大退避时间 (秒)"},
 		{Key: "agent_ws_read_timeout_sec", Value: "20", Description: "Agent WS 读取超时 (秒)"},
+		// Cloudflare Tunnel 配置
+		{Key: "cf_account_id", Value: "", Description: "Cloudflare Account ID（创建 Tunnel 必需）"},
+		{Key: "cf_tunnel_name", Value: "nodectl", Description: "Cloudflare Tunnel 名称"},
+		{Key: "cf_tunnel_id", Value: "", Description: "Cloudflare Tunnel ID（创建成功后回填）"},
+		{Key: "cf_tunnel_token", Value: "", Description: "Cloudflare Tunnel 运行 Token（API 获取，用于 --token 模式）"},
+		{Key: "cf_tunnel_subdomain", Value: "", Description: "Tunnel 公网子域名（如 panel.example.com）"},
+		{Key: "cf_tunnel_origin_url", Value: "http://127.0.0.1:8080", Description: "Tunnel 回源本地地址"},
+		{Key: "cf_tunnel_bind_main_process", Value: "true", Description: "Tunnel 是否跟随 NodeCTL 主进程启停"},
+		{Key: "cf_tunnel_enabled", Value: "false", Description: "Tunnel 总开关（已配置且启用）"},
 	}
 
 	for _, config := range defaultConfigs {

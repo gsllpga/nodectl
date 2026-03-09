@@ -976,6 +976,8 @@
                             class="rule-icon">✈️</span><span class="rule-name">机场订阅</span></a>
                     <a href="javascript:void(0)" onclick="openClashModal()" class="btn-edit-rule"><span
                             class="rule-icon">⚙️</span><span class="rule-name">Clash规则集</span></a>
+                    <a href="javascript:void(0)" onclick="openCFTunnelModal()" class="btn-edit-rule"><span
+                            class="rule-icon">☁️</span><span class="rule-name">CF配置</span></a>
                 </div>
                 <p style="text-align: center; font-size: 12px; color: #999; margin-top: 15px;">
                     点击图标在线编辑分流规则、脚本或配置文件模板
@@ -1399,6 +1401,7 @@
     {{template "custom_rules_modal.html" .}}
     {{template "airport_sub_modal.html" .}}
     {{template "logs_modal.html" .}}
+    {{template "cf_modal.html" .}}
 </body>
 
 </html>

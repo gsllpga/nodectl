@@ -2,13 +2,18 @@
 package server
 
 import (
+	"bytes"
+	"context"
 	"crypto/tls"
 	"embed"
 	"html/template"
+	"io/fs"
 	"log"
 	"net"
 	"net/http"
+	"path"
 	"regexp"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -23,6 +28,12 @@ var tmpl *template.Template
 
 // restartChan 用于接收重启信号的通道
 var restartChan = make(chan bool)
+
+// activeServerMu 保护 activeServer 的并发访问
+var activeServerMu sync.Mutex
+
+// activeServerRef 当前运行的 HTTP Server 引用，供 GracefulShutdown 使用
+var activeServerRef *http.Server
 
 type serverLogWriter struct{}
 
@@ -140,8 +151,24 @@ func (w *serverLogWriter) Write(p []byte) (n int, err error) {
 
 // TriggerRestart 触发服务器重启逻辑 (供 handlers.go 调用)
 // 功能：向 restartChan 发送信号，通知主循环关闭当前 Server 实例
+// [FIX-11] 热重启仅重建 HTTP Server，cloudflared 进程保持不动
 func TriggerRestart() {
 	restartChan <- true
+}
+
+// GracefulShutdown 优雅关闭当前活跃的 HTTP Server（由 main.go 信号处理调用）
+func GracefulShutdown(ctx context.Context) {
+	activeServerMu.Lock()
+	srv := activeServerRef
+	activeServerMu.Unlock()
+
+	if srv != nil {
+		logger.Log.Info("正在优雅关闭 HTTP Server...")
+		if err := srv.Shutdown(ctx); err != nil {
+			logger.Log.Warn("HTTP Server 优雅关闭超时，强制关闭", "error", err)
+			srv.Close()
+		}
+	}
 }
 
 // ------------------- [中间件包装函数] -------------------
@@ -155,6 +182,50 @@ func withSecure(h http.HandlerFunc) http.HandlerFunc {
 // 功能：保护核心 API，必须登录且在安全协议下才能访问
 func withAuthAndSecure(h http.HandlerFunc) http.HandlerFunc {
 	return middleware.ForceHTTPS(middleware.Auth(h))
+}
+
+func parseTemplates(tmplFS embed.FS) (*template.Template, error) {
+	patterns := []string{"templates/*.html", "templates/components/*.html"}
+	seen := make(map[string]struct{})
+	files := make([]string, 0, 32)
+
+	for _, pattern := range patterns {
+		matches, err := fs.Glob(tmplFS, pattern)
+		if err != nil {
+			return nil, err
+		}
+		for _, file := range matches {
+			if _, ok := seen[file]; ok {
+				continue
+			}
+			seen[file] = struct{}{}
+			files = append(files, file)
+		}
+	}
+
+	if len(files) == 0 {
+		return nil, fs.ErrNotExist
+	}
+
+	sort.Strings(files)
+
+	t := template.New("")
+	bom := []byte{0xEF, 0xBB, 0xBF}
+
+	for _, file := range files {
+		content, err := fs.ReadFile(tmplFS, file)
+		if err != nil {
+			return nil, err
+		}
+		content = bytes.TrimPrefix(content, bom)
+
+		name := path.Base(file)
+		if _, err := t.New(name).Parse(string(content)); err != nil {
+			return nil, err
+		}
+	}
+
+	return t, nil
 }
 
 // ------------------- [服务器启动逻辑] -------------------
@@ -171,8 +242,12 @@ func Start(tmplFS embed.FS) {
 	if err := middleware.ReloadLoginRateLimitConfigFromDB(); err != nil {
 		logger.Log.Warn("加载登录IP限流配置失败，已使用默认策略", "error", err)
 	}
-	// 2. 预编译解析模板
-	tmpl = template.Must(template.ParseFS(tmplFS, "templates/*.html", "templates/components/*.html"))
+	// 2. 预编译解析模板（去重，避免重复定义同名模板）
+	parsedTmpl, err := parseTemplates(tmplFS)
+	if err != nil {
+		panic(err)
+	}
+	tmpl = parsedTmpl
 
 	// 3. 创建路由器并注册所有路由 (只需执行一次，避免重复注册引发 panic)
 	mux := http.NewServeMux()
@@ -267,8 +342,29 @@ func Start(tmplFS embed.FS) {
 	mux.HandleFunc("/api/airport/test/history/results", withAuthAndSecure(apiAirportSpeedHistoryResults))
 	mux.HandleFunc("/api/airport/test/history/delete", withAuthAndSecure(apiAirportSpeedHistoryDelete))
 
+	// ========== Cloudflare 管理 ==========
+	mux.HandleFunc("/api/cf/token/verify", withAuthAndSecure(apiCFTokenVerify))                 // Token 权限验证
+	mux.HandleFunc("/api/cf/token/save", withAuthAndSecure(apiCFTokenSave))                     // Token 保存
+	mux.HandleFunc("/api/cf/token/last-verify", withAuthAndSecure(apiCFGetLastTokenVerify))     // 最近一次校验记录
+	mux.HandleFunc("/api/cf/tunnel/test", withAuthAndSecure(apiCFTunnelTest))                   // 测试 CF 凭据
+	mux.HandleFunc("/api/cf/tunnel/settings", withAuthAndSecure(apiCFTunnelSettings))           // 读取/保存 Tunnel 配置
+	mux.HandleFunc("/api/cf/tunnel/cloudflared/prepare", withAuthAndSecure(apiCFTunnelPrepare)) // 下载 cloudflared (SSE)
+	mux.HandleFunc("/api/cf/tunnel/create", withAuthAndSecure(apiCFTunnelCreate))               // 创建 Tunnel (幂等)
+	mux.HandleFunc("/api/cf/tunnel/dns", withAuthAndSecure(apiCFTunnelDNS))                     // 绑定 DNS
+	mux.HandleFunc("/api/cf/tunnel/delete", withAuthAndSecure(apiCFTunnelDelete))               // 删除 Tunnel
+	mux.HandleFunc("/api/cf/tunnel/config/render", withAuthAndSecure(apiCFTunnelConfigRender))  // 生成配置文件
+	mux.HandleFunc("/api/cf/tunnel/run", withAuthAndSecure(apiCFTunnelRun))                     // 启动 Tunnel
+	mux.HandleFunc("/api/cf/tunnel/stop", withAuthAndSecure(apiCFTunnelStop))                   // 停止 Tunnel
+	mux.HandleFunc("/api/cf/tunnel/status", withAuthAndSecure(apiCFTunnelStatus))               // 读取状态
+	mux.HandleFunc("/api/cf/tunnel/logs", withAuthAndSecure(apiCFTunnelLogs))                   // 读取日志
+	mux.HandleFunc("/api/cf/tunnel/detect", withAuthAndSecure(apiCFTunnelDetect))               // 自动发现账户信息
+	mux.HandleFunc("/api/cf/tunnel/oneclick", withAuthAndSecure(apiCFTunnelOneClick))           // 一键部署 (SSE)
+
 	// 启动 Telegram Bot 后台服务 (不阻塞 Web 线程)
 	go service.StartTelegramBot()
+
+	// 标记是否是首次启动（用于判断是否自动拉起 Tunnel）
+	firstBoot := true
 
 	// 4. 进入服务守护主循环 (实现热重启的核心逻辑)
 	for {
@@ -290,8 +386,14 @@ func Start(tmplFS embed.FS) {
 			}
 		}
 
+		// 存储活跃 server 引用，供 GracefulShutdown 使用
+		activeServerMu.Lock()
+		activeServerRef = activeServer
+		activeServerMu.Unlock()
+
 		// [后台协程] 监听重启信号
 		// 功能：一旦接收到 TriggerRestart 发送的信号，就强制关闭当前的 Server 实例
+		// [FIX-11] 热重启仅关闭 HTTP Server，cloudflared 保持运行
 		go func(srv *http.Server) {
 			<-restartChan // 阻塞等待通道信号
 			logger.Log.Info("收到重启信号，正在卸载当前网络服务...")
@@ -304,9 +406,19 @@ func Start(tmplFS embed.FS) {
 		var serveErr error
 		if certLoaded {
 			logger.Log.Info("网络服务已启动", "mode", "HTTPS", "addr", "https://localhost:8080", "domain", service.GetCurrentCertInfo().Domain)
+			// 首次启动时，在 Web 服务准备就绪后自动拉起 Tunnel
+			if firstBoot {
+				go service.AutoStartCFTunnel()
+				firstBoot = false
+			}
 			serveErr = activeServer.ListenAndServeTLS("", "")
 		} else {
 			logger.Log.Info("网络服务已启动", "mode", "HTTP", "addr", "http://localhost:8080", "msg", "如需使用 HTTPS，请在面板上传证书")
+			// 首次启动时，在 Web 服务准备就绪后自动拉起 Tunnel
+			if firstBoot {
+				go service.AutoStartCFTunnel()
+				firstBoot = false
+			}
 			serveErr = activeServer.ListenAndServe()
 		}
 
