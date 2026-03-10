@@ -503,7 +503,7 @@
         max-width: 0;
         overflow: hidden;
         opacity: 0;
-        transition: max-width 0.35s cubic-bezier(.4,0,.2,1), opacity 0.25s ease, padding 0.3s ease;
+        transition: max-width 0.35s cubic-bezier(.4, 0, .2, 1), opacity 0.25s ease, padding 0.3s ease;
         padding: 0;
         white-space: nowrap;
     }
@@ -545,7 +545,7 @@
     .sys-batch-inline-select:focus {
         outline: none;
         border-color: #007aff;
-        box-shadow: 0 0 0 2px rgba(0,122,255,0.15);
+        box-shadow: 0 0 0 2px rgba(0, 122, 255, 0.15);
     }
 
     .sys-batch-inline-input {
@@ -562,7 +562,7 @@
     .sys-batch-inline-input:focus {
         outline: none;
         border-color: #007aff;
-        box-shadow: 0 0 0 2px rgba(0,122,255,0.15);
+        box-shadow: 0 0 0 2px rgba(0, 122, 255, 0.15);
     }
 
     .sys-batch-inline-unit {
@@ -596,7 +596,7 @@
         }
 
         /* 展开时隐藏标题文字 */
-        .sys-offline-head.batch-expanded > .sys-label {
+        .sys-offline-head.batch-expanded>.sys-label {
             display: none !important;
         }
 
@@ -607,7 +607,7 @@
         }
 
         /* 隐藏内联控件中的文字标签 */
-        .sys-batch-inline-controls.expanded .sys-batch-inline-item > label {
+        .sys-batch-inline-controls.expanded .sys-batch-inline-item>label {
             display: none;
         }
 
@@ -1079,6 +1079,174 @@
 
     .sys-mon-detail-val.green {
         color: #22863a;
+    }
+
+    .sys-mon-proc-box {
+        margin-top: 14px;
+        background: #fafbfc;
+        border: 1px solid #e5e5ea;
+        border-radius: 12px;
+        padding: 14px;
+    }
+
+    .sys-mon-proc-summary {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin-bottom: 10px;
+    }
+
+    .sys-mon-proc-chip {
+        font-size: 11px;
+        color: #4b5563;
+        background: #eef2ff;
+        border: 1px solid #dbeafe;
+        border-radius: 999px;
+        padding: 4px 10px;
+        font-family: monospace;
+    }
+
+    .sys-mon-proc-cards-wrap {
+        border-radius: 10px;
+        overflow: hidden;
+        max-height: 250px;
+        overflow-y: auto;
+        background: transparent;
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+    }
+
+
+
+    .sys-mon-proc-card {
+        background: #fff;
+        border: 1px solid #e5e5ea;
+        border-radius: 10px;
+        padding: 12px 14px;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        transition: border-color 0.2s;
+    }
+
+    .sys-mon-proc-card.is-root {
+        border-color: #bfdbfe;
+        background: #f8fafc;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.02);
+    }
+
+    .sys-mon-proc-card.is-root .sys-mon-proc-card-name {
+        color: #1d4ed8;
+        font-size: 14px;
+    }
+
+    .sys-mon-proc-card.is-root .sys-mon-proc-card-body {
+        border-color: #e2e8f0;
+        background: #fff;
+    }
+
+    .sys-mon-proc-card:hover {
+        border-color: #d1d1d6;
+    }
+
+    .sys-mon-proc-card.is-root:hover {
+        border-color: #93c5fd;
+    }
+
+    .sys-mon-proc-card-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+    }
+
+    .sys-mon-proc-card-name {
+        font-weight: 600;
+        color: #1d1d1f;
+        font-size: 13px;
+        word-break: break-all;
+    }
+
+    .sys-mon-proc-card-pid {
+        font-size: 11px;
+        color: #64748b;
+        font-family: monospace;
+    }
+
+    .sys-mon-proc-card-body {
+        display: grid;
+        grid-template-columns: repeat(2, 1fr);
+        gap: 8px;
+        background: #fafbfc;
+        padding: 8px 10px;
+        border-radius: 6px;
+        border: 1px solid #f0f0f5;
+    }
+
+    .sys-mon-proc-stat {
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+    }
+
+    .sys-mon-proc-stat-label {
+        font-size: 10px;
+        color: #888;
+        text-transform: uppercase;
+    }
+
+    .sys-mon-proc-stat-val {
+        font-size: 12px;
+        font-weight: 600;
+        color: #333;
+        font-family: monospace;
+    }
+
+    @media (min-width: 600px) {
+        .sys-mon-proc-card-body {
+            grid-template-columns: repeat(4, 1fr);
+        }
+    }
+
+    .sys-mon-proc-role {
+        display: inline-block;
+        padding: 2px 8px;
+        border-radius: 12px;
+        border: 1px solid #e5e7eb;
+        background: #f9fafb;
+        color: #475569;
+        font-size: 11px;
+        font-weight: 600;
+        white-space: nowrap;
+        text-transform: capitalize;
+    }
+
+    .sys-mon-proc-role.root {
+        background: #eff6ff;
+        border-color: #bfdbfe;
+        color: #1d4ed8;
+    }
+
+    .sys-mon-proc-role.cloudflare {
+        background: #fff7ed;
+        border-color: #fed7aa;
+        color: #c2410c;
+    }
+
+    .sys-mon-proc-role.mihomo {
+        background: #f5f3ff;
+        border-color: #ddd6fe;
+        color: #6d28d9;
+    }
+
+    .sys-mon-proc-empty {
+        padding: 12px 10px;
+        color: #9aa0aa;
+        font-size: 12px;
+        text-align: center;
+        border: 1px dashed #eceef3;
+        border-radius: 8px;
+        background: #fff;
     }
 
     /* ======================================================= */
@@ -1720,7 +1888,8 @@
                         </svg></div>
                 </div>
 
-                <div class="sys-nav-card" data-sys-id="offline-notify" onclick="selectSysCategory('offline-notify', this)">
+                <div class="sys-nav-card" data-sys-id="offline-notify"
+                    onclick="selectSysCategory('offline-notify', this)">
                     <div class="sys-nav-name">📡 离线通知</div>
                     <div class="sys-expand-indicator"><svg viewBox="0 0 24 24" width="16" height="16" fill="none"
                             stroke="currentColor" stroke-width="2">
@@ -1770,7 +1939,8 @@
                         <label class="sys-label" style="display:flex;align-items:center;gap:4px;">
                             系统日志等级
                             <div class="sys-info-tooltip-wrap" tabindex="0">
-                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                    stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                                     <circle cx="12" cy="12" r="10"></circle>
                                     <line x1="12" y1="8" x2="12" y2="12"></line>
                                     <line x1="12" y1="16" x2="12.01" y2="16"></line>
@@ -1792,7 +1962,8 @@
                         <label class="sys-label" style="display:flex;align-items:center;gap:4px;">
                             登录 Cookie 有效期
                             <div class="sys-info-tooltip-wrap" tabindex="0">
-                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                    stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                                     <circle cx="12" cy="12" r="10"></circle>
                                     <line x1="12" y1="8" x2="12" y2="12"></line>
                                     <line x1="12" y1="16" x2="12.01" y2="16"></line>
@@ -1810,7 +1981,8 @@
                         </select>
                     </div>
 
-                    <div class="sys-pref-row" style="align-items:center; border:1px solid #ffe0e0; background:#fff7f7; border-radius:10px; padding:10px 12px; margin-bottom:14px;">
+                    <div class="sys-pref-row"
+                        style="align-items:center; border:1px solid #ffe0e0; background:#fff7f7; border-radius:10px; padding:10px 12px; margin-bottom:14px;">
                         <div class="sys-pref-info">
                             <span class="sys-pref-title" style="color:#d32f2f;">强制使用 HTTP（忽略安全）</span>
                         </div>
@@ -1823,15 +1995,18 @@
                     <div style="display:grid; grid-template-columns: 1fr 1fr 1fr; gap:12px; margin-bottom:14px;">
                         <div class="sys-field" style="margin-bottom:0;">
                             <label class="sys-label">计数窗口（秒）</label>
-                            <input type="number" id="sys_login_ip_retry_window_sec" class="sys-input" min="30" max="86400" oninput="triggerSysAutoSave()">
+                            <input type="number" id="sys_login_ip_retry_window_sec" class="sys-input" min="30"
+                                max="86400" oninput="triggerSysAutoSave()">
                         </div>
                         <div class="sys-field" style="margin-bottom:0;">
                             <label class="sys-label">最大重试（次）</label>
-                            <input type="number" id="sys_login_ip_max_retries" class="sys-input" min="1" max="100" oninput="triggerSysAutoSave()">
+                            <input type="number" id="sys_login_ip_max_retries" class="sys-input" min="1" max="100"
+                                oninput="triggerSysAutoSave()">
                         </div>
                         <div class="sys-field" style="margin-bottom:0;">
                             <label class="sys-label">封禁时长（秒）</label>
-                            <input type="number" id="sys_login_ip_block_ttl_sec" class="sys-input" min="30" max="86400" oninput="triggerSysAutoSave()">
+                            <input type="number" id="sys_login_ip_block_ttl_sec" class="sys-input" min="30" max="86400"
+                                oninput="triggerSysAutoSave()">
                         </div>
                     </div>
 
@@ -1840,7 +2015,8 @@
                         <label class="sys-label" style="display:flex;align-items:center;gap:4px;">
                             面板外部访问地址 (Panel URL)
                             <div class="sys-info-tooltip-wrap" tabindex="0">
-                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                    stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                                     <circle cx="12" cy="12" r="10"></circle>
                                     <line x1="12" y1="8" x2="12" y2="12"></line>
                                     <line x1="12" y1="16" x2="12.01" y2="16"></line>
@@ -1857,7 +2033,8 @@
                         <label class="sys-label" style="display:flex;align-items:center;gap:4px;">
                             订阅安全凭证 (Sub Token)
                             <div class="sys-info-tooltip-wrap" tabindex="0">
-                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                    stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                                     <circle cx="12" cy="12" r="10"></circle>
                                     <line x1="12" y1="8" x2="12" y2="12"></line>
                                     <line x1="12" y1="16" x2="12.01" y2="16"></line>
@@ -1884,7 +2061,9 @@
                                 <span class="sys-pref-title" style="display:flex;align-items:center;gap:4px;">
                                     🚀 启用 Telegram Bot
                                     <div class="sys-info-tooltip-wrap" tabindex="0">
-                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none"
+                                            stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                                            stroke-linejoin="round">
                                             <circle cx="12" cy="12" r="10"></circle>
                                             <line x1="12" y1="8" x2="12" y2="12"></line>
                                             <line x1="12" y1="16" x2="12.01" y2="16"></line>
@@ -1896,17 +2075,21 @@
                                 </span>
                             </div>
                             <label class="sys-toggle-switch">
-                                <input type="checkbox" id="sys_tg_bot_enabled" onchange="updateTgBotSettingsVisibility(); triggerSysAutoSave()">
+                                <input type="checkbox" id="sys_tg_bot_enabled"
+                                    onchange="updateTgBotSettingsVisibility(); triggerSysAutoSave()">
                                 <span class="sys-toggle-slider"></span>
                             </label>
                         </div>
 
-                        <div id="sysTgCommandPanelRow" class="sys-pref-row" style="align-items: center; margin-bottom: 0; display:none;">
+                        <div id="sysTgCommandPanelRow" class="sys-pref-row"
+                            style="align-items: center; margin-bottom: 0; display:none;">
                             <div class="sys-pref-info">
                                 <span class="sys-pref-title" style="display:flex;align-items:center;gap:4px;">
                                     🧹 清理菜单并注册面板
                                     <div class="sys-info-tooltip-wrap" tabindex="0">
-                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none"
+                                            stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                                            stroke-linejoin="round">
                                             <circle cx="12" cy="12" r="10"></circle>
                                             <line x1="12" y1="8" x2="12" y2="12"></line>
                                             <line x1="12" y1="16" x2="12.01" y2="16"></line>
@@ -1918,7 +2101,8 @@
                                 </span>
                             </div>
                             <label class="sys-toggle-switch">
-                                <input type="checkbox" id="sys_tg_bot_register_commands" onchange="triggerSysAutoSave()">
+                                <input type="checkbox" id="sys_tg_bot_register_commands"
+                                    onchange="triggerSysAutoSave()">
                                 <span class="sys-toggle-slider"></span>
                             </label>
                         </div>
@@ -1931,7 +2115,9 @@
                                 <span class="sys-pref-title" style="display:flex;align-items:center;gap:4px;">
                                     整组测速完成通知
                                     <div class="sys-info-tooltip-wrap" tabindex="0">
-                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none"
+                                            stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                                            stroke-linejoin="round">
                                             <circle cx="12" cy="12" r="10"></circle>
                                             <line x1="12" y1="8" x2="12" y2="12"></line>
                                             <line x1="12" y1="16" x2="12.01" y2="16"></line>
@@ -1943,7 +2129,8 @@
                                 </span>
                             </div>
                             <label class="sys-toggle-switch">
-                                <input type="checkbox" id="sys_tg_speedtest_notify_enabled" onchange="triggerSysAutoSave()">
+                                <input type="checkbox" id="sys_tg_speedtest_notify_enabled"
+                                    onchange="triggerSysAutoSave()">
                                 <span class="sys-toggle-slider"></span>
                             </label>
                         </div>
@@ -1952,7 +2139,8 @@
                             <label class="sys-label" style="display:flex;align-items:center;gap:4px;">
                                 登录通知
                                 <div class="sys-info-tooltip-wrap" tabindex="0">
-                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                        stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                                         <circle cx="12" cy="12" r="10"></circle>
                                         <line x1="12" y1="8" x2="12" y2="12"></line>
                                         <line x1="12" y1="16" x2="12.01" y2="16"></line>
@@ -1976,7 +2164,8 @@
                         <label class="sys-label" style="display:flex;align-items:center;gap:4px;">
                             Telegram Bot Token
                             <div class="sys-info-tooltip-wrap" tabindex="0">
-                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                    stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                                     <circle cx="12" cy="12" r="10"></circle>
                                     <line x1="12" y1="8" x2="12" y2="12"></line>
                                     <line x1="12" y1="16" x2="12.01" y2="16"></line>
@@ -1999,7 +2188,8 @@
                         <label class="sys-label" style="display:flex;align-items:center;gap:4px;">
                             允许查询的 TG 用户白名单
                             <div class="sys-info-tooltip-wrap" tabindex="0">
-                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                    stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                                     <circle cx="12" cy="12" r="10"></circle>
                                     <line x1="12" y1="8" x2="12" y2="12"></line>
                                     <line x1="12" y1="16" x2="12.01" y2="16"></line>
@@ -2013,7 +2203,8 @@
                             style="max-height: 250px; display: flex; flex-direction: column; gap: 6px; margin-bottom: 0;">
                             <!-- rows injected here -->
                         </div>
-                        <button type="button" class="sys-btn-add-dashed" onclick="addTgWhitelistItem()" style="margin-top:10px;">
+                        <button type="button" class="sys-btn-add-dashed" onclick="addTgWhitelistItem()"
+                            style="margin-top:10px;">
                             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
                                 stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
                                 <line x1="12" y1="5" x2="12" y2="19"></line>
@@ -2031,7 +2222,8 @@
                             <span class="sys-pref-title" style="display:flex;align-items:center;gap:4px;">
                                 🔗 强制添加协议前缀
                                 <div class="sys-info-tooltip-wrap" tabindex="0">
-                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                        stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                                         <circle cx="12" cy="12" r="10"></circle>
                                         <line x1="12" y1="8" x2="12" y2="12"></line>
                                         <line x1="12" y1="16" x2="12.01" y2="16"></line>
@@ -2053,7 +2245,8 @@
                             <span class="sys-pref-title" style="display:flex;align-items:center;gap:4px;">
                                 🌍 节点名称显示国旗
                                 <div class="sys-info-tooltip-wrap" tabindex="0">
-                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                        stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                                         <circle cx="12" cy="12" r="10"></circle>
                                         <line x1="12" y1="8" x2="12" y2="12"></line>
                                         <line x1="12" y1="16" x2="12.01" y2="16"></line>
@@ -2076,7 +2269,8 @@
                             <span class="sys-pref-title" style="display:flex;align-items:center;gap:4px;">
                                 🗑️ 剔除机场无效节点
                                 <div class="sys-info-tooltip-wrap" tabindex="0">
-                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                        stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                                         <circle cx="12" cy="12" r="10"></circle>
                                         <line x1="12" y1="8" x2="12" y2="12"></line>
                                         <line x1="12" y1="16" x2="12.01" y2="16"></line>
@@ -2136,7 +2330,8 @@
                                     <p style="margin: 0; padding-bottom: 4px; font-weight: 600; color: #fff;">刷新间隔</p>
                                     <p style="margin: 0; padding-bottom: 4px;">决定客户端在后台多久拉取一次最新数据。</p>
                                     <p style="margin: 0; padding-bottom: 4px;">• <b>节点更新:</b> 中转/落地机场 (默认 300 秒)</p>
-                                    <p style="margin: 0; padding-bottom: 4px;">• <b>私有规则:</b> 用户自定义的分流/直连规则 (默认 3600 秒)</p>
+                                    <p style="margin: 0; padding-bottom: 4px;">• <b>私有规则:</b> 用户自定义的分流/直连规则 (默认 3600 秒)
+                                    </p>
                                     <p style="margin: 0;">• <b>公共规则:</b> 系统自带的公共规则集 (强制最小 86400 秒 / 24小时)</p>
                                 </div>
                             </div>
@@ -2175,7 +2370,8 @@
                                 </svg>
                                 <div class="sys-tooltip-content">
                                     <p style="margin: 0; padding-bottom: 4px; font-weight: 600; color: #fff;">参数说明</p>
-                                    <p style="margin: 0; padding-bottom: 4px;">• <b>流量记录最长保存时间:</b> 仅保留最近 N 天历史数据，超期自动清理。</p>
+                                    <p style="margin: 0; padding-bottom: 4px;">• <b>流量记录最长保存时间:</b> 仅保留最近 N
+                                        天历史数据，超期自动清理。</p>
                                     <p style="margin: 0;">• <b>节点在线状态:</b> 由 WS 连接实时判定，不再使用全局离线宽限期。</p>
                                 </div>
                             </div>
@@ -2196,7 +2392,8 @@
                                 </svg>
                                 <div class="sys-tooltip-content">
                                     <p style="margin: 0; padding-bottom: 4px; font-weight: 600; color: #fff;">参数说明</p>
-                                    <p style="margin: 0; padding-bottom: 4px;">• <b>实时累计:</b> Agent 每次上报原始计数器，后端实时累加。</p>
+                                    <p style="margin: 0; padding-bottom: 4px;">• <b>实时累计:</b> Agent 每次上报原始计数器，后端实时累加。
+                                    </p>
                                     <p style="margin: 0;">• <b>落库间隔:</b> 控制后端将内存累计写入数据库频率，范围 10-3600 秒。</p>
                                 </div>
                             </div>
@@ -2219,7 +2416,8 @@
                             <label class="sys-label" style="margin-bottom:0;display:flex;align-items:center;gap:4px;">
                                 节点离线通知设置
                                 <div class="sys-info-tooltip-wrap" tabindex="0">
-                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                        stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                                         <circle cx="12" cy="12" r="10"></circle>
                                         <line x1="12" y1="8" x2="12" y2="12"></line>
                                         <line x1="12" y1="16" x2="12.01" y2="16"></line>
@@ -2240,12 +2438,15 @@
                                     </div>
                                     <div class="sys-batch-inline-item">
                                         <label>宽限</label>
-                                        <input type="number" id="sysBatchOfflineNotifyGrace" class="sys-batch-inline-input" min="1" max="86400" value="180">
+                                        <input type="number" id="sysBatchOfflineNotifyGrace"
+                                            class="sys-batch-inline-input" min="1" max="86400" value="180">
                                         <span class="sys-batch-inline-unit">秒</span>
                                     </div>
-                                    <button type="button" class="sys-batch-inline-cancel" onclick="closeBatchInline()">取消</button>
+                                    <button type="button" class="sys-batch-inline-cancel"
+                                        onclick="closeBatchInline()">取消</button>
                                 </div>
-                                <button type="button" class="sys-offline-batch-btn" id="sysBatchToggleBtn" onclick="toggleBatchInline()">批量修改</button>
+                                <button type="button" class="sys-offline-batch-btn" id="sysBatchToggleBtn"
+                                    onclick="toggleBatchInline()">批量修改</button>
                             </div>
                         </div>
 
@@ -2260,7 +2461,8 @@
                                 <thead>
                                     <tr>
                                         <th class="sys-offline-th-select">
-                                            <input id="sysOfflineNotifySelectAll" type="checkbox" onchange="toggleOfflineNotifySelectAll(this.checked)">
+                                            <input id="sysOfflineNotifySelectAll" type="checkbox"
+                                                onchange="toggleOfflineNotifySelectAll(this.checked)">
                                         </th>
                                         <th class="sys-offline-th-name">服务器</th>
                                         <th class="sys-offline-th-status">状态</th>
@@ -2269,7 +2471,8 @@
                                 </thead>
                                 <tbody id="sysOfflineNotifyTableBody">
                                     <tr>
-                                        <td colspan="4" style="padding: 16px; text-align: center; color: #999;">加载中...</td>
+                                        <td colspan="4" style="padding: 16px; text-align: center; color: #999;">加载中...
+                                        </td>
                                     </tr>
                                 </tbody>
                             </table>
@@ -2283,7 +2486,8 @@
                             <span class="sys-pref-title" style="display:flex;align-items:center;gap:4px;">
                                 🔄 启用自动更新
                                 <div class="sys-info-tooltip-wrap" tabindex="0">
-                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                        stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                                         <circle cx="12" cy="12" r="10"></circle>
                                         <line x1="12" y1="8" x2="12" y2="12"></line>
                                         <line x1="12" y1="16" x2="12.01" y2="16"></line>
@@ -2316,7 +2520,8 @@
                         <label class="sys-label" style="display:flex;align-items:center;gap:4px;">
                             状态与操作
                             <div class="sys-info-tooltip-wrap" tabindex="0">
-                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                    stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                                     <circle cx="12" cy="12" r="10"></circle>
                                     <line x1="12" y1="8" x2="12" y2="12"></line>
                                     <line x1="12" y1="16" x2="12.01" y2="16"></line>
@@ -2344,7 +2549,8 @@
                             <span class="sys-pref-title" style="display:flex;align-items:center;gap:4px;">
                                 🔄 启用自动更新
                                 <div class="sys-info-tooltip-wrap" tabindex="0">
-                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                        stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                                         <circle cx="12" cy="12" r="10"></circle>
                                         <line x1="12" y1="8" x2="12" y2="12"></line>
                                         <line x1="12" y1="16" x2="12.01" y2="16"></line>
@@ -2365,7 +2571,8 @@
                         <label class="sys-label" style="display:flex;align-items:center;gap:4px;">
                             节点测速文件大小 (MB)
                             <div class="sys-info-tooltip-wrap" tabindex="0">
-                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                    stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                                     <circle cx="12" cy="12" r="10"></circle>
                                     <line x1="12" y1="8" x2="12" y2="12"></line>
                                     <line x1="12" y1="16" x2="12.01" y2="16"></line>
@@ -2397,7 +2604,8 @@
                         <label class="sys-label" style="display:flex;align-items:center;gap:4px;">
                             状态与操作
                             <div class="sys-info-tooltip-wrap" tabindex="0">
-                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                    stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                                     <circle cx="12" cy="12" r="10"></circle>
                                     <line x1="12" y1="8" x2="12" y2="12"></line>
                                     <line x1="12" y1="16" x2="12.01" y2="16"></line>
@@ -2545,6 +2753,30 @@
                             </div>
                         </div>
                     </div>
+
+                    <div class="sys-mon-proc-box">
+                        <div class="sys-mon-details-title"><svg width="14" height="14" viewBox="0 0 24 24" fill="none"
+                                stroke="currentColor" stroke-width="2">
+                                <path d="M9 3H5a2 2 0 0 0-2 2v4"></path>
+                                <path d="M15 3h4a2 2 0 0 1 2 2v4"></path>
+                                <path d="M9 21H5a2 2 0 0 1-2-2v-4"></path>
+                                <path d="M15 21h4a2 2 0 0 0 2-2v-4"></path>
+                                <rect x="7" y="7" width="10" height="10" rx="2"></rect>
+                            </svg> NodeCTL 进程树占用（含子进程）</div>
+                        <div class="sys-mon-proc-summary">
+                            <span class="sys-mon-proc-chip">PID: <span id="sysMonProcRootPid">--</span></span>
+                            <span class="sys-mon-proc-chip">进程数: <span id="sysMonProcCount">0</span></span>
+                            <span class="sys-mon-proc-chip">子进程: <span id="sysMonProcChildren">0</span></span>
+                            <span class="sys-mon-proc-chip">总 RSS: <span id="sysMonProcTotalRSS">0 MB</span></span>
+                            <span class="sys-mon-proc-chip">总 CPU: <span id="sysMonProcTotalCPU">0.00%</span></span>
+                        </div>
+                        <div class="sys-mon-proc-cards-wrap" id="sysMonProcCardsBody">
+                            <!-- Cards will be populated exactly like table rows here -->
+                        </div>
+                        <div id="sysMonProcEmpty" class="sys-mon-proc-empty" style="display:none; margin-top:8px;">
+                            当前没有检测到可展示的进程树数据
+                        </div>
+                    </div>
                 </div>
 
                 <div class="sys-form-section" id="sys-form-database" style="display:none;">
@@ -2576,14 +2808,17 @@
                         <label class="sys-label" style="display:flex;align-items:center;gap:4px;">
                             选择数据库引擎
                             <div class="sys-info-tooltip-wrap" tabindex="0">
-                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                    stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                                     <circle cx="12" cy="12" r="10"></circle>
                                     <line x1="12" y1="8" x2="12" y2="12"></line>
                                     <line x1="12" y1="16" x2="12.01" y2="16"></line>
                                 </svg>
                                 <div class="sys-tooltip-content">
-                                    <p style="margin: 0; padding-bottom: 4px; font-weight: 600; color: #fff;">数据库引擎说明</p>
-                                    <p style="margin: 0; padding-bottom: 4px;">• <b>SQLite:</b> 轻量级嵌入式数据库，零配置，适合小规模部署</p>
+                                    <p style="margin: 0; padding-bottom: 4px; font-weight: 600; color: #fff;">数据库引擎说明
+                                    </p>
+                                    <p style="margin: 0; padding-bottom: 4px;">• <b>SQLite:</b> 轻量级嵌入式数据库，零配置，适合小规模部署
+                                    </p>
                                     <p style="margin: 0;">• <b>PostgreSQL:</b> 企业级关系型数据库，支持高并发与复杂查询</p>
                                 </div>
                             </div>
@@ -2670,7 +2905,9 @@
                                     <label class="sys-label" style="display:flex;align-items:center;gap:4px;">
                                         📦 数据迁移 (SQLite → PostgreSQL)
                                         <div class="sys-info-tooltip-wrap" tabindex="0">
-                                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none"
+                                                stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                                                stroke-linejoin="round">
                                                 <circle cx="12" cy="12" r="10"></circle>
                                                 <line x1="12" y1="8" x2="12" y2="12"></line>
                                                 <line x1="12" y1="16" x2="12.01" y2="16"></line>
@@ -2680,11 +2917,13 @@
                                             </div>
                                         </div>
                                     </label>
-                                    <button type="button" id="btnDBMigrate" class="btn-sys-geo-action btn-sys-geo-update"
-                                        onclick="migrateAndSwitchAction()" style="font-size: 13px;">
+                                    <button type="button" id="btnDBMigrate"
+                                        class="btn-sys-geo-action btn-sys-geo-update" onclick="migrateAndSwitchAction()"
+                                        style="font-size: 13px;">
                                         🚀 迁移数据并切换到 PostgreSQL
                                     </button>
-                                    <div id="dbMigrateResult" style="margin-top: 10px; font-size: 12px; color: #666;"></div>
+                                    <div id="dbMigrateResult" style="margin-top: 10px; font-size: 12px; color: #666;">
+                                    </div>
                                 </div>
                             </div>
                         </div>
@@ -3619,6 +3858,104 @@
         return mb.toFixed(2) + ' MB';
     }
 
+    function formatPercent(v) {
+        const n = Number(v);
+        if (!Number.isFinite(n) || n < 0) return '0.00%';
+        return n.toFixed(2) + '%';
+    }
+
+    function formatUptimeSeconds(seconds) {
+        const s = Math.max(0, parseInt(seconds || 0, 10));
+        const d = Math.floor(s / 86400);
+        const h = Math.floor((s % 86400) / 3600);
+        const m = Math.floor((s % 3600) / 60);
+        const sec = s % 60;
+        if (d > 0) return `${d}天 ${h}时${m}分`;
+        if (h > 0) return `${h}时${m}分${sec}秒`;
+        if (m > 0) return `${m}分${sec}秒`;
+        return `${sec}秒`;
+    }
+
+    function escHtml(str) {
+        return String(str == null ? '' : str)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#39;');
+    }
+
+    function renderProcessMonitor(items) {
+        const body = document.getElementById('sysMonProcCardsBody');
+        const empty = document.getElementById('sysMonProcEmpty');
+        if (!body || !empty) return;
+
+        if (!items || items.length === 0) {
+            body.innerHTML = '';
+            body.style.display = 'none';
+            empty.style.display = 'block';
+            return;
+        }
+
+        body.style.display = 'flex';
+        empty.style.display = 'none';
+
+        const rootProcess = items.find(p => p.role === 'nodectl' || p.role === 'root') || items[0];
+        const childProcesses = items.filter(p => p !== rootProcess);
+
+        const renderCard = (p, isRoot) => {
+            const role = (p.role || 'child').toString();
+            let roleClass = '';
+            if (role === 'nodectl') roleClass = 'root';
+            else if (role === 'cloudflare') roleClass = 'cloudflare';
+            else if (role === 'mihomo') roleClass = 'mihomo';
+
+            const name = escHtml(p.name || 'unknown');
+            const pid = escHtml(p.pid || '--');
+            const cpu = formatPercent(p.cpu_percent);
+            const rss = formatBytes(Number(p.rss || 0));
+            const vms = formatBytes(Number(p.vms || 0));
+            const uptime = formatUptimeSeconds(p.uptime_seconds);
+            const rootClass = isRoot ? 'is-root' : '';
+
+            return `
+            <div class="sys-mon-proc-card ${rootClass}">
+                <div class="sys-mon-proc-card-head">
+                    <div style="display:flex; align-items:center; gap:8px;">
+                        <span class="sys-mon-proc-card-name">${name}</span>
+                        <span class="sys-mon-proc-card-pid">PID ${pid}</span>
+                    </div>
+                    <div>
+                        <span class="sys-mon-proc-role ${roleClass}">${escHtml(role)}</span>
+                    </div>
+                </div>
+                <div class="sys-mon-proc-card-body">
+                    <div class="sys-mon-proc-stat">
+                        <span class="sys-mon-proc-stat-label">CPU</span>
+                        <span class="sys-mon-proc-stat-val">${cpu}</span>
+                    </div>
+                    <div class="sys-mon-proc-stat">
+                        <span class="sys-mon-proc-stat-label">RSS</span>
+                        <span class="sys-mon-proc-stat-val">${rss}</span>
+                    </div>
+                    <div class="sys-mon-proc-stat">
+                        <span class="sys-mon-proc-stat-label">VMS</span>
+                        <span class="sys-mon-proc-stat-val">${vms}</span>
+                    </div>
+                    <div class="sys-mon-proc-stat">
+                        <span class="sys-mon-proc-stat-label">运行时间</span>
+                        <span class="sys-mon-proc-stat-val" style="color:#64748b; font-family:inherit;">${uptime}</span>
+                    </div>
+                </div>
+            </div>`;
+        };
+
+        const rootHtml = rootProcess ? renderCard(rootProcess, true) : '';
+        const childrenHtml = childProcesses.length > 0 ? childProcesses.map(p => renderCard(p, false)).join('') : '';
+
+        body.innerHTML = rootHtml + childrenHtml;
+    }
+
     async function fetchSystemMonitor() {
         try {
             const res = await fetch('/api/system-monitor');
@@ -3656,6 +3993,14 @@
                 document.getElementById('sysMonSysMem').innerText = formatBytes(d.sys_mem);
                 document.getElementById('sysMonTotalAlloc').innerText = formatBytes(d.total_alloc);
                 document.getElementById('sysMonStack').innerText = formatBytes(d.stack_inuse);
+
+                // 子进程/进程树统计
+                document.getElementById('sysMonProcRootPid').innerText = d.process_tree_pid ?? '--';
+                document.getElementById('sysMonProcCount').innerText = d.process_tree_count ?? 0;
+                document.getElementById('sysMonProcChildren').innerText = d.process_tree_children_count ?? 0;
+                document.getElementById('sysMonProcTotalRSS').innerText = formatBytes(Number(d.process_tree_total_rss || 0));
+                document.getElementById('sysMonProcTotalCPU').innerText = formatPercent(d.process_tree_total_cpu_percent || 0);
+                renderProcessMonitor(d.process_tree_items || []);
             }
         } catch (e) {
             console.error("无法获取系统监控数据", e);
@@ -3689,13 +4034,13 @@
         if (!container) return;
 
         tgBotWhitelistItems = tgBotWhitelistItems.map(item => ({
-			id: item.id || '',
-			remark: item.remark || '',
-			notify_node: item.notify_node !== false,
-			notify_login: item.notify_login !== false,
-                notify_speedtest: item.notify_speedtest !== false,
+            id: item.id || '',
+            remark: item.remark || '',
+            notify_node: item.notify_node !== false,
+            notify_login: item.notify_login !== false,
+            notify_speedtest: item.notify_speedtest !== false,
             notify_open: item.notify_open === true,
-		}));
+        }));
 
         if (tgBotWhitelistItems.length === 0) {
             container.innerHTML = '<div style="text-align: center; color: #999; font-size: 12px; padding: 10px;">暂无允许查询的白名单用户</div>';

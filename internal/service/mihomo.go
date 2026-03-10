@@ -255,21 +255,50 @@ type MinimalConfig struct {
 	Proxies            []interface{} `yaml:"proxies"`
 }
 
+type batchTestTarget struct {
+	NodeID    string
+	NodeName  string
+	ProxyName string
+	Link      string
+}
+
+func buildTestProxyPayload(name, link string) (map[string]interface{}, error) {
+	clashNode := ParseLinkToClashNode(link, "")
+	if clashNode == nil {
+		return nil, errors.New("parse_failed")
+	}
+
+	if clashNode.Server == "" || clashNode.Port <= 0 || clashNode.Port > 65535 {
+		return nil, errors.New("invalid_server_or_port")
+	}
+
+	clashNode.Name = name
+	nodeMap := make(map[string]interface{})
+	nodeBytes, _ := yaml.Marshal(clashNode)
+	yaml.Unmarshal(nodeBytes, &nodeMap)
+
+	if clashNode.Type == "vmess" && clashNode.Cipher == "" {
+		nodeMap["cipher"] = "auto"
+	}
+
+	return nodeMap, nil
+}
+
 // GenerateTestConfig 动态生成 Mihomo 测速所需的临时 yaml 文件
 // 接收一个节点数组，支持单节点或多节点批量测试
-func (s *MihomoService) GenerateTestConfig(nodes []TestNodeInfo) (yamlPath string, apiPort int, mixedPort int, err error) {
+func (s *MihomoService) GenerateTestConfig(nodes []TestNodeInfo) (yamlPath string, apiPort int, mixedPort int, accepted map[string]struct{}, err error) {
 	if len(nodes) == 0 {
-		return "", 0, 0, errors.New("没有需要测试的节点")
+		return "", 0, 0, nil, errors.New("没有需要测试的节点")
 	}
 
 	// 1. 获取两个系统的随机空闲端口，避免与系统其他服务冲突
 	apiPort, err = getFreePort()
 	if err != nil {
-		return "", 0, 0, fmt.Errorf("分配 API 端口失败: %w", err)
+		return "", 0, 0, nil, fmt.Errorf("分配 API 端口失败: %w", err)
 	}
 	mixedPort, err = getFreePort()
 	if err != nil {
-		return "", 0, 0, fmt.Errorf("分配代理端口失败: %w", err)
+		return "", 0, 0, nil, fmt.Errorf("分配代理端口失败: %w", err)
 	}
 
 	// 2. 组装极简基础配置
@@ -283,43 +312,26 @@ func (s *MihomoService) GenerateTestConfig(nodes []TestNodeInfo) (yamlPath strin
 	}
 
 	// 3. 复用 links.go 解析逻辑，将数据库 Link 转为 Mihomo 节点
+	accepted = make(map[string]struct{}, len(nodes))
 	for _, n := range nodes {
-		clashNode := ParseLinkToClashNode(n.Link, "")
-		if clashNode != nil {
-			if clashNode.Server == "" || clashNode.Port <= 0 || clashNode.Port > 65535 {
-				logger.Log.Warn("测试节点基础参数缺失已拦截", "name", n.Name)
-				continue
-			}
-
-			clashNode.Name = n.Name
-
-			// AlterId 已改为 *int，yaml.Marshal 可正确序列化 alterId:0；
-			// 此处仅保留 cipher 兜底修复。
-			nodeMap := make(map[string]interface{})
-			nodeBytes, _ := yaml.Marshal(clashNode)
-			yaml.Unmarshal(nodeBytes, &nodeMap) // 先转成通用的 map
-
-			if clashNode.Type == "vmess" {
-				// 防止因为 omitempty 导致 cipher 丢失，引起引擎 Parse config error
-				if clashNode.Cipher == "" {
-					nodeMap["cipher"] = "auto"
-				}
-			}
-
-			config.Proxies = append(config.Proxies, nodeMap)
-		} else {
+		nodeMap, parseErr := buildTestProxyPayload(n.Name, n.Link)
+		if parseErr != nil {
 			logger.Log.Warn("测试节点解析失败跳过", "name", n.Name, "link", n.Link)
+			continue
 		}
+
+		config.Proxies = append(config.Proxies, nodeMap)
+		accepted[n.Name] = struct{}{}
 	}
 
 	if len(config.Proxies) == 0 {
-		return "", 0, 0, errors.New("所有节点解析均失败，无法生成测试配置")
+		return "", 0, 0, nil, errors.New("所有节点解析均失败，无法生成测试配置")
 	}
 
 	// 4. 创建随机的临时配置文件 (支持高并发，不同用户同时测速不会冲突)
 	tempFile, err := os.CreateTemp(s.dirPath, "test_*.yaml")
 	if err != nil {
-		return "", 0, 0, fmt.Errorf("创建临时配置文件失败: %w", err)
+		return "", 0, 0, nil, fmt.Errorf("创建临时配置文件失败: %w", err)
 	}
 	defer tempFile.Close()
 
@@ -328,11 +340,11 @@ func (s *MihomoService) GenerateTestConfig(nodes []TestNodeInfo) (yamlPath strin
 	encoder.SetIndent(2)
 	if err := encoder.Encode(&config); err != nil {
 		os.Remove(tempFile.Name()) // 出错时清理残骸
-		return "", 0, 0, fmt.Errorf("写入 YAML 失败: %w", err)
+		return "", 0, 0, nil, fmt.Errorf("写入 YAML 失败: %w", err)
 	}
 	encoder.Close()
 
-	return tempFile.Name(), apiPort, mixedPort, nil
+	return tempFile.Name(), apiPort, mixedPort, accepted, nil
 }
 
 // getFreePort 向操作系统申请一个可用的随机 TCP 端口
@@ -353,7 +365,7 @@ func getFreePort() (int, error) {
 type SpeedTestResult struct {
 	NodeID string `json:"node_id"`
 	Type   string `json:"type"` // "ping" | "tcp" | "speed" | "error"
-	Text   string `json:"text"` // 界面显示的文字，如 "45ms", "5.2 MB/s"
+	Text   string `json:"text"` // 界面显示的文字，如 "45ms", "42.0 MBps"
 }
 
 func NormalizeSpeedTestMode(mode string) string {
@@ -365,323 +377,323 @@ func NormalizeSpeedTestMode(mode string) string {
 	}
 }
 
+func switchBatchProxy(client *http.Client, apiPort int, proxyName string) error {
+	body, _ := json.Marshal(map[string]string{"name": proxyName})
+	req, err := http.NewRequest(http.MethodPut, fmt.Sprintf("http://127.0.0.1:%d/proxies/GLOBAL", apiPort), bytes.NewReader(body))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return fmt.Errorf("switch proxy failed: %s", resp.Status)
+	}
+	return nil
+}
+
 // RunBatchTestWithMode 流水线逐个启动核心并进行测速 (支持按请求指定模式)
 func (s *MihomoService) RunBatchTestWithMode(ctx context.Context, nodes []database.AirportNode, resultChan chan<- SpeedTestResult, mode string) {
 	defer close(resultChan) // 退出时自动关闭通道，前端 SSE 连接结束
 
 	testMode := NormalizeSpeedTestMode(mode)
 
-	// 开始流水线排队测试
-	for _, n := range nodes {
-		// 每次测试前检查用户是否停止了测试，判断逻辑是用户关闭弹窗或者手动停止。如果是则立刻中断后续所有测试
+	batchTargets := make([]batchTestTarget, 0, len(nodes))
+	configNodes := make([]TestNodeInfo, 0, len(nodes))
+	for i, n := range nodes {
+		proxyName := fmt.Sprintf("__nodectl_%d_%d", time.Now().UnixNano(), i)
+		batchTargets = append(batchTargets, batchTestTarget{
+			NodeID:    n.ID,
+			NodeName:  n.Name,
+			ProxyName: proxyName,
+			Link:      n.Link,
+		})
+		configNodes = append(configNodes, TestNodeInfo{Name: proxyName, Link: n.Link})
+	}
+
+	yamlPath, apiPort, mixedPort, accepted, err := s.GenerateTestConfig(configNodes)
+	if err != nil {
+		for _, t := range batchTargets {
+			resultChan <- SpeedTestResult{NodeID: t.NodeID, Type: "error", Text: "配置残缺"}
+		}
+		return
+	}
+	defer os.Remove(yamlPath)
+
+	testable := make([]batchTestTarget, 0, len(batchTargets))
+	for _, t := range batchTargets {
+		if _, ok := accepted[t.ProxyName]; !ok {
+			resultChan <- SpeedTestResult{NodeID: t.NodeID, Type: "error", Text: "配置残缺"}
+			continue
+		}
+		testable = append(testable, t)
+	}
+	if len(testable) == 0 {
+		return
+	}
+
+	cmd := exec.CommandContext(ctx, s.binPath, "-d", s.dirPath, "-f", yamlPath)
+	var outBuf bytes.Buffer
+	cmd.Stdout = &outBuf
+	cmd.Stderr = &outBuf
+
+	if err := cmd.Start(); err != nil {
+		for _, t := range testable {
+			resultChan <- SpeedTestResult{NodeID: t.NodeID, Type: "error", Text: "引擎拉起失败"}
+		}
+		return
+	}
+	defer func() {
+		if cmd.Process != nil {
+			cmd.Process.Kill()
+		}
+	}()
+
+	processExit := make(chan error, 1)
+	go func() { processExit <- cmd.Wait() }()
+
+	client := &http.Client{Timeout: 2 * time.Second}
+	ready := false
+	for i := 0; i < 75; i++ {
+		select {
+		case <-processExit:
+			errMsg := "引擎异常"
+			if strings.Contains(outBuf.String(), "Parse config error") || strings.Contains(outBuf.String(), "unmarshal errors") {
+				errMsg = "协议不兼容"
+			}
+			logger.Log.Warn("批量引擎拦截", "error", outBuf.String())
+			for _, t := range testable {
+				resultChan <- SpeedTestResult{NodeID: t.NodeID, Type: "error", Text: errMsg}
+			}
+			return
+		default:
+		}
+
+		resp, reqErr := client.Get(fmt.Sprintf("http://127.0.0.1:%d/version", apiPort))
+		if reqErr == nil && resp.StatusCode == http.StatusOK {
+			ready = true
+			resp.Body.Close()
+			break
+		}
+		if resp != nil {
+			resp.Body.Close()
+		}
+		time.Sleep(200 * time.Millisecond)
+	}
+
+	if !ready {
+		for _, t := range testable {
+			resultChan <- SpeedTestResult{NodeID: t.NodeID, Type: "error", Text: "启动超时"}
+		}
+		return
+	}
+
+	proxyURL, _ := url.Parse(fmt.Sprintf("socks5://127.0.0.1:%d", mixedPort))
+	proxyTransport := &http.Transport{Proxy: http.ProxyURL(proxyURL)}
+
+	var fileSizeConfig database.SysConfig
+	database.DB.Where("key = ?", "pref_speed_test_file_size").First(&fileSizeConfig)
+	fileSizeMB := "50"
+	if fileSizeConfig.Value != "" {
+		fileSizeMB = fileSizeConfig.Value
+	}
+
+	bytesSize := "50000000"
+	if mb, convErr := strconv.Atoi(fileSizeMB); convErr == nil && mb > 0 {
+		bytesSize = fmt.Sprintf("%d", mb*1000000)
+	}
+
+	speedURLs := []string{
+		fmt.Sprintf("https://speed.cloudflare.com/__down?bytes=%s", bytesSize),
+		fmt.Sprintf("http://speedtest.tele2.net/%sMB.zip", fileSizeMB),
+		fmt.Sprintf("https://proof.ovh.net/files/%sMb.dat", fileSizeMB),
+	}
+
+	for _, t := range testable {
 		select {
 		case <-ctx.Done():
 			return
 		default:
 		}
 
-		// 使用匿名函数包装单节点测试逻辑，利用 defer 确保哪怕崩溃也能完美清理当前节点的文件和进程
-		func(node database.AirportNode) {
-			// 1. 为【这一个节点】单独生成极简配置
-			testInfos := []TestNodeInfo{{Name: node.Name, Link: node.Link}}
-			yamlPath, apiPort, mixedPort, err := s.GenerateTestConfig(testInfos)
-			if err != nil {
-				// 配置残缺，直接把错误推送到【当前节点】的标签上，不再引发全局 Alert
-				resultChan <- SpeedTestResult{NodeID: node.ID, Type: "error", Text: "配置残缺"}
-				return
-			}
-			defer os.Remove(yamlPath) // 测完即焚
+		if err := switchBatchProxy(client, apiPort, t.ProxyName); err != nil {
+			resultChan <- SpeedTestResult{NodeID: t.NodeID, Type: "error", Text: "切换失败"}
+			continue
+		}
 
-			// 2. 为【这一个节点】拉起 Mihomo 进程
-			cmd := exec.CommandContext(ctx, s.binPath, "-d", s.dirPath, "-f", yamlPath)
+		delayURL := fmt.Sprintf("http://127.0.0.1:%d/proxies/%s/delay?timeout=5000&url=http://cp.cloudflare.com/generate_204", apiPort, url.PathEscape(t.ProxyName))
 
-			var outBuf bytes.Buffer
-			cmd.Stdout = &outBuf
-			cmd.Stderr = &outBuf
-
-			if err := cmd.Start(); err != nil {
-				resultChan <- SpeedTestResult{NodeID: node.ID, Type: "error", Text: "引擎拉起失败"}
-				return
-			}
-
-			// 确保测完彻底杀掉进程
-			defer func() {
-				if cmd.Process != nil {
-					cmd.Process.Kill()
+		var totalPing int
+		var pingSuccess int
+		for i := 0; i < 3; i++ {
+			resp, reqErr := client.Get(delayURL)
+			if reqErr == nil {
+				var delayRes struct {
+					Delay int `json:"delay"`
 				}
-			}()
-
-			// 3. 监控当前引擎是否秒退
-			processExit := make(chan error, 1)
-			go func() {
-				processExit <- cmd.Wait()
-			}()
-
-			client := &http.Client{Timeout: 2 * time.Second}
-			ready := false
-			crashed := false
-
-			for i := 0; i < 75; i++ {
-				select {
-				case <-processExit:
-					crashed = true
-					errMsg := "引擎异常"
-					// 精准捕获 Mihomo 抛出的不兼容错误
-					if strings.Contains(outBuf.String(), "Parse config error") || strings.Contains(outBuf.String(), "unmarshal errors") {
-						errMsg = "协议不兼容"
-					}
-					logger.Log.Warn("单节点引擎拦截", "node", node.Name, "error", outBuf.String())
-
-					// 将错误发送给指定 NodeID，前端会自动渲染为红色的 Tag，而不是弹出 Alert
-					resultChan <- SpeedTestResult{NodeID: node.ID, Type: "error", Text: errMsg}
-				default:
+				if decodeErr := json.NewDecoder(resp.Body).Decode(&delayRes); decodeErr == nil && delayRes.Delay > 0 {
+					totalPing += delayRes.Delay
+					pingSuccess++
 				}
-
-				if crashed {
-					break // 引擎已崩，跳出等待
-				}
-
-				resp, err := client.Get(fmt.Sprintf("http://127.0.0.1:%d/version", apiPort))
-				if err == nil && resp.StatusCode == 200 {
-					ready = true
-					resp.Body.Close()
-					break
-				}
-				time.Sleep(200 * time.Millisecond)
+				resp.Body.Close()
 			}
-
-			if crashed {
-				return // 错误已发送，直接进入下一个节点的测试
+			if i < 2 {
+				time.Sleep(100 * time.Millisecond)
 			}
+		}
 
-			if !ready {
-				resultChan <- SpeedTestResult{NodeID: node.ID, Type: "error", Text: "启动超时"}
-				return
-			}
-
-			// 4. 引擎就绪，开始执行实际的测速逻辑...
-			proxyURL, _ := url.Parse(fmt.Sprintf("socks5://127.0.0.1:%d", mixedPort))
-			proxyTransport := &http.Transport{Proxy: http.ProxyURL(proxyURL)}
-
-			// --- 步骤 A: 基础测延迟 (Ping) ---
-			delayURL := fmt.Sprintf("http://127.0.0.1:%d/proxies/%s/delay?timeout=5000&url=http://cp.cloudflare.com/generate_204", apiPort, url.PathEscape(node.Name))
-
-			var totalPing int
-			var pingSuccess int
-
-			// 循环测试 3 次，取成功次数的平均值
+		var totalTCPDelay int64
+		var tcpSuccess int
+		if testMode == "all" || pingSuccess == 0 {
+			tcpClient := &http.Client{Transport: proxyTransport, Timeout: 3 * time.Second}
 			for i := 0; i < 3; i++ {
-				resp, err := client.Get(delayURL)
-				if err == nil {
-					var delayRes struct {
-						Delay int `json:"delay"`
-					}
-					// 解析 JSON 并确认 Delay > 0
-					if decodeErr := json.NewDecoder(resp.Body).Decode(&delayRes); decodeErr == nil && delayRes.Delay > 0 {
-						totalPing += delayRes.Delay
-						pingSuccess++
-					}
-					resp.Body.Close() // 循环内必须手动关闭 Body 释放连接
+				reqTCP, _ := http.NewRequest("HEAD", "http://1.1.1.1", nil)
+				reqTCP.Close = true
+
+				startTCP := time.Now()
+				tcpResp, reqErr := tcpClient.Do(reqTCP)
+				if reqErr == nil {
+					tcpResp.Body.Close()
+					totalTCPDelay += time.Since(startTCP).Milliseconds()
+					tcpSuccess++
 				}
-				// 每次请求间隔 100ms，防止被目标服务器限流
 				if i < 2 {
 					time.Sleep(100 * time.Millisecond)
 				}
 			}
+		}
 
-			// === 核心修改区：引入 TCP Fallback 兜底逻辑 ===
-			var totalTCPDelay int64
-			var tcpSuccess int
+		var avgTCPDelay int64
+		if tcpSuccess > 0 {
+			avgTCPDelay = totalTCPDelay / int64(tcpSuccess)
+		}
 
-			// 触发 TCP 测试的两个条件：
-			// 1. testMode == "all" (用户本来就要求完整测试 TCP 延迟)
-			// 2. pingSuccess == 0 (Ping不通，需要用 TCP Fallback 验证节点是否真死了)
-			if testMode == "all" || pingSuccess == 0 {
-				tcpClient := &http.Client{
-					Transport: proxyTransport,
-					Timeout:   3 * time.Second,
-				}
-				// 循环测试 3 次
-				for i := 0; i < 3; i++ {
-					reqTCP, _ := http.NewRequest("HEAD", "http://1.1.1.1", nil)
-					reqTCP.Close = true // 强制禁止 Keep-Alive，保证每次都是真实握手
+		if pingSuccess > 0 {
+			avgPing := totalPing / pingSuccess
+			resultChan <- SpeedTestResult{NodeID: t.NodeID, Type: "ping", Text: fmt.Sprintf("%d ms", avgPing)}
+		} else if tcpSuccess > 0 {
+			resultChan <- SpeedTestResult{NodeID: t.NodeID, Type: "ping", Text: fmt.Sprintf("TCP %dms", avgTCPDelay)}
+		} else {
+			resultChan <- SpeedTestResult{NodeID: t.NodeID, Type: "error", Text: "无效节点"}
+			continue
+		}
 
-					startTCP := time.Now()
-					tcpResp, err := tcpClient.Do(reqTCP)
-					if err == nil {
-						tcpResp.Body.Close() // 循环内手动关闭
-						totalTCPDelay += time.Since(startTCP).Milliseconds()
-						tcpSuccess++
-					}
-					if i < 2 {
-						time.Sleep(100 * time.Millisecond)
-					}
-				}
-			}
+		if testMode == "ping_only" {
+			continue
+		}
 
-			var avgTCPDelay int64
+		if testMode == "all" {
 			if tcpSuccess > 0 {
-				avgTCPDelay = totalTCPDelay / int64(tcpSuccess)
-			}
-
-			if pingSuccess > 0 {
-				// 存活情况 1：常规 Ping 正常通车
-				avgPing := totalPing / pingSuccess
-				resultChan <- SpeedTestResult{NodeID: node.ID, Type: "ping", Text: fmt.Sprintf("%d ms", avgPing)}
-			} else if tcpSuccess > 0 {
-				// 存活情况 2：Ping 阵亡，但 TCP 握手存活 (Fallback 成功)
-				resultChan <- SpeedTestResult{NodeID: node.ID, Type: "ping", Text: fmt.Sprintf("TCP %dms", avgTCPDelay)}
+				resultChan <- SpeedTestResult{NodeID: t.NodeID, Type: "tcp", Text: fmt.Sprintf("%d ms", avgTCPDelay)}
 			} else {
-				// 绝望情况：双双阵亡，正式宣告死刑
-				resultChan <- SpeedTestResult{NodeID: node.ID, Type: "error", Text: "无效节点"}
-				return // 彻底终止该节点的后续带宽测速
+				resultChan <- SpeedTestResult{NodeID: t.NodeID, Type: "error", Text: "TCP异常"}
+				continue
 			}
+		}
 
-			if testMode == "ping_only" {
+		speedClient := &http.Client{Transport: proxyTransport, Timeout: 8 * time.Second}
+		var finalSpeedMBps float64
+		var speedSuccess bool
+		var interceptCode int
+		var speedMu sync.Mutex
+
+		ctxTraffic, cancelTraffic := context.WithCancel(context.Background())
+		go func() {
+			defer cancelTraffic()
+			trafficReq, reqErr := http.NewRequestWithContext(ctxTraffic, "GET", fmt.Sprintf("http://127.0.0.1:%d/traffic", apiPort), nil)
+			if reqErr != nil {
 				return
 			}
+			trafficClient := &http.Client{Timeout: 0}
+			trafficResp, reqErr := trafficClient.Do(trafficReq)
+			if reqErr != nil {
+				return
+			}
+			defer trafficResp.Body.Close()
 
-			// 如果是 all 模式，且既然活到了这里，正常填补前端 tcp 列的数据
-			if testMode == "all" {
-				if tcpSuccess > 0 {
-					resultChan <- SpeedTestResult{NodeID: node.ID, Type: "tcp", Text: fmt.Sprintf("%d ms", avgTCPDelay)}
-				} else {
-					// 走到这里的极端边缘情况：Ping 通了，但 TCP 却死了。不适合继续测速。
-					resultChan <- SpeedTestResult{NodeID: node.ID, Type: "error", Text: "TCP异常"}
-					return
+			decoder := json.NewDecoder(trafficResp.Body)
+			for {
+				var traffic struct {
+					Up   int64 `json:"up"`
+					Down int64 `json:"down"`
 				}
+				if err := decoder.Decode(&traffic); err != nil {
+					break
+				}
+				currentMBps := float64(traffic.Down) / 1024 / 1024
+
+				speedMu.Lock()
+				if currentMBps > finalSpeedMBps {
+					finalSpeedMBps = currentMBps
+				}
+				speedMu.Unlock()
+			}
+		}()
+
+		for _, targetURL := range speedURLs {
+			reqSpeed, _ := http.NewRequest("GET", targetURL, nil)
+			reqSpeed.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
+			reqSpeed.Header.Set("Cache-Control", "no-cache")
+
+			speedResp, reqErr := speedClient.Do(reqSpeed)
+			if reqErr != nil {
+				continue
 			}
 
-			// --- 步骤 C: 测真实带宽 (通过 Mihomo /traffic 接口获取内核级真实峰值) ---
-			speedClient := &http.Client{
-				Transport: proxyTransport,
-				Timeout:   8 * time.Second, // 延长到 8 秒
-			}
-
-			// 动态获取用户设置的测速文件大小 (默认 50MB)
-			var fileSizeConfig database.SysConfig
-			database.DB.Where("key = ?", "pref_speed_test_file_size").First(&fileSizeConfig)
-			fileSizeMB := "50"
-			if fileSizeConfig.Value != "" {
-				fileSizeMB = fileSizeConfig.Value
-			}
-
-			// 将 MB 转换为所需的格式
-			bytesSize := "50000000"
-			if mb, err := strconv.Atoi(fileSizeMB); err == nil && mb > 0 {
-				bytesSize = fmt.Sprintf("%d", mb*1000000)
-			}
-
-			// 1. 建立备用测速池：提升测速包体积，拉长整个连接过程给足充分时间去冲高并发流量
-			speedURLs := []string{
-				fmt.Sprintf("https://speed.cloudflare.com/__down?bytes=%s", bytesSize),
-				fmt.Sprintf("http://speedtest.tele2.net/%sMB.zip", fileSizeMB),
-				fmt.Sprintf("https://proof.ovh.net/files/%sMb.dat", fileSizeMB),
-			}
-
-			var finalSpeedMBps float64
-			var speedSuccess bool
-			var interceptCode int // 专门记录是否真的被拉黑
-			var speedMu sync.Mutex
-
-			// 启动独立的 traffic 监听协程
-			ctxTraffic, cancelTraffic := context.WithCancel(context.Background())
-			defer cancelTraffic()
-
-			go func() {
-				trafficReq, err := http.NewRequestWithContext(ctxTraffic, "GET", fmt.Sprintf("http://127.0.0.1:%d/traffic", apiPort), nil)
-				if err != nil {
-					return
-				}
-				trafficClient := &http.Client{Timeout: 0}
-				trafficResp, err := trafficClient.Do(trafficReq)
-				if err != nil {
-					return
-				}
-				defer trafficResp.Body.Close()
-
-				decoder := json.NewDecoder(trafficResp.Body)
-				for {
-					var traffic struct {
-						Up   int64 `json:"up"`
-						Down int64 `json:"down"`
-					}
-					if err := decoder.Decode(&traffic); err != nil {
-						break
-					}
-					// Mihomo traffic 接口返回的是每秒的 Byte 数 (B/s)
-					currentMBps := float64(traffic.Down) / 1024 / 1024
-
-					speedMu.Lock()
-					if currentMBps > finalSpeedMBps {
-						finalSpeedMBps = currentMBps
-					}
-					speedMu.Unlock()
-				}
-			}()
-
-			for _, targetURL := range speedURLs {
-				reqSpeed, _ := http.NewRequest("GET", targetURL, nil)
-				reqSpeed.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
-				reqSpeed.Header.Set("Cache-Control", "no-cache")
-
-				speedResp, err := speedClient.Do(reqSpeed)
-				if err != nil {
-					continue
-				}
-
-				statusCode := speedResp.StatusCode
-				if statusCode == http.StatusOK {
-					startSpeed := time.Now()
-
-					maxTestTimer := time.AfterFunc(4*time.Second, func() {
-						speedResp.Body.Close()
-					})
-
-					buf := make([]byte, 256*1024)
-					written, _ := io.CopyBuffer(io.Discard, speedResp.Body, buf)
-
-					maxTestTimer.Stop()
-					duration := time.Since(startSpeed).Seconds()
+			statusCode := speedResp.StatusCode
+			if statusCode == http.StatusOK {
+				startSpeed := time.Now()
+				maxTestTimer := time.AfterFunc(4*time.Second, func() {
 					speedResp.Body.Close()
+				})
 
-					time.Sleep(200 * time.Millisecond)
+				buf := make([]byte, 256*1024)
+				written, _ := io.CopyBuffer(io.Discard, speedResp.Body, buf)
 
+				maxTestTimer.Stop()
+				duration := time.Since(startSpeed).Seconds()
+				speedResp.Body.Close()
+				time.Sleep(200 * time.Millisecond)
+
+				speedMu.Lock()
+				currentMax := finalSpeedMBps
+				speedMu.Unlock()
+
+				if currentMax == 0 && duration > 0 && written > 1024 {
 					speedMu.Lock()
-					currentMax := finalSpeedMBps
+					finalSpeedMBps = (float64(written) / 1024 / 1024) / duration
 					speedMu.Unlock()
-
-					// 兜底机制：如果没能捕捉到 traffic峰值（网速过快或测速极其短暂），但确实下载到了大量数据
-					if currentMax == 0 && duration > 0 && written > 1024 {
-						speedMu.Lock()
-						finalSpeedMBps = (float64(written) / 1024 / 1024) / duration
-						speedMu.Unlock()
-					}
-
-					// 只要从 traffic 接口采集到了峰值速度，或者下载了足够的数据，就认为测速成功
-					if currentMax > 0 || written > 1024 {
-						speedSuccess = true
-						break // 只要有一个源测速成功，立刻跳出循环
-					}
-				} else {
-					speedResp.Body.Close()
-					if statusCode == 429 || statusCode == 403 {
-						interceptCode = statusCode
-					}
+					currentMax = finalSpeedMBps
 				}
-			}
 
-			// 综合裁决输出
-			if speedSuccess {
-				resultChan <- SpeedTestResult{NodeID: node.ID, Type: "speed", Text: fmt.Sprintf("%.2f MB/s", finalSpeedMBps)}
-			} else if interceptCode > 0 {
-				resultChan <- SpeedTestResult{NodeID: node.ID, Type: "error", Text: fmt.Sprintf("节点拦截(%d)", interceptCode)}
+				if currentMax > 0 || written > 1024 {
+					speedSuccess = true
+					break
+				}
 			} else {
-				resultChan <- SpeedTestResult{NodeID: node.ID, Type: "error", Text: "测速超时"}
+				speedResp.Body.Close()
+				if statusCode == 429 || statusCode == 403 {
+					interceptCode = statusCode
+				}
 			}
+		}
 
-			// 4. 温和测速：当前节点测试完毕后，强制休眠 300 毫秒
-			time.Sleep(300 * time.Millisecond)
-		}(n) // 将当前节点传入匿名函数执行
+		cancelTraffic()
+
+		if speedSuccess {
+			finalSpeedMbps := finalSpeedMBps * 8
+			resultChan <- SpeedTestResult{NodeID: t.NodeID, Type: "speed", Text: fmt.Sprintf("%.2f MBps", finalSpeedMbps)}
+		} else if interceptCode > 0 {
+			resultChan <- SpeedTestResult{NodeID: t.NodeID, Type: "error", Text: fmt.Sprintf("节点拦截(%d)", interceptCode)}
+		} else {
+			resultChan <- SpeedTestResult{NodeID: t.NodeID, Type: "error", Text: "测速超时"}
+		}
+
+		time.Sleep(300 * time.Millisecond)
 	}
 }

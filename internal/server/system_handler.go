@@ -4,7 +4,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"os"
 	"runtime"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -12,6 +14,8 @@ import (
 	"nodectl/internal/database"
 	"nodectl/internal/logger"
 	"nodectl/internal/service"
+
+	"github.com/shirou/gopsutil/v4/process"
 )
 
 // ------------------- [系统运维 API] -------------------
@@ -106,6 +110,7 @@ func apiGetSystemMonitor(w http.ResponseWriter, r *http.Request) {
 	uptimeStr += fmt.Sprintf("%d时%d分%d秒", hours, minutes, seconds)
 
 	// 组装监控数据
+	procStats := collectNodectlProcessStats()
 	data := map[string]interface{}{
 		"os_arch":       fmt.Sprintf("%s / %s", runtime.GOOS, runtime.GOARCH), // 系统和架构
 		"go_version":    runtime.Version(),                                    // Go版本
@@ -126,6 +131,15 @@ func apiGetSystemMonitor(w http.ResponseWriter, r *http.Request) {
 		"num_gc":          m.NumGC,                       // 垃圾回收次数
 		"pause_total_ms":  float64(m.PauseTotalNs) / 1e6, // GC总暂停时间(毫秒)
 		"gc_cpu_fraction": m.GCCPUFraction,               // GC占用CPU的时间比例
+		// NodeCTL 进程树（含子进程）监控
+		"process_tree_pid":               procStats.RootPID,
+		"process_tree_count":             procStats.ProcessCount,
+		"process_tree_children_count":    procStats.ChildrenCount,
+		"process_tree_total_rss":         procStats.TotalRSS,
+		"process_tree_total_vms":         procStats.TotalVMS,
+		"process_tree_total_cpu_percent": procStats.TotalCPUPercent,
+		"process_tree_collect_error":     procStats.Error,
+		"process_tree_items":             procStats.Items,
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -133,6 +147,159 @@ func apiGetSystemMonitor(w http.ResponseWriter, r *http.Request) {
 		"status": "success",
 		"data":   data,
 	})
+}
+
+type monitorProcessTreeStats struct {
+	RootPID         int
+	ProcessCount    int
+	ChildrenCount   int
+	TotalRSS        uint64
+	TotalVMS        uint64
+	TotalCPUPercent float64
+	Items           []map[string]interface{}
+	Error           string
+}
+
+func collectNodectlProcessStats() monitorProcessTreeStats {
+	stats := monitorProcessTreeStats{Items: make([]map[string]interface{}, 0)}
+	rootPID := int32(os.Getpid())
+	stats.RootPID = int(rootPID)
+
+	rootProc, err := process.NewProcess(rootPID)
+	if err != nil {
+		stats.Error = err.Error()
+		return stats
+	}
+
+	procs := flattenProcessTree(rootProc)
+	if len(procs) == 0 {
+		procs = []*process.Process{rootProc}
+	}
+
+	now := time.Now()
+	for _, p := range procs {
+		pid := p.Pid
+		name, _ := p.Name()
+		exe, _ := p.Exe()
+		cmdline, _ := p.Cmdline()
+		ppid, _ := p.Ppid()
+		threads, _ := p.NumThreads()
+		cpuPercent, _ := p.CPUPercent()
+		if cpuPercent < 0 {
+			cpuPercent = 0
+		}
+
+		memInfo, _ := p.MemoryInfo()
+		var rss uint64
+		var vms uint64
+		if memInfo != nil {
+			rss = memInfo.RSS
+			vms = memInfo.VMS
+		}
+
+		createMS, _ := p.CreateTime()
+		startTime := ""
+		uptimeSeconds := int64(0)
+		if createMS > 0 {
+			startedAt := time.UnixMilli(createMS)
+			startTime = startedAt.Format("2006/01/02 15:04:05")
+			uptimeSeconds = int64(now.Sub(startedAt).Seconds())
+			if uptimeSeconds < 0 {
+				uptimeSeconds = 0
+			}
+		}
+
+		role := classifyChildProcessRole(pid, rootPID, name, exe, cmdline)
+
+		stats.TotalRSS += rss
+		stats.TotalVMS += vms
+		stats.TotalCPUPercent += cpuPercent
+
+		item := map[string]interface{}{
+			"pid":            pid,
+			"ppid":           ppid,
+			"name":           name,
+			"exe":            exe,
+			"cmdline":        cmdline,
+			"threads":        threads,
+			"cpu_percent":    cpuPercent,
+			"rss":            rss,
+			"vms":            vms,
+			"start_time":     startTime,
+			"uptime_seconds": uptimeSeconds,
+			"is_root":        pid == rootPID,
+			"role":           role,
+		}
+		stats.Items = append(stats.Items, item)
+	}
+
+	stats.ProcessCount = len(stats.Items)
+	if stats.ProcessCount > 0 {
+		stats.ChildrenCount = stats.ProcessCount - 1
+	}
+
+	sort.Slice(stats.Items, func(i, j int) bool {
+		rssi, _ := stats.Items[i]["rss"].(uint64)
+		rssj, _ := stats.Items[j]["rss"].(uint64)
+		if rssi == rssj {
+			pi, _ := stats.Items[i]["pid"].(int32)
+			pj, _ := stats.Items[j]["pid"].(int32)
+			return pi < pj
+		}
+		return rssi > rssj
+	})
+
+	return stats
+}
+
+func flattenProcessTree(root *process.Process) []*process.Process {
+	out := make([]*process.Process, 0, 8)
+	if root == nil {
+		return out
+	}
+
+	queue := []*process.Process{root}
+	visited := map[int32]bool{}
+
+	for len(queue) > 0 {
+		p := queue[0]
+		queue = queue[1:]
+		if p == nil {
+			continue
+		}
+		if visited[p.Pid] {
+			continue
+		}
+		visited[p.Pid] = true
+		out = append(out, p)
+
+		children, err := p.Children()
+		if err != nil {
+			continue
+		}
+		for _, child := range children {
+			if child == nil || visited[child.Pid] {
+				continue
+			}
+			queue = append(queue, child)
+		}
+	}
+
+	return out
+}
+
+func classifyChildProcessRole(pid int32, rootPID int32, name, exe, cmdline string) string {
+	if pid == rootPID {
+		return "nodectl"
+	}
+	merged := strings.ToLower(name + " " + exe + " " + cmdline)
+	if strings.Contains(merged, "cloudflared") {
+		return "cloudflare"
+	}
+	if strings.Contains(merged, "mihomo") {
+		return "mihomo"
+	}
+	return "child"
 }
 
 // apiApplyCert 处理 Cloudflare 自动申请证书请求
