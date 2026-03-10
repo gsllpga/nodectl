@@ -10,27 +10,16 @@ import (
 	"time"
 )
 
-// NetStats 网卡流量采集数据
-type NetStats struct {
-	RXBytes int64 // 累计接收字节数
-	TXBytes int64 // 累计发送字节数
-}
-
 // Collector 网卡流量采集器
 // 优化：使用常驻 FD + 固定栈缓冲实现零堆分配采样
 type Collector struct {
-	mu       sync.Mutex
+	mu       sync.RWMutex
 	iface    string    // 目标网卡名
-	prevRX   int64     // 上次采集的 RX 累计值
-	prevTX   int64     // 上次采集的 TX 累计值
+	prevRX   int64     // 上次采集的 RX 计数器值
+	prevTX   int64     // 上次采集的 TX 计数器值
 	prevTime time.Time // 上次采集时间
 	rxRate   int64     // 实时接收速率 (bytes/s)
 	txRate   int64     // 实时发送速率 (bytes/s)
-	accumRX  int64     // 本周期累计下载量
-	accumTX  int64     // 本周期累计上传量
-	baseRX   int64     // 启动/重置时的 RX 基线
-	baseTX   int64     // 启动/重置时的 TX 基线
-	baseSet  bool      // 是否已设置基线
 	// 零分配优化：常驻 FD 与固定缓冲
 	rxFile *os.File // 常驻 rx_bytes FD
 	txFile *os.File // 常驻 tx_bytes FD
@@ -195,17 +184,14 @@ func (c *Collector) Init() error {
 		return fmt.Errorf("读取 tx_bytes 基线失败: %w", err)
 	}
 
-	c.baseRX = rx
-	c.baseTX = tx
 	c.prevRX = rx
 	c.prevTX = tx
 	c.prevTime = time.Now()
-	c.baseSet = true
 
 	return nil
 }
 
-// Sample 采集一次数据点：更新速率和累计值
+// Sample 采集一次数据点：更新速率与原始计数器基准
 // 处理计数器回绕/重置场景（机器重启、网卡重建）
 // 使用常驻 FD + 固定缓冲，零堆分配
 func (c *Collector) Sample() error {
@@ -225,9 +211,6 @@ func (c *Collector) Sample() error {
 
 	// 检测计数器回绕/重置（当前值 < 上次值）
 	if rx < c.prevRX || tx < c.prevTX {
-		// 累计值保留已有的差值，用当前值作为新基线
-		c.baseRX = rx
-		c.baseTX = tx
 		c.prevRX = rx
 		c.prevTX = tx
 		c.prevTime = now
@@ -243,10 +226,6 @@ func (c *Collector) Sample() error {
 		c.txRate = int64(float64(tx-c.prevTX) / elapsed)
 	}
 
-	// 更新累计值（相对于基线的增量）
-	c.accumRX = rx - c.baseRX
-	c.accumTX = tx - c.baseTX
-
 	// 保存当前采样作为下一次计算的基准
 	c.prevRX = rx
 	c.prevTX = tx
@@ -255,34 +234,11 @@ func (c *Collector) Sample() error {
 	return nil
 }
 
-// GetRates 获取当前实时速率 (bytes/s)
-func (c *Collector) GetRates() (rxRate, txRate int64) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	return c.rxRate, c.txRate
-}
-
-// GetAccumulated 获取本周期累计流量
-func (c *Collector) GetAccumulated() (accumRX, accumTX int64) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	return c.accumRX, c.accumTX
-}
-
-// ResetAccumulated 重置累计流量（月度重置时调用）
-// 使用零分配路径重新读取当前计数器值
-func (c *Collector) ResetAccumulated() {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-
-	rx, err1 := c.readCounter(&c.rxFile, &c.rxBuf, "rx_bytes")
-	tx, err2 := c.readCounter(&c.txFile, &c.txBuf, "tx_bytes")
-	if err1 == nil && err2 == nil {
-		c.baseRX = rx
-		c.baseTX = tx
-	}
-	c.accumRX = 0
-	c.accumTX = 0
+// GetLiveSnapshot 一次加锁同时获取速率与原始计数器
+func (c *Collector) GetLiveSnapshot() (rxRate, txRate, rxBytes, txBytes int64) {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.rxRate, c.txRate, c.prevRX, c.prevTX
 }
 
 // Close 释放常驻 FD（由 Runtime.shutdown() 调用）
@@ -292,14 +248,18 @@ func (c *Collector) Close() error {
 
 	var firstErr error
 	if c.rxFile != nil {
-		if err := c.rxFile.Close(); err != nil && firstErr == nil {
-			firstErr = err
+		if err := c.rxFile.Close(); err != nil {
+			if firstErr == nil {
+				firstErr = err
+			}
 		}
 		c.rxFile = nil
 	}
 	if c.txFile != nil {
-		if err := c.txFile.Close(); err != nil && firstErr == nil {
-			firstErr = err
+		if err := c.txFile.Close(); err != nil {
+			if firstErr == nil {
+				firstErr = err
+			}
 		}
 		c.txFile = nil
 	}
@@ -308,7 +268,7 @@ func (c *Collector) Close() error {
 
 // GetInterface 返回当前使用的网卡名
 func (c *Collector) GetInterface() string {
-	c.mu.Lock()
-	defer c.mu.Unlock()
+	c.mu.RLock()
+	defer c.mu.RUnlock()
 	return c.iface
 }

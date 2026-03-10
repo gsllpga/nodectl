@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
+	"path/filepath"
 	"runtime/debug"
 	"strings"
 	"sync"
@@ -23,13 +24,10 @@ type Runtime struct {
 	cfg       *Config
 	collector *Collector
 	reporter  *Reporter
-	state     *State
 	updater   *Updater
 	logDedup  *LogDedup
 	cancel    context.CancelFunc
-	// 启动时从 state 加载的基线累计值（运行期间不变，避免双重计数）
-	startupRX int64
-	startupTX int64
+	bootID    string
 }
 
 // NewRuntime 创建运行时实例
@@ -38,7 +36,6 @@ func NewRuntime(cfg *Config, updater *Updater) *Runtime {
 		cfg:       cfg,
 		collector: NewCollector(cfg.Interface),
 		reporter:  NewReporter(cfg),
-		state:     NewState(""),
 		updater:   updater,
 		logDedup:  NewLogDedup(),
 	}
@@ -46,18 +43,12 @@ func NewRuntime(cfg *Config, updater *Updater) *Runtime {
 
 // Run 启动 Agent 主循环（阻塞直到收到退出信号）
 func (rt *Runtime) Run() error {
-	// 加载持久化状态
-	if err := rt.state.Load(); err != nil {
-		log.Printf("[Agent] 加载状态文件失败 (将使用零值): %v", err)
-	}
-
-	// 捕获启动基线（跨重启的历史累计值），运行期间不再变化
-	rt.startupRX, rt.startupTX = rt.state.GetAccumulated()
-
 	// 初始化采集器
 	if err := rt.collector.Init(); err != nil {
 		return err
 	}
+
+	rt.bootID = readBootID()
 
 	// 注册命令处理器
 	rt.reporter.SetCommandHandler(rt.handleCommand)
@@ -100,21 +91,14 @@ func (rt *Runtime) Run() error {
 
 	// 启动主循环
 	pushTicker := time.NewTicker(time.Duration(rt.cfg.WSPushIntervalSec) * time.Second)
-	snapshotTicker := time.NewTicker(time.Duration(rt.cfg.SnapshotIntervalSec) * time.Second)
-	stateSaveTicker := time.NewTicker(60 * time.Second) // 每分钟持久化状态
 	memoryTrimTicker := time.NewTicker(2 * time.Minute) // 定期归还未使用内存给 OS
 	defer pushTicker.Stop()
-	defer snapshotTicker.Stop()
-	defer stateSaveTicker.Stop()
 	defer memoryTrimTicker.Stop()
 
 	// 启动日志（仅输出一条）
-	log.Printf("[Agent] nodectl-agent %s 已启动 (install_id=%s, iface=%s, push=%ds, snapshot=%ds)",
+	log.Printf("[Agent] nodectl-agent %s 已启动 (install_id=%s, iface=%s, push=%ds)",
 		AgentVersion, rt.cfg.InstallID, rt.collector.GetInterface(),
-		rt.cfg.WSPushIntervalSec, rt.cfg.SnapshotIntervalSec)
-
-	// 是否到了快照周期
-	snapshotDue := false
+		rt.cfg.WSPushIntervalSec)
 
 	for {
 		select {
@@ -131,9 +115,6 @@ func (rt *Runtime) Run() error {
 				cancel()
 			}
 
-		case <-snapshotTicker.C:
-			snapshotDue = true
-
 		case <-pushTicker.C:
 			// 采集一次数据
 			if err := rt.collector.Sample(); err != nil {
@@ -141,46 +122,12 @@ func (rt *Runtime) Run() error {
 				continue
 			}
 
-			// 检查月度重置
-			if rt.state.CheckMonthlyReset(rt.cfg.ResetDay) {
-				log.Printf("[Agent] 执行月度流量重置 (reset_day=%d)", rt.cfg.ResetDay)
-				rt.collector.ResetAccumulated()
-				rt.startupRX = 0
-				rt.startupTX = 0
-				if err := rt.state.Save(); err != nil {
-					log.Printf("[Agent] 保存重置状态失败: %v", err)
-				}
-			}
+			rxRate, txRate, counterRX, counterTX := rt.collector.GetLiveSnapshot()
 
-			rxRate, txRate := rt.collector.GetRates()
-
-			if snapshotDue {
-				// 发送带累计快照的消息
-				accumRX, accumTX := rt.collector.GetAccumulated()
-				// 加上启动时的历史基线（固定值，避免双重计数）
-				totalRX := accumRX + rt.startupRX
-				totalTX := accumTX + rt.startupTX
-
-				err := rt.reporter.SendSnapshotMessage(ctx, rxRate, txRate, totalRX, totalTX)
-				if err != nil {
-					rt.logDedup.LogOrSuppress("reporter:snapshot", "[Agent] 快照上报失败: %v", err)
-					rt.handleDisconnect(ctx)
-				} else {
-					rt.state.UpdateOnReport(totalRX, totalTX)
-					snapshotDue = false
-				}
-			} else {
-				// 发送仅速率消息
-				err := rt.reporter.SendRateMessage(ctx, rxRate, txRate)
-				if err != nil {
-					rt.logDedup.LogOrSuppress("reporter:rate", "[Agent] 速率上报失败: %v", err)
-					rt.handleDisconnect(ctx)
-				}
-			}
-
-		case <-stateSaveTicker.C:
-			if err := rt.state.Save(); err != nil {
-				rt.logDedup.LogOrSuppress("state:save", "[Agent] 持久化状态失败: %v", err)
+			err := rt.reporter.SendLiveMessage(ctx, rxRate, txRate, counterRX, counterTX, rt.bootID)
+			if err != nil {
+				rt.logDedup.LogOrSuppress("reporter:live", "[Agent] 实时上报失败: %v", err)
+				rt.handleDisconnect(ctx)
 			}
 
 		case <-memoryTrimTicker.C:
@@ -224,8 +171,6 @@ func (rt *Runtime) reloadConfig() {
 
 	// 仅应用可安全动态变更的字段
 	rt.cfg.WSPushIntervalSec = newCfg.WSPushIntervalSec
-	rt.cfg.SnapshotIntervalSec = newCfg.SnapshotIntervalSec
-	rt.cfg.ResetDay = newCfg.ResetDay
 	rt.cfg.LogLevel = newCfg.LogLevel
 
 	// 网卡变更需要重启，在此仅记录警告
@@ -237,7 +182,7 @@ func (rt *Runtime) reloadConfig() {
 }
 
 // shutdown 优雅退出
-// 顺序：collector（释放 FD）→ state（持久化）→ reporter（关闭 WS）
+// 顺序：collector（释放 FD）→ reporter（关闭 WS）
 func (rt *Runtime) shutdown() {
 	log.Printf("[Agent] 正在优雅退出...")
 
@@ -250,11 +195,7 @@ func (rt *Runtime) shutdown() {
 	}
 
 	// 2. 持久化状态
-	if err := rt.state.Save(); err != nil {
-		log.Printf("[Agent] 退出前保存状态失败: %v", err)
-	}
-
-	// 3. 关闭 WebSocket 连接
+	// 2. 关闭 WebSocket 连接
 	rt.reporter.Close()
 
 	log.Printf("[Agent] 已退出")
@@ -274,6 +215,14 @@ func (rt *Runtime) handleCommand(cmd ServerCommand, reply func(CommandResult)) {
 		rt.executeResetLinks(cmd, reply)
 	case "reinstall-singbox":
 		rt.executeReinstallSingbox(cmd, reply)
+	case "check-agent-update":
+		rt.executeCheckAgentUpdate(reply)
+	case "tunnel-start":
+		rt.executeTunnelStart(cmd, reply)
+	case "tunnel-prepare":
+		rt.executeTunnelPrepare(cmd, reply)
+	case "tunnel-stop":
+		rt.executeTunnelStop(reply)
 	default:
 		reply(CommandResult{
 			Type:    "result",
@@ -281,6 +230,33 @@ func (rt *Runtime) handleCommand(cmd ServerCommand, reply func(CommandResult)) {
 			Message: fmt.Sprintf("未知命令: %s", cmd.Action),
 		})
 	}
+}
+
+func readBootID() string {
+	b, err := os.ReadFile("/proc/sys/kernel/random/boot_id")
+	if err != nil {
+		return fmt.Sprintf("boot-%d", time.Now().UnixNano())
+	}
+	id := strings.TrimSpace(string(b))
+	if id == "" {
+		return fmt.Sprintf("boot-%d", time.Now().UnixNano())
+	}
+	return id
+}
+
+func (rt *Runtime) executeCheckAgentUpdate(reply func(CommandResult)) {
+	if rt.updater == nil {
+		reply(CommandResult{Type: "result", Status: "error", Message: "更新器未初始化"})
+		return
+	}
+	reply(CommandResult{Type: "progress", Status: "ok", Stage: "开始检查", Message: "正在检查 Agent 更新..."})
+	go func() {
+		if err := rt.updater.TriggerCheck(context.Background()); err != nil {
+			reply(CommandResult{Type: "result", Status: "error", Message: fmt.Sprintf("检查更新失败: %v", err)})
+			return
+		}
+		reply(CommandResult{Type: "result", Status: "ok", Message: "已触发更新检查，请查看节点日志确认结果"})
+	}()
 }
 
 // deriveScriptURL 从 ws_url 推导安装脚本 URL
@@ -334,6 +310,170 @@ func (rt *Runtime) executeReinstallSingbox(cmd ServerCommand, reply func(Command
 	shellCmd := fmt.Sprintf(`export SKIP_AGENT_INSTALL=1; curl -fsSL "%s" | bash -s -- %s`, scriptURL, protoArgs)
 
 	rt.execStreamingScript(shellCmd, "重新安装", reply)
+}
+
+type tunnelRoutePayload struct {
+	Protocol string `json:"protocol"`
+	Hostname string `json:"hostname"`
+	Service  string `json:"service"`
+}
+
+type tunnelCmdPayload struct {
+	BaseDomain  string               `json:"base_domain"`
+	TunnelToken string               `json:"tunnel_token"`
+	Routes      []tunnelRoutePayload `json:"routes"`
+}
+
+func parseTunnelPayload(cmd ServerCommand) (tunnelCmdPayload, error) {
+	var payload tunnelCmdPayload
+	if len(cmd.Payload) > 0 {
+		if err := json.Unmarshal(cmd.Payload, &payload); err != nil {
+			return payload, err
+		}
+	}
+	payload.BaseDomain = strings.TrimSpace(payload.BaseDomain)
+	payload.TunnelToken = strings.TrimSpace(payload.TunnelToken)
+	filtered := make([]tunnelRoutePayload, 0, len(payload.Routes))
+	for _, r := range payload.Routes {
+		r.Protocol = strings.TrimSpace(r.Protocol)
+		r.Hostname = strings.TrimSpace(r.Hostname)
+		r.Service = strings.TrimSpace(r.Service)
+		if r.Hostname == "" || r.Service == "" {
+			continue
+		}
+		filtered = append(filtered, r)
+	}
+	payload.Routes = filtered
+	if payload.TunnelToken == "" {
+		return payload, fmt.Errorf("缺少 tunnel token")
+	}
+	if len(payload.Routes) == 0 {
+		return payload, fmt.Errorf("缺少可用 tunnel 路由")
+	}
+	return payload, nil
+}
+
+func renderTunnelConfigYAML(routes []tunnelRoutePayload) string {
+	var b strings.Builder
+	b.WriteString("# NodeCTL Tunnel Config\n")
+	b.WriteString("# Generated by nodectl-agent\n")
+	b.WriteString("ingress:\n")
+	for _, r := range routes {
+		b.WriteString("  - hostname: ")
+		b.WriteString(r.Hostname)
+		b.WriteString("\n")
+		b.WriteString("    service: ")
+		b.WriteString(r.Service)
+		b.WriteString("\n")
+	}
+	b.WriteString("  - service: http_status:404\n")
+	return b.String()
+}
+
+func installCloudflaredCommand() string {
+	return `set -e
+if command -v cloudflared >/dev/null 2>&1; then
+  echo "cloudflared already installed"
+  exit 0
+fi
+ARCH="$(uname -m)"
+case "$ARCH" in
+  x86_64|amd64) FILE="cloudflared-linux-amd64" ;;
+  aarch64|arm64) FILE="cloudflared-linux-arm64" ;;
+  armv7l|armv7) FILE="cloudflared-linux-arm" ;;
+  i386|i686) FILE="cloudflared-linux-386" ;;
+  *) echo "unsupported arch: $ARCH"; exit 1 ;;
+esac
+URL="https://github.com/cloudflare/cloudflared/releases/latest/download/${FILE}"
+TMP="/tmp/cloudflared.nodectl"
+curl -fsSL "$URL" -o "$TMP"
+install -m 0755 "$TMP" /usr/local/bin/cloudflared
+rm -f "$TMP"
+echo "cloudflared installed"`
+}
+
+func (rt *Runtime) applyTunnelConfig(payload tunnelCmdPayload, reply func(CommandResult)) error {
+	configDir := "/etc/nodectl-tunnel"
+	configPath := filepath.Join(configDir, "config.yml")
+	envPath := filepath.Join(configDir, "tunnel.env")
+	servicePath := "/etc/systemd/system/nodectl-tunnel.service"
+
+	reply(CommandResult{Type: "progress", Stage: "写入 tunnel 配置文件..."})
+	if err := os.MkdirAll(configDir, 0755); err != nil {
+		return fmt.Errorf("创建目录失败: %w", err)
+	}
+	if err := os.WriteFile(configPath, []byte(renderTunnelConfigYAML(payload.Routes)), 0644); err != nil {
+		return fmt.Errorf("写入 config.yml 失败: %w", err)
+	}
+
+	envContent := "TUNNEL_TOKEN=" + payload.TunnelToken + "\n"
+	if err := os.WriteFile(envPath, []byte(envContent), 0600); err != nil {
+		return fmt.Errorf("写入 tunnel.env 失败: %w", err)
+	}
+
+	serviceContent := `[Unit]
+Description=NodeCTL cloudflared tunnel
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+EnvironmentFile=/etc/nodectl-tunnel/tunnel.env
+ExecStart=/usr/local/bin/cloudflared --config /etc/nodectl-tunnel/config.yml tunnel --no-autoupdate run --token ${TUNNEL_TOKEN}
+Restart=always
+RestartSec=3
+User=root
+
+[Install]
+WantedBy=multi-user.target
+`
+	if err := os.WriteFile(servicePath, []byte(serviceContent), 0644); err != nil {
+		return fmt.Errorf("写入 systemd 服务失败: %w", err)
+	}
+
+	return nil
+}
+
+// executeTunnelPrepare 仅安装并下发配置，不自动删除已安装组件
+func (rt *Runtime) executeTunnelPrepare(cmd ServerCommand, reply func(CommandResult)) {
+	payload, err := parseTunnelPayload(cmd)
+	if err != nil {
+		reply(CommandResult{Type: "result", Status: "error", Message: "tunnel 参数错误: " + err.Error()})
+		return
+	}
+
+	if err := rt.applyTunnelConfig(payload, reply); err != nil {
+		reply(CommandResult{Type: "result", Status: "error", Message: err.Error()})
+		return
+	}
+
+	rt.execStreamingScript(installCloudflaredCommand(), "安装 cloudflared", reply)
+}
+
+// executeTunnelStart 启动节点 tunnel（若未安装则先安装）
+func (rt *Runtime) executeTunnelStart(cmd ServerCommand, reply func(CommandResult)) {
+	payload, err := parseTunnelPayload(cmd)
+	if err != nil {
+		reply(CommandResult{Type: "result", Status: "error", Message: "tunnel 参数错误: " + err.Error()})
+		return
+	}
+
+	if err := rt.applyTunnelConfig(payload, reply); err != nil {
+		reply(CommandResult{Type: "result", Status: "error", Message: err.Error()})
+		return
+	}
+
+	shellCmd := installCloudflaredCommand() + `
+systemctl daemon-reload
+systemctl enable nodectl-tunnel.service
+systemctl restart nodectl-tunnel.service`
+	rt.execStreamingScript(shellCmd, "启动 tunnel", reply)
+}
+
+// executeTunnelStop 停止节点 tunnel（不删除已安装组件和配置）
+func (rt *Runtime) executeTunnelStop(reply func(CommandResult)) {
+	shellCmd := `if command -v systemctl >/dev/null 2>&1 && systemctl list-unit-files | grep -q '^nodectl-tunnel.service'; then systemctl stop nodectl-tunnel.service; echo "nodectl-tunnel 已停止"; else echo "未检测到 nodectl-tunnel.service"; fi`
+	rt.execStreamingScript(shellCmd, "停止 tunnel", reply)
 }
 
 // execStreamingScript 执行 shell 命令并逐行流式回传输出

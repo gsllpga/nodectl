@@ -1,12 +1,14 @@
 package server
 
 import (
+	"crypto/rand"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 
 	"nodectl/internal/database"
@@ -488,6 +490,518 @@ func apiUpdateOfflineNotifySetting(w http.ResponseWriter, r *http.Request) {
 	sendJSON(w, "success", "设置已更新")
 }
 
+// apiGetTunnelNodeSettings 获取节点 tunnel 设置列表
+func apiGetTunnelNodeSettings(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var nodes []database.NodePool
+	if err := database.DB.Select("uuid", "name", "install_id", "tunnel_enabled", "tunnel_id", "tunnel_domain", "region", "sort_index", "updated_at").
+		Order("sort_index ASC, updated_at DESC").
+		Find(&nodes).Error; err != nil {
+		sendJSON(w, "error", "读取 tunnel 节点配置失败")
+		return
+	}
+
+	items := make([]map[string]interface{}, 0, len(nodes))
+	for _, n := range nodes {
+		supported := getSupportedTunnelProtocolsForNode(n)
+		item := map[string]interface{}{
+			"uuid":                       n.UUID,
+			"install_id":                 n.InstallID,
+			"name":                       n.Name,
+			"region":                     n.Region,
+			"tunnel_enabled":             n.TunnelEnabled,
+			"tunnel_id":                  strings.TrimSpace(n.TunnelID),
+			"tunnel_domain":              strings.TrimSpace(n.TunnelDomain),
+			"online":                     service.IsNodeOnline(n.InstallID),
+			"supported_tunnel_protocols": supported,
+		}
+		items = append(items, item)
+	}
+
+	sendJSON(w, "success", map[string]interface{}{"nodes": items})
+}
+
+// apiUpdateTunnelNodeSetting 更新单个节点 tunnel 设置
+func apiUpdateTunnelNodeSetting(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var req struct {
+		UUID          string `json:"uuid"`
+		TunnelEnabled *bool  `json:"tunnel_enabled"`
+		TunnelID      string `json:"tunnel_id"`
+		TunnelDomain  string `json:"tunnel_domain"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		sendJSON(w, "error", "请求格式错误")
+		return
+	}
+	req.UUID = strings.TrimSpace(req.UUID)
+	if req.UUID == "" {
+		sendJSON(w, "error", "缺少节点 UUID")
+		return
+	}
+
+	var node database.NodePool
+	if err := database.DB.Select("uuid", "name", "install_id", "links", "disabled_links", "tunnel_enabled", "tunnel_id", "tunnel_domain").Where("uuid = ?", req.UUID).First(&node).Error; err != nil {
+		sendJSON(w, "error", "节点不存在")
+		return
+	}
+
+	updates := map[string]interface{}{}
+	if strings.TrimSpace(req.TunnelID) != "" {
+		updates["tunnel_id"] = strings.TrimSpace(req.TunnelID)
+	}
+	if req.TunnelEnabled != nil {
+		updates["tunnel_enabled"] = *req.TunnelEnabled
+		if *req.TunnelEnabled {
+			supported := getSupportedTunnelProtocolsForNode(node)
+			if len(supported) == 0 {
+				sendJSON(w, "error", "该节点暂无可通过 Tunnel 加速的协议。")
+				return
+			}
+			if strings.TrimSpace(service.GetCFConfigPublic("cf_tunnel_token")) == "" {
+				sendJSON(w, "error", "未配置 Tunnel Token，请先在 Cloudflare Tunnel 页面完成创建")
+				return
+			}
+			domain := strings.TrimSpace(req.TunnelDomain)
+			if domain == "" {
+				domain = strings.TrimSpace(node.TunnelDomain)
+			}
+			if domain == "" {
+				generated, err := generateNodeTunnelDomain(req.UUID)
+				if err != nil {
+					sendJSON(w, "error", err.Error())
+					return
+				}
+				domain = generated
+			}
+			updates["tunnel_domain"] = domain
+			if _, ok := updates["tunnel_id"]; !ok {
+				tunnelID := strings.TrimSpace(node.TunnelID)
+				if tunnelID == "" {
+					tunnelID = strings.TrimSpace(service.GetCFConfigPublic("cf_tunnel_id"))
+				}
+				if tunnelID != "" {
+					updates["tunnel_id"] = tunnelID
+				}
+			}
+		} else if strings.TrimSpace(req.TunnelDomain) != "" {
+			updates["tunnel_domain"] = strings.TrimSpace(req.TunnelDomain)
+		}
+	} else if strings.TrimSpace(req.TunnelDomain) != "" {
+		updates["tunnel_domain"] = strings.TrimSpace(req.TunnelDomain)
+	}
+
+	if len(updates) == 0 {
+		sendJSON(w, "error", "没有可更新的字段")
+		return
+	}
+
+	res := database.DB.Model(&database.NodePool{}).Where("uuid = ?", req.UUID).Updates(updates)
+	if res.Error != nil {
+		sendJSON(w, "error", "更新失败")
+		return
+	}
+	if res.RowsAffected == 0 {
+		sendJSON(w, "error", "节点不存在")
+		return
+	}
+
+	if err := database.DB.Where("uuid = ?", req.UUID).First(&node).Error; err != nil {
+		sendJSON(w, "success", "设置已更新")
+		return
+	}
+
+	resp := map[string]interface{}{
+		"message": "设置已更新",
+	}
+
+	if req.TunnelEnabled != nil {
+		if service.IsNodeOnline(node.InstallID) {
+			if *req.TunnelEnabled {
+				payload, err := buildNodeTunnelCommandPayload(node)
+				if err != nil {
+					sendJSON(w, "error", err.Error())
+					return
+				}
+				commandID, err := service.FireCommandToNode(node.InstallID, "tunnel-start", payload)
+				if err != nil {
+					sendJSON(w, "error", fmt.Sprintf("隧道启动命令下发失败: %v", err))
+					return
+				}
+				resp["command_id"] = commandID
+				resp["message"] = "设置已更新，已下发 tunnel 启动命令"
+			} else {
+				commandID, err := service.FireCommandToNode(node.InstallID, "tunnel-stop", map[string]interface{}{})
+				if err != nil {
+					sendJSON(w, "error", fmt.Sprintf("隧道停止命令下发失败: %v", err))
+					return
+				}
+				resp["command_id"] = commandID
+				resp["message"] = "设置已更新，已下发 tunnel 停止命令"
+			}
+		} else {
+			if *req.TunnelEnabled {
+				resp["message"] = "设置已更新（节点离线，未下发启动命令）"
+			} else {
+				resp["message"] = "设置已更新（节点离线，未下发停止命令）"
+			}
+		}
+	}
+
+	sendJSON(w, "success", resp)
+}
+
+// apiNodeControlTunnelStart 远程启动节点 tunnel
+func apiNodeControlTunnelStart(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		sendJSON(w, "error", "仅支持 POST 请求")
+		return
+	}
+
+	var req struct {
+		UUID string `json:"uuid"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || strings.TrimSpace(req.UUID) == "" {
+		sendJSON(w, "error", "参数错误: uuid 不能为空")
+		return
+	}
+
+	var node database.NodePool
+	if err := database.DB.Where("uuid = ?", strings.TrimSpace(req.UUID)).First(&node).Error; err != nil {
+		sendJSON(w, "error", "节点不存在")
+		return
+	}
+	if !service.IsNodeOnline(node.InstallID) {
+		sendJSON(w, "error", "节点不在线，无法执行命令")
+		return
+	}
+	if !node.TunnelEnabled {
+		sendJSON(w, "error", "当前节点未启用 tunnel")
+		return
+	}
+
+	payload, err := buildNodeTunnelCommandPayload(node)
+	if err != nil {
+		sendJSON(w, "error", err.Error())
+		return
+	}
+
+	commandID, err := service.FireCommandToNode(node.InstallID, "tunnel-start", payload)
+	if err != nil {
+		sendJSON(w, "error", fmt.Sprintf("命令下发失败: %v", err))
+		return
+	}
+
+	sendJSON(w, "success", map[string]interface{}{
+		"command_id": commandID,
+		"message":    "启动命令已下发",
+	})
+}
+
+// apiNodeControlTunnelStop 远程停止节点 tunnel
+func apiNodeControlTunnelStop(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		sendJSON(w, "error", "仅支持 POST 请求")
+		return
+	}
+
+	var req struct {
+		UUID string `json:"uuid"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || strings.TrimSpace(req.UUID) == "" {
+		sendJSON(w, "error", "参数错误: uuid 不能为空")
+		return
+	}
+
+	var node database.NodePool
+	if err := database.DB.Where("uuid = ?", strings.TrimSpace(req.UUID)).First(&node).Error; err != nil {
+		sendJSON(w, "error", "节点不存在")
+		return
+	}
+	if !service.IsNodeOnline(node.InstallID) {
+		sendJSON(w, "error", "节点不在线，无法执行命令")
+		return
+	}
+
+	commandID, err := service.FireCommandToNode(node.InstallID, "tunnel-stop", map[string]interface{}{})
+	if err != nil {
+		sendJSON(w, "error", fmt.Sprintf("命令下发失败: %v", err))
+		return
+	}
+
+	sendJSON(w, "success", map[string]interface{}{
+		"command_id": commandID,
+		"message":    "停止命令已下发",
+	})
+}
+
+// apiDeleteTunnelNode 删除（或解绑）节点 tunnel
+func apiDeleteTunnelNode(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var req struct {
+		UUID string `json:"uuid"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		sendJSON(w, "error", "请求格式错误")
+		return
+	}
+	req.UUID = strings.TrimSpace(req.UUID)
+	if req.UUID == "" {
+		sendJSON(w, "error", "缺少节点 UUID")
+		return
+	}
+
+	var node database.NodePool
+	if err := database.DB.Select("uuid", "install_id", "tunnel_enabled", "tunnel_id", "tunnel_domain").Where("uuid = ?", req.UUID).First(&node).Error; err != nil {
+		sendJSON(w, "error", "节点不存在")
+		return
+	}
+
+	tunnelID := strings.TrimSpace(node.TunnelID)
+	shared := false
+	if tunnelID != "" {
+		var usedByOthers int64
+		database.DB.Model(&database.NodePool{}).
+			Where("uuid <> ? AND tunnel_id = ?", node.UUID, tunnelID).
+			Count(&usedByOthers)
+		shared = usedByOthers > 0
+		if !shared {
+			if err := service.DeleteCFTunnelByID(tunnelID); err != nil {
+				sendJSON(w, "error", err.Error())
+				return
+			}
+		}
+	}
+
+	updates := map[string]interface{}{
+		"tunnel_enabled": false,
+		"tunnel_id":      "",
+		"tunnel_domain":  "",
+	}
+	if err := database.DB.Model(&database.NodePool{}).Where("uuid = ?", node.UUID).Updates(updates).Error; err != nil {
+		sendJSON(w, "error", "清理节点 tunnel 设置失败")
+		return
+	}
+
+	resp := map[string]interface{}{}
+	if service.IsNodeOnline(node.InstallID) {
+		if commandID, err := service.FireCommandToNode(node.InstallID, "tunnel-stop", map[string]interface{}{}); err == nil {
+			resp["command_id"] = commandID
+		}
+	}
+
+	if tunnelID == "" {
+		resp["message"] = "节点未绑定 Tunnel，已清理本地配置"
+	} else if shared {
+		resp["message"] = "已解绑当前节点（该 Tunnel 仍被其他节点使用，未删除远端）"
+	} else {
+		resp["message"] = "已删除远端 Tunnel 并清理节点配置"
+	}
+
+	sendJSON(w, "success", resp)
+}
+
+func generateNodeTunnelDomain(nodeUUID string) (string, error) {
+	rootDomain := ""
+	var cfg database.SysConfig
+	if err := database.DB.Where("key = ?", "cf_domain").First(&cfg).Error; err == nil {
+		rootDomain = strings.TrimSpace(cfg.Value)
+	}
+	if rootDomain == "" {
+		return "", fmt.Errorf("未配置 Cloudflare 根域名，请先在 Token 管理中保存域名")
+	}
+
+	for i := 0; i < 8; i++ {
+		prefix, err := generateRandomAlphaNum(6)
+		if err != nil {
+			return "", err
+		}
+		domain := strings.ToLower(prefix) + "." + rootDomain
+
+		var count int64
+		database.DB.Model(&database.NodePool{}).
+			Where("tunnel_domain = ? AND uuid <> ?", domain, nodeUUID).
+			Count(&count)
+		if count == 0 {
+			return domain, nil
+		}
+	}
+
+	return "", fmt.Errorf("生成 tunnel 域名前缀失败，请重试")
+}
+
+func buildNodeTunnelCommandPayload(node database.NodePool) (map[string]interface{}, error) {
+	baseDomain := strings.TrimSpace(node.TunnelDomain)
+	if baseDomain == "" {
+		return nil, fmt.Errorf("当前节点未配置 tunnel 域名")
+	}
+
+	tunnelToken := strings.TrimSpace(service.GetCFConfigPublic("cf_tunnel_token"))
+	if tunnelToken == "" {
+		return nil, fmt.Errorf("未配置 tunnel token，请先在 Cloudflare Tunnel 页面完成创建")
+	}
+
+	portMap := loadProxyPortMap()
+	routes := make([]map[string]string, 0)
+
+	for proto := range node.Links {
+		if sliceContains(node.DisabledLinks, proto) {
+			continue
+		}
+		if !isTunnelCompatibleProtocol(proto) {
+			continue
+		}
+		port, ok := portMap[proto]
+		if !ok || port <= 0 {
+			continue
+		}
+
+		host := buildTunnelHostForProtocol(baseDomain, proto)
+		if err := service.EnsureCFTunnelDNSHost(host); err != nil {
+			return nil, fmt.Errorf("绑定 tunnel DNS 失败(%s): %w", host, err)
+		}
+
+		routes = append(routes, map[string]string{
+			"protocol": proto,
+			"hostname": host,
+			"service":  "http://127.0.0.1:" + strconv.Itoa(port),
+		})
+	}
+
+	if len(routes) == 0 {
+		return nil, fmt.Errorf("该节点暂无可通过 Tunnel 加速的协议。")
+	}
+
+	payload := map[string]interface{}{
+		"base_domain":  baseDomain,
+		"tunnel_token": tunnelToken,
+		"routes":       routes,
+	}
+	return payload, nil
+}
+
+func loadProxyPortMap() map[string]int {
+	keyByProto := map[string]string{
+		"vmess_ws":   "proxy_port_vmess_ws",
+		"vmess_http": "proxy_port_vmess_http",
+		"vmess_wst":  "proxy_port_vmess_wst",
+		"vmess_hut":  "proxy_port_vmess_hut",
+		"vless_wst":  "proxy_port_vless_wst",
+		"vless_hut":  "proxy_port_vless_hut",
+		"trojan_wst": "proxy_port_trojan_wst",
+		"trojan_hut": "proxy_port_trojan_hut",
+	}
+
+	keys := make([]string, 0, len(keyByProto))
+	for _, key := range keyByProto {
+		keys = append(keys, key)
+	}
+
+	var cfgs []database.SysConfig
+	database.DB.Where("key IN ?", keys).Find(&cfgs)
+	valueByKey := make(map[string]string, len(cfgs))
+	for _, c := range cfgs {
+		valueByKey[c.Key] = strings.TrimSpace(c.Value)
+	}
+
+	defaultPort := map[string]int{
+		"proxy_port_vmess_ws":   20009,
+		"proxy_port_vmess_http": 20010,
+		"proxy_port_vmess_wst":  20012,
+		"proxy_port_vmess_hut":  20014,
+		"proxy_port_vless_wst":  20015,
+		"proxy_port_vless_hut":  20017,
+		"proxy_port_trojan_wst": 20018,
+		"proxy_port_trojan_hut": 20020,
+	}
+
+	ports := make(map[string]int, len(keyByProto))
+	for proto, key := range keyByProto {
+		if p, err := strconv.Atoi(valueByKey[key]); err == nil && p > 0 {
+			ports[proto] = p
+			continue
+		}
+		ports[proto] = defaultPort[key]
+	}
+
+	return ports
+}
+
+func buildTunnelHostForProtocol(baseDomain, protocol string) string {
+	base := strings.TrimSpace(strings.TrimSuffix(baseDomain, "."))
+	if base == "" {
+		return ""
+	}
+	prefix := strings.ToLower(strings.ReplaceAll(strings.TrimSpace(protocol), "_", "-"))
+	if prefix == "" {
+		return base
+	}
+	return prefix + "." + base
+}
+
+func isTunnelCompatibleProtocol(protocol string) bool {
+	switch strings.TrimSpace(protocol) {
+	case "vmess_ws", "vmess_http", "vmess_wst", "vmess_hut", "vless_wst", "vless_hut", "trojan_wst", "trojan_hut":
+		return true
+	default:
+		return false
+	}
+}
+
+func getSupportedTunnelProtocolsForNode(node database.NodePool) []string {
+	if len(node.Links) == 0 {
+		return []string{}
+	}
+	protos := make([]string, 0)
+	for proto := range node.Links {
+		if sliceContains(node.DisabledLinks, proto) {
+			continue
+		}
+		if isTunnelCompatibleProtocol(proto) {
+			protos = append(protos, proto)
+		}
+	}
+	sort.Strings(protos)
+	return protos
+}
+
+func sliceContains(items []string, target string) bool {
+	t := strings.TrimSpace(target)
+	for _, item := range items {
+		if strings.TrimSpace(item) == t {
+			return true
+		}
+	}
+	return false
+}
+
+func generateRandomAlphaNum(length int) (string, error) {
+	const charset = "abcdefghijklmnopqrstuvwxyz0123456789"
+	if length <= 0 {
+		return "", fmt.Errorf("invalid random length")
+	}
+	b := make([]byte, length)
+	if _, err := rand.Read(b); err != nil {
+		return "", err
+	}
+	for i := range b {
+		b[i] = charset[int(b[i])%len(charset)]
+	}
+	return string(b), nil
+}
+
 func apiReorderNodes(w http.ResponseWriter, r *http.Request) {
 	clientIP := r.RemoteAddr
 	reqPath := r.URL.Path
@@ -826,11 +1340,21 @@ func apiNodeControlResetLinks(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	logger.Log.Info("重置链接命令已下发", "uuid", req.UUID, "command_id", commandID)
-	sendJSON(w, "success", map[string]interface{}{
+	resp := map[string]interface{}{
 		"command_id": commandID,
 		"message":    "命令已下发，正在执行...",
-	})
+	}
+
+	if node.TunnelEnabled {
+		if tunnelPayload, e := buildNodeTunnelCommandPayload(node); e == nil {
+			if tunnelCmdID, e2 := service.FireCommandToNode(node.InstallID, "tunnel-prepare", tunnelPayload); e2 == nil {
+				resp["tunnel_command_id"] = tunnelCmdID
+			}
+		}
+	}
+
+	logger.Log.Info("重置链接命令已下发", "uuid", req.UUID, "command_id", commandID)
+	sendJSON(w, "success", resp)
 }
 
 // apiNodeControlReinstall 远程重新安装节点 sing-box（异步下发 + 返回 command_id）
@@ -885,10 +1409,62 @@ func apiNodeControlReinstall(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	logger.Log.Info("重装 sing-box 命令已下发", "uuid", req.UUID, "command_id", commandID)
-	sendJSON(w, "success", map[string]interface{}{
+	resp := map[string]interface{}{
 		"command_id": commandID,
 		"message":    "命令已下发，正在执行...",
+	}
+
+	if node.TunnelEnabled {
+		if tunnelPayload, e := buildNodeTunnelCommandPayload(node); e == nil {
+			if tunnelCmdID, e2 := service.FireCommandToNode(node.InstallID, "tunnel-prepare", tunnelPayload); e2 == nil {
+				resp["tunnel_command_id"] = tunnelCmdID
+			}
+		}
+	}
+
+	logger.Log.Info("重装 sing-box 命令已下发", "uuid", req.UUID, "command_id", commandID)
+	sendJSON(w, "success", resp)
+}
+
+// apiNodeControlCheckAgentUpdate 远程触发 Agent 主动检查更新（异步下发 + 返回 command_id）
+// 路由: POST /api/node/control/check-agent-update
+// 请求体: { "uuid": "节点UUID" }
+func apiNodeControlCheckAgentUpdate(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		sendJSON(w, "error", "仅支持 POST 请求")
+		return
+	}
+
+	var req struct {
+		UUID string `json:"uuid"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.UUID == "" {
+		sendJSON(w, "error", "参数错误: uuid 不能为空")
+		return
+	}
+
+	var node database.NodePool
+	if err := database.DB.Where("uuid = ?", req.UUID).First(&node).Error; err != nil {
+		sendJSON(w, "error", "节点不存在")
+		return
+	}
+
+	if !service.IsNodeOnline(node.InstallID) {
+		sendJSON(w, "error", "节点不在线，无法执行命令")
+		return
+	}
+
+	commandID, err := service.FireCommandToNode(node.InstallID, "check-agent-update", map[string]interface{}{})
+	if err != nil {
+		logger.Log.Error("Agent 检查更新命令下发失败", "uuid", req.UUID, "error", err)
+		sendJSON(w, "error", fmt.Sprintf("命令下发失败: %v", err))
+		return
+	}
+
+	logger.Log.Info("Agent 检查更新命令已下发", "uuid", req.UUID, "command_id", commandID)
+	sendJSON(w, "success", map[string]interface{}{
+		"command_id": commandID,
+		"message":    "命令已下发，Agent 正在检查更新",
 	})
 }
 

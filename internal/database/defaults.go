@@ -69,6 +69,7 @@ func initBasicSettings() {
 		{Key: "airport_filter_invalid", Value: "false", Description: "是否剔除机场订阅中的无效节点"},
 		{Key: "pref_speed_test_file_size", Value: "50", Description: "节点测速文件大小(MB)"},
 		{Key: "pref_traffic_stats_retention_days", Value: "30", Description: "流量统计记录最长保留天数"},
+		{Key: "pref_traffic_persist_interval_sec", Value: "300", Description: "实时累计流量落库间隔(秒)"},
 		{Key: "auth_cookie_ttl_mode", Value: "1d", Description: "后台登录 Cookie 有效期选项(1d/3d/7d/never)"},
 		{Key: "login_ip_retry_window_sec", Value: "600", Description: "同IP登录失败计数窗口时长(秒)"},
 		{Key: "login_ip_max_retries", Value: "5", Description: "同IP登录失败最大重试次数"},
@@ -83,9 +84,6 @@ func initBasicSettings() {
 		{Key: "sys_log_level", Value: "info", Description: "系统日志等级 (debug/info/warn/error)"},
 		// Agent 相关配置
 		{Key: "agent_ws_push_interval_sec", Value: "2", Description: "Agent 实时速率推送间隔 (秒)"},
-		{Key: "agent_snapshot_interval_sec", Value: "300", Description: "Agent 累计流量快照间隔 (秒)"},
-		{Key: "agent_ws_reconnect_max_backoff_sec", Value: "60", Description: "Agent WS 重连最大退避时间 (秒)"},
-		{Key: "agent_ws_read_timeout_sec", Value: "20", Description: "Agent WS 读取超时 (秒)"},
 		// Cloudflare Tunnel 配置
 		{Key: "cf_account_id", Value: "", Description: "Cloudflare Account ID（创建 Tunnel 必需）"},
 		{Key: "cf_tunnel_name", Value: "nodectl", Description: "Cloudflare Tunnel 名称"},

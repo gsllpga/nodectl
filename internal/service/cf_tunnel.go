@@ -907,6 +907,67 @@ func deleteTunnelDNS(accountID, domain, subdomain string) error {
 	return nil
 }
 
+// EnsureCFTunnelDNSHost 确保指定主机名存在指向当前 Tunnel 的 CNAME 记录。
+// host 必须是完整域名，例如 vmess-ws.ab12cd.example.com
+func EnsureCFTunnelDNSHost(host string) error {
+	host = strings.TrimSpace(strings.TrimSuffix(host, "."))
+	if host == "" {
+		return fmt.Errorf("host 不能为空")
+	}
+
+	domain := strings.TrimSpace(getCFConfig("cf_domain"))
+	tunnelID := strings.TrimSpace(getCFConfig("cf_tunnel_id"))
+	if domain == "" {
+		return fmt.Errorf("cf_domain 未配置")
+	}
+	if tunnelID == "" {
+		return fmt.Errorf("cf_tunnel_id 未配置")
+	}
+
+	zoneID, err := getZoneID(domain)
+	if err != nil {
+		return fmt.Errorf("获取 Zone ID 失败: %w", err)
+	}
+
+	cnameTarget := tunnelID + ".cfargotunnel.com"
+
+	checkURL := fmt.Sprintf("https://api.cloudflare.com/client/v4/zones/%s/dns_records?type=CNAME&name=%s", zoneID, host)
+	checkResult, err := cfAPIRequest("GET", checkURL, nil)
+	if err != nil {
+		return fmt.Errorf("查询 DNS 记录失败: %w", err)
+	}
+
+	if records, ok := checkResult["result"].([]interface{}); ok && len(records) > 0 {
+		record := records[0].(map[string]interface{})
+		recordID := record["id"].(string)
+		updateURL := fmt.Sprintf("https://api.cloudflare.com/client/v4/zones/%s/dns_records/%s", zoneID, recordID)
+		updateBody := map[string]interface{}{
+			"type":    "CNAME",
+			"name":    host,
+			"content": cnameTarget,
+			"proxied": true,
+		}
+		if _, err := cfAPIRequest("PUT", updateURL, updateBody); err != nil {
+			return fmt.Errorf("更新 DNS 记录失败: %w", err)
+		}
+		logger.Log.Info("Tunnel DNS CNAME 已更新", "host", host, "target", cnameTarget)
+		return nil
+	}
+
+	createURL := fmt.Sprintf("https://api.cloudflare.com/client/v4/zones/%s/dns_records", zoneID)
+	createBody := map[string]interface{}{
+		"type":    "CNAME",
+		"name":    host,
+		"content": cnameTarget,
+		"proxied": true,
+	}
+	if _, err := cfAPIRequest("POST", createURL, createBody); err != nil {
+		return fmt.Errorf("创建 DNS 记录失败: %w", err)
+	}
+	logger.Log.Info("Tunnel DNS CNAME 已创建", "host", host, "target", cnameTarget)
+	return nil
+}
+
 // saveTunnelCredentials 保存 Tunnel 凭据到本地文件
 func saveTunnelCredentials(tunnelID string, result map[string]interface{}) error {
 	if err := os.MkdirAll(cfTunnelBaseDir, 0755); err != nil {

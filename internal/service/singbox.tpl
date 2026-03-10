@@ -40,12 +40,10 @@ FIXED_VLESS_TLS_SNI="{{.VlessTLSSNI}}"
 FIXED_TROJAN_TLS_SNI="{{.TrojanTLSSNI}}"
 REPORT_URL="{{.ReportURL}}"
 INSTALL_ID="{{.InstallID}}" # 直接由后端渲染注入
-RESET_DAY="{{.ResetDay}}"
 # Agent 相关参数 (由后端模板注入)
 AGENT_DOWNLOAD_URL="{{.AgentDownloadURL}}"
 AGENT_WS_URL="{{.AgentWSURL}}"
 AGENT_WS_PUSH_INTERVAL_SEC="{{.AgentWSPushIntervalSec}}"
-AGENT_SNAPSHOT_INTERVAL_SEC="{{.AgentSnapshotIntervalSec}}"
 # -----------------------
 # 彩色输出函数
 info() { echo -e "\033[1;34m[INFO]\033[0m $*"; }
@@ -76,7 +74,7 @@ detect_os() {
 }
 
 detect_os
-info "SingBox安装脚本: v0.1.2"
+info "SingBox安装脚本: v0.1.3"
 info "检测到系统: $OS (${OS_ID:-unknown})"
 
 # -----------------------
@@ -198,9 +196,6 @@ select_protocols() {
         arg="$1"
         arg_lower=$(echo "$arg" | tr '[:upper:]' '[:lower:]')
         case "$arg_lower" in
-            --reset-day)
-                if [[ -n "${2:-}" ]]; then RESET_DAY="$2"; info "-> 设定流量重置日: 每月 $RESET_DAY 号"; shift
-                else warn "--reset-day 参数后面必须跟日期数字"; fi ;;
             ss|shadowsocks)         ENABLE_SS=true;         info "-> 启用 Shadowsocks" ;;
             hy2|hysteria2)          ENABLE_HY2=true;        info "-> 启用 Hysteria2" ;;
             tuic)                   ENABLE_TUIC=true;       info "-> 启用 TUIC" ;;
@@ -1467,19 +1462,14 @@ setup_agent() {
   "install_id": "$INSTALL_ID",
   "ws_url": "$AGENT_WS_URL",
   "ws_push_interval_sec": ${AGENT_WS_PUSH_INTERVAL_SEC:-2},
-  "snapshot_interval_sec": ${AGENT_SNAPSHOT_INTERVAL_SEC:-300},
   "interface": "auto",
-  "reset_day": ${RESET_DAY:-0},
   "log_level": "info"
 }
 AGENT_CFG
 
     info "配置文件已写入: $AGENT_CONF ✓"
 
-    # ── 4. 创建本地状态目录 ──────────────────────────────────
-    mkdir -p /var/lib/nodectl-agent
-
-    # ── 5. 注册系统服务 ──────────────────────────────────────
+    # ── 4. 注册系统服务 ──────────────────────────────────────
     if [ "$OS" = "alpine" ]; then
         # OpenRC 服务
         cat > /etc/init.d/nodectl-agent <<'OPENRC_SVC'
@@ -2373,29 +2363,6 @@ action_traffic_status() {
         fi
     else
         echo "  配置文件: 不存在 ✗"
-    fi
-
-    # 状态文件
-    local STATE_FILE="/var/lib/nodectl-agent/state.json"
-    if [ -f "$STATE_FILE" ]; then
-        echo ""
-        echo "  持久化状态:"
-        if command -v jq >/dev/null 2>&1; then
-            local LAST_REPORT ACC_RX ACC_TX
-            LAST_REPORT=$(jq -r '.last_report_at // "N/A"' "$STATE_FILE" 2>/dev/null)
-            ACC_RX=$(jq -r '.accumulated_rx // 0' "$STATE_FILE" 2>/dev/null)
-            ACC_TX=$(jq -r '.accumulated_tx // 0' "$STATE_FILE" 2>/dev/null)
-            local RX_MB TX_MB
-            RX_MB=$(awk "BEGIN{printf \"%.2f\", ${ACC_RX:-0}/1048576}")
-            TX_MB=$(awk "BEGIN{printf \"%.2f\", ${ACC_TX:-0}/1048576}")
-            echo "    上次上报: $LAST_REPORT"
-            echo "    累计下载: ${RX_MB} MB"
-            echo "    累计上传: ${TX_MB} MB"
-        else
-            cat "$STATE_FILE"
-        fi
-    else
-        echo "  持久化状态: 未找到 (可能尚未首次上报)"
     fi
 
     # 服务状态

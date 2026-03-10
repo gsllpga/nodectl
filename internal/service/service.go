@@ -194,10 +194,6 @@ func RenderInstallScript(node database.NodePool) (string, error) {
 	if agentWSPushInterval == "" {
 		agentWSPushInterval = "2"
 	}
-	agentSnapshotInterval := configMap["agent_snapshot_interval_sec"]
-	if agentSnapshotInterval == "" {
-		agentSnapshotInterval = "300"
-	}
 
 	// 读取可配置 SNI，提供兜底默认值
 	hy2SNI := configMap["proxy_hy2_sni"]
@@ -313,12 +309,10 @@ func RenderInstallScript(node database.NodePool) (string, error) {
 		"ReportURL":        reportURL,
 		// [新增] 将节点专属参数硬编码注入到脚本中
 		"InstallID": node.InstallID,
-		"ResetDay":  fmt.Sprintf("%d", node.ResetDay), // int 转 string
 		// [新增] Agent 相关模板变量
-		"AgentDownloadURL":         agentDownloadURL,
-		"AgentWSURL":               agentWSURL,
-		"AgentWSPushIntervalSec":   agentWSPushInterval,
-		"AgentSnapshotIntervalSec": agentSnapshotInterval,
+		"AgentDownloadURL":       agentDownloadURL,
+		"AgentWSURL":             agentWSURL,
+		"AgentWSPushIntervalSec": agentWSPushInterval,
 	}
 
 	tplContent := SingboxScriptTpl // 默认使用打包在二进制里的 embed 模板

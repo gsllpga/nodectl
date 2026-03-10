@@ -20,17 +20,18 @@ type TrafficMessage struct {
 	TS        int64  `json:"ts"`
 	RXRateBps int64  `json:"rx_rate_bps"`
 	TXRateBps int64  `json:"tx_rate_bps"`
-	// 可选字段：仅在快照消息中包含
-	RXBytes      *int64 `json:"rx_bytes,omitempty"`
-	TXBytes      *int64 `json:"tx_bytes,omitempty"`
-	AgentVersion string `json:"agent_version,omitempty"` // 仅快照消息携带
+	// 新版实时累计字段：每次推送都携带原始计数器与 boot_id
+	CounterRXBytes int64  `json:"counter_rx_bytes"`
+	CounterTXBytes int64  `json:"counter_tx_bytes"`
+	BootID         string `json:"boot_id"`
+	AgentVersion   string `json:"agent_version,omitempty"`
 }
 
 // ServerCommand 后端下发的命令结构
 type ServerCommand struct {
 	Type      string          `json:"type"`       // 固定 "command"
 	CommandID string          `json:"command_id"` // 幂等键
-	Action    string          `json:"action"`     // "reset-links" / "reinstall-singbox"
+	Action    string          `json:"action"`     // "reset-links" / "reinstall-singbox" / "tunnel-prepare" / "tunnel-start" / "tunnel-stop" / "check-agent-update"
 	Payload   json.RawMessage `json:"payload,omitempty"`
 }
 
@@ -250,27 +251,17 @@ func (r *Reporter) sendResult(ctx context.Context, result CommandResult) {
 	}
 }
 
-// SendRateMessage 发送实时速率消息 (每 2 秒)
-func (r *Reporter) SendRateMessage(ctx context.Context, rxRate, txRate int64) error {
+// SendLiveMessage 发送实时流量消息（速率 + 原始计数器）
+func (r *Reporter) SendLiveMessage(ctx context.Context, rxRate, txRate, counterRX, counterTX int64, bootID string) error {
 	msg := TrafficMessage{
-		InstallID: r.cfg.InstallID,
-		TS:        time.Now().Unix(),
-		RXRateBps: rxRate,
-		TXRateBps: txRate,
-	}
-	return r.sendJSON(ctx, msg)
-}
-
-// SendSnapshotMessage 发送快照消息：实时速率 + 累计流量 (每 5 分钟)
-func (r *Reporter) SendSnapshotMessage(ctx context.Context, rxRate, txRate, rxBytes, txBytes int64) error {
-	msg := TrafficMessage{
-		InstallID:    r.cfg.InstallID,
-		TS:           time.Now().Unix(),
-		RXRateBps:    rxRate,
-		TXRateBps:    txRate,
-		RXBytes:      &rxBytes,
-		TXBytes:      &txBytes,
-		AgentVersion: AgentVersion, // 仅快照消息携带 agent 版本
+		InstallID:      r.cfg.InstallID,
+		TS:             time.Now().Unix(),
+		RXRateBps:      rxRate,
+		TXRateBps:      txRate,
+		CounterRXBytes: counterRX,
+		CounterTXBytes: counterTX,
+		BootID:         bootID,
+		AgentVersion:   AgentVersion,
 	}
 	return r.sendJSON(ctx, msg)
 }

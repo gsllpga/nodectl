@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -47,34 +48,43 @@ func getClientIP(r *http.Request) string {
 
 // AgentTrafficMsg Agent 上报的动态 JSON 消息
 type AgentTrafficMsg struct {
-	InstallID string `json:"install_id"`
-	TS        int64  `json:"ts"`
-	RXRateBps int64  `json:"rx_rate_bps"`
-	TXRateBps int64  `json:"tx_rate_bps"`
-	// 可选字段：仅快照消息包含
-	RXBytes      *int64 `json:"rx_bytes,omitempty"`
-	TXBytes      *int64 `json:"tx_bytes,omitempty"`
-	AgentVersion string `json:"agent_version,omitempty"` // 仅快照消息携带
+	InstallID    string `json:"install_id"`
+	TS           int64  `json:"ts"`
+	RXRateBps    int64  `json:"rx_rate_bps"`
+	TXRateBps    int64  `json:"tx_rate_bps"`
+	CounterRX    int64  `json:"counter_rx_bytes"`
+	CounterTX    int64  `json:"counter_tx_bytes"`
+	BootID       string `json:"boot_id"`
+	AgentVersion string `json:"agent_version,omitempty"`
 }
 
 // NodeLiveState 节点实时内存态
 type NodeLiveState struct {
-	InstallID    string    `json:"install_id"`
-	NodeUUID     string    `json:"node_uuid"`
-	RXRateBps    int64     `json:"rx_rate_bps"`
-	TXRateBps    int64     `json:"tx_rate_bps"`
-	LastLiveAt   time.Time `json:"last_live_at"`
-	AgentVersion string    `json:"agent_version,omitempty"` // Agent 上报的版本号
+	InstallID     string    `json:"install_id"`
+	NodeUUID      string    `json:"node_uuid"`
+	RXRateBps     int64     `json:"rx_rate_bps"`
+	TXRateBps     int64     `json:"tx_rate_bps"`
+	LastLiveAt    time.Time `json:"last_live_at"`
+	AgentVersion  string    `json:"agent_version,omitempty"` // Agent 上报的版本号
+	TotalRXBytes  int64     `json:"total_rx_bytes"`
+	TotalTXBytes  int64     `json:"total_tx_bytes"`
+	LastCounterRX int64
+	LastCounterTX int64
+	CounterBootID string
+	CounterSeen   bool
+	Dirty         bool
 }
 
 // FrontendPushMsg 推送给前端的实时消息
 type FrontendPushMsg struct {
-	InstallID  string `json:"install_id"`
-	NodeUUID   string `json:"node_uuid"`
-	RXRateBps  int64  `json:"rx_rate_bps"`
-	TXRateBps  int64  `json:"tx_rate_bps"`
-	LastLiveAt int64  `json:"last_live_at"` // Unix 秒
-	Offline    bool   `json:"offline"`
+	InstallID    string `json:"install_id"`
+	NodeUUID     string `json:"node_uuid"`
+	RXRateBps    int64  `json:"rx_rate_bps"`
+	TXRateBps    int64  `json:"tx_rate_bps"`
+	TotalRXBytes int64  `json:"total_rx_bytes"`
+	TotalTXBytes int64  `json:"total_tx_bytes"`
+	LastLiveAt   int64  `json:"last_live_at"` // Unix 秒
+	Offline      bool   `json:"offline"`
 }
 
 // ============================================================
@@ -85,7 +95,7 @@ type FrontendPushMsg struct {
 type AgentCommand struct {
 	Type      string      `json:"type"`       // 固定 "command"
 	CommandID string      `json:"command_id"` // 幂等键
-	Action    string      `json:"action"`     // "reset-links" / "reinstall-singbox"
+	Action    string      `json:"action"`     // "reset-links" / "reinstall-singbox" / "check-agent-update"
 	Payload   interface{} `json:"payload,omitempty"`
 }
 
@@ -155,8 +165,79 @@ func GetTrafficHub() *TrafficHub {
 			cmdResults:  make(map[string]chan AgentCommandResult),
 			cmdLogs:     make(map[string]*CommandLog),
 		}
+		go globalHub.runPersistLoop()
 	})
 	return globalHub
+}
+
+func normalizeTrafficPersistIntervalSec(v int) int {
+	if v < 10 {
+		return 10
+	}
+	if v > 3600 {
+		return 3600
+	}
+	return v
+}
+
+func loadTrafficPersistIntervalSec() int {
+	var cfg database.SysConfig
+	if err := database.DB.Where("key = ?", "pref_traffic_persist_interval_sec").First(&cfg).Error; err != nil {
+		return 300
+	}
+	parsed, err := strconv.Atoi(strings.TrimSpace(cfg.Value))
+	if err != nil {
+		return 300
+	}
+	return normalizeTrafficPersistIntervalSec(parsed)
+}
+
+func loadNodeTrafficBase(installID string) (rxBase, txBase int64) {
+	var node database.NodePool
+	if err := database.DB.Select("traffic_down", "traffic_up").Where("install_id = ?", installID).First(&node).Error; err != nil {
+		return 0, 0
+	}
+	return node.TrafficDown, node.TrafficUp
+}
+
+func (h *TrafficHub) runPersistLoop() {
+	for {
+		interval := loadTrafficPersistIntervalSec()
+		timer := time.NewTimer(time.Duration(interval) * time.Second)
+		<-timer.C
+		timer.Stop()
+		h.flushDirtyNodeTraffic()
+	}
+}
+
+func (h *TrafficHub) flushDirtyNodeTraffic() {
+	type flushItem struct {
+		installID string
+		rx        int64
+		tx        int64
+	}
+	items := make([]flushItem, 0, 64)
+
+	h.mu.Lock()
+	for iid, st := range h.nodes {
+		if st == nil || !st.Dirty {
+			continue
+		}
+		items = append(items, flushItem{installID: iid, rx: st.TotalRXBytes, tx: st.TotalTXBytes})
+		st.Dirty = false
+	}
+	h.mu.Unlock()
+
+	for _, item := range items {
+		if _, err := SaveNodeTrafficReport(item.installID, item.rx, item.tx, time.Now()); err != nil {
+			logger.Log.Error("实时累计流量写库失败", "install_id", item.installID, "error", err)
+			h.mu.Lock()
+			if st, ok := h.nodes[item.installID]; ok && st != nil {
+				st.Dirty = true
+			}
+			h.mu.Unlock()
+		}
+	}
 }
 
 // ============================================================
@@ -341,70 +422,102 @@ func HandleAgentWS(w http.ResponseWriter, r *http.Request) {
 		hub.mu.Lock()
 		state, exists := hub.nodes[installID]
 		if !exists {
+			baseRX, baseTX := loadNodeTrafficBase(installID)
 			state = &NodeLiveState{
-				InstallID: installID,
-				NodeUUID:  nodeUUID,
+				InstallID:    installID,
+				NodeUUID:     nodeUUID,
+				TotalRXBytes: baseRX,
+				TotalTXBytes: baseTX,
 			}
 			hub.nodes[installID] = state
 		}
 		state.RXRateBps = msg.RXRateBps
 		state.TXRateBps = msg.TXRateBps
 		state.LastLiveAt = time.Now()
-		// 更新 agent 版本（若快照消息携带）
+		// 更新 agent 版本
 		if msg.AgentVersion != "" {
 			state.AgentVersion = msg.AgentVersion
 		}
+
+		if strings.TrimSpace(msg.BootID) != "" {
+			currRX := msg.CounterRX
+			currTX := msg.CounterTX
+			if !state.CounterSeen {
+				state.LastCounterRX = currRX
+				state.LastCounterTX = currTX
+				state.CounterBootID = msg.BootID
+				state.CounterSeen = true
+			} else {
+				deltaRX := currRX
+				deltaTX := currTX
+				if state.CounterBootID == msg.BootID {
+					deltaRX = currRX - state.LastCounterRX
+					deltaTX = currTX - state.LastCounterTX
+					if deltaRX < 0 {
+						deltaRX = currRX
+					}
+					if deltaTX < 0 {
+						deltaTX = currTX
+					}
+				}
+				if deltaRX > 0 || deltaTX > 0 {
+					state.TotalRXBytes += deltaRX
+					state.TotalTXBytes += deltaTX
+					state.Dirty = true
+				}
+				state.LastCounterRX = currRX
+				state.LastCounterTX = currTX
+				state.CounterBootID = msg.BootID
+			}
+		} else {
+			logger.Log.Warn("Agent WS 消息缺少 boot_id，忽略累计", "install_id", installID)
+		}
+		totalRX := state.TotalRXBytes
+		totalTX := state.TotalTXBytes
 		hub.mu.Unlock()
 
-		// 若包含累计字段 → 快照消息处理
-		if msg.RXBytes != nil && msg.TXBytes != nil {
-			// 持久化 agent_version 到 NodePool（仅版本变更时更新，避免重复写库）
-			if msg.AgentVersion != "" {
-				go func(iid, newVer string) {
-					var node database.NodePool
-					if err := database.DB.Select("name", "agent_version").Where("install_id = ?", iid).First(&node).Error; err != nil {
-						return
-					}
-					oldVer := node.AgentVersion
-					nodeName := strings.TrimSpace(node.Name)
-					if nodeName == "" {
-						nodeName = "unknown"
-					}
-					if oldVer != newVer {
-						database.DB.Model(&database.NodePool{}).Where("install_id = ?", iid).Update("agent_version", newVer)
-						if oldVer == "" {
-							logger.Log.Info("Agent 版本已记录",
-								"event", "agent_version_init",
-								"install_id", iid,
-								"node_name", nodeName,
-								"agent_version", newVer)
-						} else {
-							logger.Log.Info("Agent 版本已更新",
-								"event", "agent_auto_updated",
-								"install_id", iid,
-								"node_name", nodeName,
-								"old_version", oldVer,
-								"new_version", newVer)
-						}
-					}
-				}(installID, msg.AgentVersion)
-			}
-
-			go func(iid string, rx, tx int64) {
-				if _, err := SaveNodeTrafficReport(iid, rx, tx, time.Now()); err != nil {
-					logger.Log.Error("WS 快照写入失败", "install_id", iid, "error", err)
+		// 持久化 agent_version 到 NodePool（仅版本变更时更新，避免重复写库）
+		if msg.AgentVersion != "" {
+			go func(iid, newVer string) {
+				var node database.NodePool
+				if err := database.DB.Select("name", "agent_version").Where("install_id = ?", iid).First(&node).Error; err != nil {
+					return
 				}
-			}(installID, *msg.RXBytes, *msg.TXBytes)
+				oldVer := node.AgentVersion
+				nodeName := strings.TrimSpace(node.Name)
+				if nodeName == "" {
+					nodeName = "unknown"
+				}
+				if oldVer != newVer {
+					database.DB.Model(&database.NodePool{}).Where("install_id = ?", iid).Update("agent_version", newVer)
+					if oldVer == "" {
+						logger.Log.Info("Agent 版本已记录",
+							"event", "agent_version_init",
+							"install_id", iid,
+							"node_name", nodeName,
+							"agent_version", newVer)
+					} else {
+						logger.Log.Info("Agent 版本已更新",
+							"event", "agent_auto_updated",
+							"install_id", iid,
+							"node_name", nodeName,
+							"old_version", oldVer,
+							"new_version", newVer)
+					}
+				}
+			}(installID, msg.AgentVersion)
 		}
 
 		// 转发给前端订阅者
 		pushMsg := FrontendPushMsg{
-			InstallID:  installID,
-			NodeUUID:   nodeUUID,
-			RXRateBps:  msg.RXRateBps,
-			TXRateBps:  msg.TXRateBps,
-			LastLiveAt: time.Now().Unix(),
-			Offline:    false,
+			InstallID:    installID,
+			NodeUUID:     nodeUUID,
+			RXRateBps:    msg.RXRateBps,
+			TXRateBps:    msg.TXRateBps,
+			TotalRXBytes: totalRX,
+			TotalTXBytes: totalTX,
+			LastLiveAt:   time.Now().Unix(),
+			Offline:      false,
 		}
 		hub.broadcast(nodeUUID, pushMsg)
 	}
@@ -471,12 +584,14 @@ func HandleTrafficLive(w http.ResponseWriter, r *http.Request) {
 			}
 
 			initMsg := FrontendPushMsg{
-				InstallID:  state.InstallID,
-				NodeUUID:   state.NodeUUID,
-				RXRateBps:  outRX,
-				TXRateBps:  outTX,
-				LastLiveAt: state.LastLiveAt.Unix(),
-				Offline:    isOffline,
+				InstallID:    state.InstallID,
+				NodeUUID:     state.NodeUUID,
+				RXRateBps:    outRX,
+				TXRateBps:    outTX,
+				TotalRXBytes: state.TotalRXBytes,
+				TotalTXBytes: state.TotalTXBytes,
+				LastLiveAt:   state.LastLiveAt.Unix(),
+				Offline:      isOffline,
 			}
 
 			data, _ := json.Marshal(initMsg)

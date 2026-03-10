@@ -49,13 +49,16 @@ func GenerateRawNodesYAML(routingType int, useFlag bool) (string, error) {
 	for _, node := range nodes {
 		enabledProtocolCount := 0
 		for p := range node.Links {
-			if !contains(node.DisabledLinks, p) {
+			if !contains(node.DisabledLinks, p) && shouldIncludeProtocolInSubscription(node, p) {
 				enabledProtocolCount++
 			}
 		}
 
 		for proto, link := range node.Links {
 			if contains(node.DisabledLinks, proto) {
+				continue
+			}
+			if !shouldIncludeProtocolInSubscription(node, proto) {
 				continue
 			}
 
@@ -76,8 +79,9 @@ func GenerateRawNodesYAML(routingType int, useFlag bool) (string, error) {
 				}
 				proxyNode := ParseProxyLink(link, baseName, node.Region, useFlag)
 				if proxyNode != nil {
-					if ipOpt.IP != "" {
-						proxyNode.Server = ipOpt.IP // 覆盖 Clash 解析后的 Server IP
+					targetHost := resolveNodeAccelerateHost(node, proto, ipOpt.IP)
+					if targetHost != "" {
+						proxyNode.Server = targetHost // 覆盖 Clash 解析后的 Server IP / 域名
 					}
 					proxyList = append(proxyList, proxyNode)
 				}
@@ -186,13 +190,16 @@ func GenerateV2RaySubBase64(useFlag bool) (string, error) {
 	for _, node := range nodes {
 		enabledProtocolCount := 0
 		for p := range node.Links {
-			if !contains(node.DisabledLinks, p) {
+			if !contains(node.DisabledLinks, p) && shouldIncludeProtocolInSubscription(node, p) {
 				enabledProtocolCount++
 			}
 		}
 
 		for proto, link := range node.Links {
 			if contains(node.DisabledLinks, proto) {
+				continue
+			}
+			if !shouldIncludeProtocolInSubscription(node, proto) {
 				continue
 			}
 
@@ -220,7 +227,8 @@ func GenerateV2RaySubBase64(useFlag bool) (string, error) {
 				cleanLink := strings.Split(link, "#")[0]
 
 				// 核心：使用刚才写的替换引擎，重构链接
-				targetLink := ReplaceLinkIP(cleanLink, ipOpt.IP)
+				targetHost := resolveNodeAccelerateHost(node, proto, ipOpt.IP)
+				targetLink := ReplaceLinkIP(cleanLink, targetHost)
 
 				// VMess 命名必须写回 JSON 的 ps 字段，避免部分 V2Ray 客户端对 #fragment 兼容性差
 				if strings.HasPrefix(strings.ToLower(targetLink), "vmess://") {
@@ -255,6 +263,43 @@ func GenerateV2RaySubBase64(useFlag bool) (string, error) {
 	b64Str := base64.StdEncoding.EncodeToString([]byte(rawStr))
 
 	return b64Str, nil
+}
+
+func resolveNodeAccelerateHost(node database.NodePool, proto string, fallbackIP string) string {
+	if !node.TunnelEnabled {
+		return fallbackIP
+	}
+	tunnelDomain := strings.TrimSpace(node.TunnelDomain)
+	if tunnelDomain == "" {
+		return fallbackIP
+	}
+	if !isTunnelCompatibleProtocolForSub(proto) {
+		return fallbackIP
+	}
+	prefix := strings.ToLower(strings.ReplaceAll(strings.TrimSpace(proto), "_", "-"))
+	if prefix == "" {
+		return tunnelDomain
+	}
+	return prefix + "." + tunnelDomain
+}
+
+func isTunnelCompatibleProtocolForSub(proto string) bool {
+	switch strings.TrimSpace(proto) {
+	case "vmess_ws", "vmess_http", "vmess_wst", "vmess_hut", "vless_wst", "vless_hut", "trojan_wst", "trojan_hut":
+		return true
+	default:
+		return false
+	}
+}
+
+func shouldIncludeProtocolInSubscription(node database.NodePool, proto string) bool {
+	if !node.TunnelEnabled {
+		return true
+	}
+	if strings.TrimSpace(node.TunnelDomain) == "" {
+		return true
+	}
+	return isTunnelCompatibleProtocolForSub(proto)
 }
 
 type IPOption struct {

@@ -19,3 +19,6 @@ func (u *Updater) MarkHealthy() {}
 
 // Run 非 Linux 空操作（立即返回）
 func (u *Updater) Run(ctx context.Context) {}
+
+// TriggerCheck 非 Linux 不支持更新检查
+func (u *Updater) TriggerCheck(ctx context.Context) error { return nil }

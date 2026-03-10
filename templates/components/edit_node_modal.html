@@ -886,10 +886,14 @@
                     <div class="edit-section" id="editNodeTrafficDetails"
                         style="display: none; background: #fafbfc; border-radius: 8px; padding: 12px; border: 1px solid #e5e5ea; margin-bottom: 15px;">
                         <div
-                            style="font-size: 13px; font-weight: 600; color: #666; margin-bottom: 10px; display: flex; justify-content: space-between;">
+                            style="font-size: 13px; font-weight: 600; color: #666; margin-bottom: 10px; display: flex; justify-content: space-between; align-items: center;">
                             <span>流量消耗</span>
-                            <span id="editNodeAgentVersion"
-                                style="font-size: 11px; color: #999; font-weight: normal;"></span>
+                            <div style="display:flex; align-items:center; gap:8px;">
+                                <span id="editNodeAgentVersion"
+                                    style="font-size: 11px; color: #999; font-weight: normal;"></span>
+                                <button type="button" id="btnCheckAgentUpdate" onclick="confirmCheckAgentUpdate()"
+                                    style="height:24px; border:1px solid #d0d7de; background:#fff; color:#333; border-radius:6px; font-size:11px; padding:0 8px; cursor:pointer;">检查更新</button>
+                            </div>
                         </div>
 
                         <div
@@ -1026,31 +1030,27 @@
         };
 
         const trafficDetailsEl = document.getElementById('editNodeTrafficDetails');
-        if (totalUsed > 0 || limitBytes > 0) {
-            trafficDetailsEl.style.display = 'block';
+        trafficDetailsEl.style.display = 'block';
 
-            // 计算进度条百分比
-            // 计算进度条百分比 (以上传和下载总和为 100%，直观展示流量倾向)
-            let upPct = 0; let downPct = 0;
-            if (totalUsed > 0) {
-                upPct = (upBytes / totalUsed) * 100;
-                downPct = (downBytes / totalUsed) * 100;
-            }
+        // 计算进度条百分比
+        // 计算进度条百分比 (以上传和下载总和为 100%，直观展示流量倾向)
+        let upPct = 0; let downPct = 0;
+        if (totalUsed > 0) {
+            upPct = (upBytes / totalUsed) * 100;
+            downPct = (downBytes / totalUsed) * 100;
+        }
 
-            // 直接赋值真实占比（两个条的占比加起来必定等于 100%）
-            document.getElementById('editNodeTrafficUpBar').style.width = upPct + '%';
-            document.getElementById('editNodeTrafficDownBar').style.width = downPct + '%';
-            document.getElementById('editNodeTrafficUpText').innerText = formatBytes(upBytes);
-            document.getElementById('editNodeTrafficDownText').innerText = formatBytes(downBytes);
+        // 直接赋值真实占比（两个条的占比加起来必定等于 100%）
+        document.getElementById('editNodeTrafficUpBar').style.width = upPct + '%';
+        document.getElementById('editNodeTrafficDownBar').style.width = downPct + '%';
+        document.getElementById('editNodeTrafficUpText').innerText = formatBytes(upBytes);
+        document.getElementById('editNodeTrafficDownText').innerText = formatBytes(downBytes);
 
-            // 显示 Agent 版本
-            if (node.agent_version) {
-                document.getElementById('editNodeAgentVersion').innerText = `Agent: ${node.agent_version}`;
-            } else {
-                document.getElementById('editNodeAgentVersion').innerText = 'Agent: 未知';
-            }
+        // 显示 Agent 版本
+        if (node.agent_version) {
+            document.getElementById('editNodeAgentVersion').innerText = `Agent: ${node.agent_version}`;
         } else {
-            trafficDetailsEl.style.display = 'none';
+            document.getElementById('editNodeAgentVersion').innerText = 'Agent: 未知';
         }
 
         // 2. 路由类型状态
@@ -1414,6 +1414,42 @@
         showCmdLogPanel('重置链接');
 
         fetch('/api/node/control/reset-links', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ uuid: uuid })
+        })
+        .then(res => res.json())
+        .then(data => {
+            if (data.status === 'success' && data.command_id) {
+                streamCommandLog(data.command_id);
+            } else {
+                appendCmdLog({ type: 'error', message: data.message || '命令下发失败' });
+            }
+        })
+        .catch(err => {
+            appendCmdLog({ type: 'error', message: '网络错误: ' + err.message });
+        })
+        .finally(() => {
+            if (btn) { btn.disabled = false; btn.style.opacity = '1'; }
+        });
+    }
+
+    // 远程触发 Agent 检查更新（流式输出 - 内嵌右栏）
+    function confirmCheckAgentUpdate() {
+        const uuid = document.getElementById('editNodeUUID').value;
+        const name = document.getElementById('editNodeName').value || uuid;
+        if (!uuid) return;
+
+        if (!confirm('确定要触发「' + name + '」执行 Agent 检查更新吗？')) {
+            return;
+        }
+
+        const btn = document.getElementById('btnCheckAgentUpdate');
+        if (btn) { btn.disabled = true; btn.style.opacity = '0.5'; }
+
+        showCmdLogPanel('检查 Agent 更新');
+
+        fetch('/api/node/control/check-agent-update', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ uuid: uuid })

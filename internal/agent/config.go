@@ -13,13 +13,11 @@ const DefaultConfigPath = "/etc/nodectl-agent/config.json"
 
 // Config Agent 配置结构体，从 /etc/nodectl-agent/config.json 读取
 type Config struct {
-	InstallID           string `json:"install_id"`            // 节点唯一标识 (12位)
-	WSURL               string `json:"ws_url"`                // WebSocket 上报地址
-	WSPushIntervalSec   int    `json:"ws_push_interval_sec"`  // 实时速率推送间隔 (默认 2 秒)
-	SnapshotIntervalSec int    `json:"snapshot_interval_sec"` // 累计快照间隔 (默认 300 秒)
-	Interface           string `json:"interface"`             // 网卡名称 ("auto" 自动检测)
-	ResetDay            int    `json:"reset_day"`             // 每月流量重置日 (0 表示不重置)
-	LogLevel            string `json:"log_level"`             // 日志等级
+	InstallID         string `json:"install_id"`           // 节点唯一标识 (12位)
+	WSURL             string `json:"ws_url"`               // WebSocket 上报地址
+	WSPushIntervalSec int    `json:"ws_push_interval_sec"` // 实时速率推送间隔 (默认 2 秒)
+	Interface         string `json:"interface"`            // 网卡名称 ("auto" 自动检测)
+	LogLevel          string `json:"log_level"`            // 日志等级
 }
 
 // LoadConfig 从指定路径加载配置文件
@@ -49,9 +47,6 @@ func LoadConfig(path string) (*Config, error) {
 	// 应用默认值
 	if cfg.WSPushIntervalSec <= 0 {
 		cfg.WSPushIntervalSec = 2
-	}
-	if cfg.SnapshotIntervalSec <= 0 {
-		cfg.SnapshotIntervalSec = 300
 	}
 	if strings.TrimSpace(cfg.Interface) == "" {
 		cfg.Interface = "auto"

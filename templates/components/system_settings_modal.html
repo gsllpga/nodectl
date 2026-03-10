@@ -2185,6 +2185,27 @@
                     </div>
 
                     <div class="sys-field">
+                        <label class="sys-label" style="display:flex;align-items:center;gap:4px;">
+                            实时流量落库间隔 (秒)
+                            <div class="sys-info-tooltip-wrap" tabindex="0">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                    stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                    <circle cx="12" cy="12" r="10"></circle>
+                                    <line x1="12" y1="8" x2="12" y2="12"></line>
+                                    <line x1="12" y1="16" x2="12.01" y2="16"></line>
+                                </svg>
+                                <div class="sys-tooltip-content">
+                                    <p style="margin: 0; padding-bottom: 4px; font-weight: 600; color: #fff;">参数说明</p>
+                                    <p style="margin: 0; padding-bottom: 4px;">• <b>实时累计:</b> Agent 每次上报原始计数器，后端实时累加。</p>
+                                    <p style="margin: 0;">• <b>落库间隔:</b> 控制后端将内存累计写入数据库频率，范围 10-3600 秒。</p>
+                                </div>
+                            </div>
+                        </label>
+                        <input type="number" id="sys_pref_traffic_persist_interval_sec" class="sys-input"
+                            placeholder="默认: 300" min="10" max="3600" oninput="triggerSysAutoSave()">
+                    </div>
+
+                    <div class="sys-field">
                         <label class="sys-label">默认安装协议</label>
                         <div class="sys-proto-groups-wrap" id="sysDefaultInstallProtocolGroups"></div>
                     </div>
@@ -2906,6 +2927,7 @@
                 document.getElementById('sys_airport_filter_invalid').checked = (data.airport_filter_invalid === 'true');
                 document.getElementById('sys_pref_speed_test_file_size').value = data.pref_speed_test_file_size || '50';
                 document.getElementById('sys_pref_traffic_stats_retention_days').value = data.pref_traffic_stats_retention_days || '30';
+                document.getElementById('sys_pref_traffic_persist_interval_sec').value = data.pref_traffic_persist_interval_sec || '300';
                 document.getElementById('sys_auth_cookie_ttl_mode').value = data.auth_cookie_ttl_mode || '1d';
                 document.getElementById('sys_force_http').checked = parseSysBool(data.sys_force_http, false);
                 document.getElementById('sys_login_ip_retry_window_sec').value = data.login_ip_retry_window_sec || '600';
@@ -3353,6 +3375,7 @@
                 "airport_filter_invalid": document.getElementById('sys_airport_filter_invalid').checked ? "true" : "false", // ✨ 新增：提交剔除无效节点开关
                 "pref_speed_test_file_size": document.getElementById('sys_pref_speed_test_file_size').value,
                 "pref_traffic_stats_retention_days": document.getElementById('sys_pref_traffic_stats_retention_days').value,
+                "pref_traffic_persist_interval_sec": document.getElementById('sys_pref_traffic_persist_interval_sec').value,
                 "auth_cookie_ttl_mode": document.getElementById('sys_auth_cookie_ttl_mode').value,
                 "sys_force_http": document.getElementById('sys_force_http').checked ? 'true' : 'false',
                 "login_ip_retry_window_sec": document.getElementById('sys_login_ip_retry_window_sec').value,

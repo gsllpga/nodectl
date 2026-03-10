@@ -268,6 +268,9 @@ func Start(tmplFS embed.FS) {
 	mux.HandleFunc("/api/get-nodes", withAuthAndSecure(apiGetNodes))
 	mux.HandleFunc("/api/offline-notify/settings", withAuthAndSecure(apiGetOfflineNotifySettings))
 	mux.HandleFunc("/api/offline-notify/update", withAuthAndSecure(apiUpdateOfflineNotifySetting))
+	mux.HandleFunc("/api/tunnel-node/settings", withAuthAndSecure(apiGetTunnelNodeSettings))
+	mux.HandleFunc("/api/tunnel-node/update", withAuthAndSecure(apiUpdateTunnelNodeSetting))
+	mux.HandleFunc("/api/tunnel-node/delete", withAuthAndSecure(apiDeleteTunnelNode))
 	mux.HandleFunc("/api/add-node", withAuthAndSecure(apiAddNode))
 	mux.HandleFunc("/api/update-node", withAuthAndSecure(apiUpdateNode))
 	mux.HandleFunc("/api/delete-node", withAuthAndSecure(apiDeleteNode))
@@ -310,10 +313,13 @@ func Start(tmplFS embed.FS) {
 	mux.HandleFunc("/api/traffic/live", withAuthAndSecure(apiTrafficLive)) // 前端实时流量订阅
 
 	// ========== 节点控制 (Agent 命令下发) ==========
-	mux.HandleFunc("/api/node/control/reset-links", withAuthAndSecure(apiNodeControlResetLinks))      // 远程重置链接
-	mux.HandleFunc("/api/node/control/reinstall-singbox", withAuthAndSecure(apiNodeControlReinstall)) // 远程重装 sing-box
-	mux.HandleFunc("/api/node/control/stream", withAuthAndSecure(apiNodeControlStream))               // 命令执行 SSE 流
-	mux.HandleFunc("/api/node/online-status", withAuthAndSecure(apiNodeOnlineStatus))                 // 节点在线状态查询
+	mux.HandleFunc("/api/node/control/reset-links", withAuthAndSecure(apiNodeControlResetLinks))              // 远程重置链接
+	mux.HandleFunc("/api/node/control/reinstall-singbox", withAuthAndSecure(apiNodeControlReinstall))         // 远程重装 sing-box
+	mux.HandleFunc("/api/node/control/check-agent-update", withAuthAndSecure(apiNodeControlCheckAgentUpdate)) // 远程检查 Agent 更新
+	mux.HandleFunc("/api/node/control/tunnel-start", withAuthAndSecure(apiNodeControlTunnelStart))            // 远程启动 tunnel
+	mux.HandleFunc("/api/node/control/tunnel-stop", withAuthAndSecure(apiNodeControlTunnelStop))              // 远程停止 tunnel
+	mux.HandleFunc("/api/node/control/stream", withAuthAndSecure(apiNodeControlStream))                       // 命令执行 SSE 流
+	mux.HandleFunc("/api/node/online-status", withAuthAndSecure(apiNodeOnlineStatus))                         // 节点在线状态查询
 
 	// 订阅接口
 	mux.HandleFunc("/sub/clash", withSecure(apiSubClash))

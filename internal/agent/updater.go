@@ -205,6 +205,15 @@ func (u *Updater) Run(ctx context.Context) {
 	}
 }
 
+// TriggerCheck 手动触发一次更新检查（供远程命令调用）
+func (u *Updater) TriggerCheck(ctx context.Context) error {
+	if AgentVersion == "dev" || AgentVersion == "" {
+		return fmt.Errorf("dev 版本不支持更新检查")
+	}
+	u.checkAndUpdate(ctx)
+	return nil
+}
+
 // checkAndUpdate 执行一次完整的检查和更新流程
 func (u *Updater) checkAndUpdate(ctx context.Context) {
 	if !u.mu.TryLock() {
