@@ -69,14 +69,24 @@ func (rt *Runtime) Run() error {
 		if err := rt.reporter.Connect(ctx); err != nil {
 			log.Printf("[Agent] 首次连接失败: %v", err)
 			if postUpdatePending && postUpdateTimeout > 0 && time.Since(connectStartedAt) > postUpdateTimeout {
-				return fmt.Errorf("更新后健康检查超时（%v 内未完成首个 WS 握手），将触发重启/回滚", postUpdateTimeout)
+				log.Printf("[Agent] 更新后健康检查超时（%v 内未完成首个 WS 握手），执行原地回滚...",
+					postUpdateTimeout)
+				if rt.updater != nil {
+					rt.updater.RollbackAndReexec() // 不会返回
+				}
+				return fmt.Errorf("更新后健康检查超时（%v 内未完成首个 WS 握手）", postUpdateTimeout)
 			}
 			if ctx.Err() != nil {
 				return ctx.Err()
 			}
 			if err := rt.reporter.ReconnectWithBackoff(ctx); err != nil {
 				if postUpdatePending && postUpdateTimeout > 0 && time.Since(connectStartedAt) > postUpdateTimeout {
-					return fmt.Errorf("更新后健康检查超时（%v 内未完成首个 WS 握手），将触发重启/回滚", postUpdateTimeout)
+					log.Printf("[Agent] 更新后健康检查超时（%v 内未完成首个 WS 握手），执行原地回滚...",
+						postUpdateTimeout)
+					if rt.updater != nil {
+						rt.updater.RollbackAndReexec() // 不会返回
+					}
+					return fmt.Errorf("更新后健康检查超时（%v 内未完成首个 WS 握手）", postUpdateTimeout)
 				}
 				if ctx.Err() != nil {
 					return ctx.Err()

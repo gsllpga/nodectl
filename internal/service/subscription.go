@@ -82,6 +82,10 @@ func GenerateRawNodesYAML(routingType int, useFlag bool) (string, error) {
 					targetHost := resolveNodeAccelerateHost(node, proto, ipOpt.IP)
 					if targetHost != "" {
 						proxyNode.Server = targetHost // 覆盖 Clash 解析后的 Server IP / 域名
+						if shouldUseTunnelForSubscription(node, proto) {
+							proxyNode.Port = resolveTunnelEdgePortForProto(proto, proxyNode.Port)
+							applyTunnelHostToClashNode(proxyNode, targetHost)
+						}
 					}
 					proxyList = append(proxyList, proxyNode)
 				}
@@ -229,6 +233,10 @@ func GenerateV2RaySubBase64(useFlag bool) (string, error) {
 				// 核心：使用刚才写的替换引擎，重构链接
 				targetHost := resolveNodeAccelerateHost(node, proto, ipOpt.IP)
 				targetLink := ReplaceLinkIP(cleanLink, targetHost)
+				if shouldUseTunnelForSubscription(node, proto) {
+					targetLink = ReplaceLinkPort(targetLink, resolveTunnelEdgePortForProto(proto, 0))
+					targetLink = ReplaceLinkSNIAndHost(targetLink, targetHost)
+				}
 
 				// VMess 命名必须写回 JSON 的 ps 字段，避免部分 V2Ray 客户端对 #fragment 兼容性差
 				if strings.HasPrefix(strings.ToLower(targetLink), "vmess://") {
@@ -300,6 +308,51 @@ func shouldIncludeProtocolInSubscription(node database.NodePool, proto string) b
 		return true
 	}
 	return isTunnelCompatibleProtocolForSub(proto)
+}
+
+func shouldUseTunnelForSubscription(node database.NodePool, proto string) bool {
+	if !node.TunnelEnabled {
+		return false
+	}
+	if strings.TrimSpace(node.TunnelDomain) == "" {
+		return false
+	}
+	return isTunnelCompatibleProtocolForSub(proto)
+}
+
+func resolveTunnelEdgePortForProto(proto string, fallback int) int {
+	switch strings.TrimSpace(proto) {
+	case "vmess_ws", "vmess_http":
+		return 80
+	default:
+		return 443
+	}
+}
+
+func applyTunnelHostToClashNode(node *ClashNode, host string) {
+	if node == nil || strings.TrimSpace(host) == "" {
+		return
+	}
+	node.ServerName = host
+	node.SNI = host
+
+	if node.WSOpts != nil {
+		headers, ok := node.WSOpts["headers"].(map[string]string)
+		if !ok || headers == nil {
+			headers = map[string]string{}
+		}
+		headers["Host"] = host
+		node.WSOpts["headers"] = headers
+	}
+
+	if node.HTTPOpts != nil {
+		h, ok := node.HTTPOpts["headers"].(map[string]interface{})
+		if !ok || h == nil {
+			h = map[string]interface{}{}
+		}
+		h["Host"] = []string{host}
+		node.HTTPOpts["headers"] = h
+	}
 }
 
 type IPOption struct {
@@ -526,6 +579,95 @@ func ReplaceLinkIP(link string, newIP string) string {
 		}
 	}
 
+	return u.String()
+}
+
+// ReplaceLinkPort 安全替换标准 URI 链接中的端口。
+// 对 vmess://base64(json) 会改写 port 字段；对其他 URI 则改写 Host 的端口。
+func ReplaceLinkPort(link string, newPort int) string {
+	if newPort <= 0 {
+		return link
+	}
+
+	lowerLink := strings.ToLower(link)
+
+	if strings.HasPrefix(lowerLink, "vmess://") {
+		body := safeBase64Decode(link[8:])
+		if body == "" {
+			return link
+		}
+
+		var vj map[string]interface{}
+		if err := json.Unmarshal([]byte(body), &vj); err != nil {
+			return link
+		}
+
+		vj["port"] = strconv.Itoa(newPort)
+
+		newBody, err := json.Marshal(vj)
+		if err != nil {
+			return link
+		}
+		return "vmess://" + base64.StdEncoding.EncodeToString(newBody)
+	}
+
+	u, err := url.Parse(link)
+	if err != nil || u.Host == "" {
+		return link
+	}
+
+	hostname := u.Hostname()
+	if hostname == "" {
+		return link
+	}
+	u.Host = net.JoinHostPort(hostname, strconv.Itoa(newPort))
+	return u.String()
+}
+
+// ReplaceLinkSNIAndHost 将链接中的 host/sni/peer 参数改为指定域名。
+// 适用于 Tunnel 加速场景，确保请求正确命中 Tunnel hostname 路由。
+func ReplaceLinkSNIAndHost(link string, host string) string {
+	host = strings.TrimSpace(host)
+	if host == "" {
+		return link
+	}
+
+	lowerLink := strings.ToLower(link)
+
+	if strings.HasPrefix(lowerLink, "vmess://") {
+		body := safeBase64Decode(link[8:])
+		if body == "" {
+			return link
+		}
+
+		var vj map[string]interface{}
+		if err := json.Unmarshal([]byte(body), &vj); err != nil {
+			return link
+		}
+
+		vj["host"] = host
+		vj["sni"] = host
+
+		newBody, err := json.Marshal(vj)
+		if err != nil {
+			return link
+		}
+		return "vmess://" + base64.StdEncoding.EncodeToString(newBody)
+	}
+
+	u, err := url.Parse(link)
+	if err != nil {
+		return link
+	}
+	q := u.Query()
+	q.Set("host", host)
+	if q.Has("sni") {
+		q.Set("sni", host)
+	}
+	if q.Has("peer") {
+		q.Set("peer", host)
+	}
+	u.RawQuery = q.Encode()
 	return u.String()
 }
 

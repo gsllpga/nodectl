@@ -499,7 +499,7 @@ func apiGetTunnelNodeSettings(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var nodes []database.NodePool
-	if err := database.DB.Select("uuid", "name", "install_id", "tunnel_enabled", "tunnel_id", "tunnel_domain", "region", "sort_index", "updated_at").
+	if err := database.DB.Select("uuid", "name", "install_id", "links", "disabled_links", "tunnel_enabled", "tunnel_id", "tunnel_domain", "region", "sort_index", "updated_at").
 		Order("sort_index ASC, updated_at DESC").
 		Find(&nodes).Error; err != nil {
 		sendJSON(w, "error", "读取 tunnel 节点配置失败")

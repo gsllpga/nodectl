@@ -38,7 +38,8 @@ const (
 	// 下载缓冲大小（低内存）
 	downloadBufSize = 64 * 1024 // 64 KiB
 	// 健康检查超时（新版启动后在此时间内完成 WS 握手即为健康）
-	healthCheckTimeout = 30 * time.Second
+	// 设置为 5 分钟：Connect() 本身有 15s 超时，一次失败+退避+重试轻松超过 30s
+	healthCheckTimeout = 5 * time.Minute
 	// 崩溃循环阈值：连续 N 次在 healthCheckTimeout 内退出则锁定
 	maxCrashCount = 3
 	// HTTP 请求超时
@@ -234,12 +235,6 @@ func (u *Updater) checkAndUpdate(ctx context.Context) {
 	}
 	defer u.mu.Unlock()
 
-	// 检查是否锁定
-	if u.state.Locked {
-		log.Printf("[Updater] 更新已锁定（锁定版本: %s），跳过检查", u.state.LockedVersion)
-		return
-	}
-
 	log.Printf("[Updater] 开始检查更新 (当前版本: %s)", AgentVersion)
 
 	// 1. 查询 latest release
@@ -276,9 +271,18 @@ func (u *Updater) checkAndUpdate(ctx context.Context) {
 		return
 	}
 
-	// 3. 如果锁定的版本与新版不同，解锁
-	if u.state.Locked && u.state.LockedVersion != targetVersion {
-		log.Printf("[Updater] 检测到新版本 %s（锁定版本为 %s），解除锁定", targetVersion, u.state.LockedVersion)
+	// 3. 锁定状态检查（必须在获取 targetVersion 之后才能判断是否有更新的新版可以解锁）
+	// Bug 修复：旧代码在函数开头 if locked { return } 导致此处解锁代码永远不会执行，
+	// 锁定状态一旦设置就永久有效。正确做法是先查询远端版本，再决定是否跳过或解锁。
+	if u.state.Locked {
+		if u.state.LockedVersion == targetVersion {
+			// 最新版本与锁定版本相同，仍在锁定范围内，跳过
+			log.Printf("[Updater] 版本 %s 更新已锁定（曾导致崩溃），跳过本次更新", targetVersion)
+			return
+		}
+		// 远端已发布更新的新版本，解除旧锁定，尝试更新
+		log.Printf("[Updater] 检测到新版本 %s（锁定版本为 %s），解除锁定并尝试更新",
+			targetVersion, u.state.LockedVersion)
 		u.state.Locked = false
 		u.state.LockedVersion = ""
 		u.saveState()
@@ -353,14 +357,55 @@ func (u *Updater) checkAndUpdate(ctx context.Context) {
 
 	log.Printf("[Updater] 更新完成 %s → %s，准备加载新进程", localVer, targetVersion)
 
-	// 10. 就地替换进程镜像，避免依赖 systemd/OpenRC 是否自动拉起
-	// 成功后不会返回，进程将直接以新二进制重新进入 main()
-	execArgs := append([]string{u.selfPath}, os.Args[1:]...)
-	if err := syscall.Exec(u.selfPath, execArgs, os.Environ()); err != nil {
-		log.Printf("[Updater] 就地重启失败: %v，回退为发送中断信号", err)
-		p, _ := os.FindProcess(os.Getpid())
-		_ = p.Signal(os.Interrupt)
+	// 10. 就地替换进程镜像（execve），成功后不会返回
+	// 优点：PID 不变，systemd 无需感知；新二进制从 main() 重新初始化。
+	u.reexec(u.selfPath)
+}
+
+// reexec 通过 execve 就地替换进程镜像为 binPath。
+// 成功时永不返回；失败时以 exit(1) 退出，由 systemd/supervise 重新拉起服务。
+// 注意：不能发送 SIGINT/SIGTERM 作为回退——那会导致 rt.Run() 返回 nil，
+// 进程以 exit(0) 退出，而 Restart=on-failure 不会重启 exit(0) 的进程。
+func (u *Updater) reexec(binPath string) {
+	execArgs := append([]string{binPath}, os.Args[1:]...)
+	if err := syscall.Exec(binPath, execArgs, os.Environ()); err != nil {
+		log.Printf("[Updater] 就地重启失败: %v，以 exit(1) 退出等待 systemd 重新拉起", err)
+		os.Exit(1)
 	}
+	// 成功：永不到达此处
+}
+
+// RollbackAndReexec 紧急回滚：将 .bak 还原为正式版本，然后就地加载旧版本二进制。
+// 用于健康检查超时时不经 systemd 重启直接原地恢复，减少 StartLimitBurst 消耗。
+// 该函数不会正常返回（execve 成功 或 os.Exit(1)）。
+func (u *Updater) RollbackAndReexec() {
+	u.mu.Lock()
+	bakPath := u.selfPath + ".bak"
+	if _, err := os.Stat(bakPath); err != nil {
+		u.mu.Unlock()
+		log.Printf("[Updater] 紧急回滚失败：.bak 文件不存在，以 exit(1) 退出")
+		os.Exit(1)
+	}
+	if err := os.Rename(bakPath, u.selfPath); err != nil {
+		u.mu.Unlock()
+		log.Printf("[Updater] 紧急回滚失败：%v，以 exit(1) 退出", err)
+		os.Exit(1)
+	}
+	u.state.Locked = true
+	u.state.LockedVersion = AgentVersion // 锁定刚才失败的新版本
+	u.state.CrashCount = 0
+	u.saveState()
+	u.mu.Unlock()
+
+	log.Printf("[Updater] 已回滚到旧版本，就地加载旧二进制...")
+	u.reexec(u.selfPath)
+}
+
+// ReexecSelf 就地加载当前 selfPath 指向的二进制（回滚已完成后由 main.go 调用）。
+// 该函数不会正常返回（execve 成功 或 os.Exit(1)）。
+func (u *Updater) ReexecSelf() {
+	log.Printf("[Updater] 就地加载当前版本二进制: %s", u.selfPath)
+	u.reexec(u.selfPath)
 }
 
 // ============================================================

@@ -444,7 +444,24 @@
             const node = state.nodeMap[state.selectedNodeUUID] || {};
             const region = node.region || '';
             const name = node.name || '--';
-            el.innerHTML = `<span class="dot"></span><span>${esc(flagEmoji(region))} ${esc(name)}</span>`;
+
+            const limit = Number(node.traffic_limit || 0);
+            const rankItems = (state.rank && Array.isArray(state.rank.items)) ? state.rank.items : [];
+            const selectedItem = rankItems.find(x => x.uuid === state.selectedNodeUUID);
+            let used = 0;
+            if (selectedItem) {
+                used = Number(selectedItem.total_bytes || 0);
+            }
+
+            let limitHTML = '';
+            if (limit > 0) {
+                const pct = Math.min(100, (used / limit) * 100).toFixed(2);
+                limitHTML = `<span style="font-size: 13px; font-weight: normal; margin-left: 8px; color: #666; background: #f0f0f5; padding: 2px 8px; border-radius: 6px; letter-spacing: 0;">${fmtBytes(used)} / ${fmtBytes(limit)} (${pct}%)</span>`;
+            } else if (used > 0) {
+                limitHTML = `<span style="font-size: 13px; font-weight: normal; margin-left: 8px; color: #666; background: #f0f0f5; padding: 2px 8px; border-radius: 6px; letter-spacing: 0;">已用 ${fmtBytes(used)}</span>`;
+            }
+
+            el.innerHTML = `<span class="dot"></span><span>${esc(flagEmoji(region))} ${esc(name)}</span>${limitHTML}`;
         }
 
         function setStatus(msg, isErr) {
@@ -464,7 +481,8 @@
                 state.nodeMap[n.uuid] = {
                     uuid: n.uuid,
                     name: n.name,
-                    region: n.region || ''
+                    region: n.region || '',
+                    traffic_limit: n.traffic_limit || 0
                 };
             });
 
@@ -490,8 +508,11 @@
                     state.nodeMap[it.uuid] = {
                         uuid: it.uuid,
                         name: it.name,
-                        region: it.region || ''
+                        region: it.region || '',
+                        traffic_limit: it.traffic_limit || 0
                     };
+                } else {
+                    state.nodeMap[it.uuid].traffic_limit = it.traffic_limit || 0;
                 }
             });
 

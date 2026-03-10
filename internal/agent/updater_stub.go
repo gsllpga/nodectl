@@ -31,3 +31,9 @@ func (u *Updater) IsPostUpdatePending() bool { return false }
 
 // HealthTimeout 非 Linux 返回 0 表示禁用
 func (u *Updater) HealthTimeout() time.Duration { return 0 }
+
+// RollbackAndReexec 非 Linux 空操作（不会发生回滚）
+func (u *Updater) RollbackAndReexec() {}
+
+// ReexecSelf 非 Linux 空操作（不会就地重启）
+func (u *Updater) ReexecSelf() {}

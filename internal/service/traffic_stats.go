@@ -72,10 +72,11 @@ func saveNodeTrafficReportOnce(installID string, rxBytes, txBytes int64, reporte
 }
 
 type TrafficLandingNode struct {
-	UUID      string `json:"uuid"`
-	InstallID string `json:"install_id"`
-	Name      string `json:"name"`
-	Region    string `json:"region"`
+	UUID         string `json:"uuid"`
+	InstallID    string `json:"install_id"`
+	Name         string `json:"name"`
+	Region       string `json:"region"`
+	TrafficLimit int64  `json:"traffic_limit"`
 }
 
 type TrafficConsumptionItem struct {
@@ -84,6 +85,7 @@ type TrafficConsumptionItem struct {
 	Name            string `json:"name"`
 	Region          string `json:"region"`
 	Offline         bool   `json:"offline"`
+	TrafficLimit    int64  `json:"traffic_limit"`
 	TrafficUp       int64  `json:"traffic_up"`
 	TrafficDown     int64  `json:"traffic_down"`
 	TotalBytes      int64  `json:"total_bytes"`
@@ -242,10 +244,11 @@ func GetTrafficLandingNodes() ([]TrafficLandingNode, error) {
 	result := make([]TrafficLandingNode, 0, len(nodes))
 	for _, n := range nodes {
 		result = append(result, TrafficLandingNode{
-			UUID:      n.UUID,
-			InstallID: n.InstallID,
-			Name:      n.Name,
-			Region:    strings.ToUpper(strings.TrimSpace(n.Region)),
+			UUID:         n.UUID,
+			InstallID:    n.InstallID,
+			Name:         n.Name,
+			Region:       strings.ToUpper(strings.TrimSpace(n.Region)),
+			TrafficLimit: n.TrafficLimit,
 		})
 	}
 	return result, nil
@@ -285,7 +288,7 @@ func GetTrafficConsumptionRank(limit int, rankDate string) (*TrafficConsumptionR
 
 	var nodes []database.NodePool
 	if err := database.DB.
-		Select("uuid", "install_id", "name", "region", "traffic_up", "traffic_down", "traffic_update_at", "updated_at").
+		Select("uuid", "install_id", "name", "region", "traffic_limit", "traffic_up", "traffic_down", "traffic_update_at", "updated_at").
 		Where("install_id <> ?", "").
 		Order("updated_at DESC").
 		Find(&nodes).Error; err != nil {
@@ -399,6 +402,7 @@ func GetTrafficConsumptionRank(limit int, rankDate string) (*TrafficConsumptionR
 			Name:            n.Name,
 			Region:          strings.ToUpper(strings.TrimSpace(n.Region)),
 			Offline:         offline,
+			TrafficLimit:    n.TrafficLimit,
 			TrafficUp:       up,
 			TrafficDown:     down,
 			TotalBytes:      total,

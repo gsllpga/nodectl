@@ -43,9 +43,11 @@ func main() {
 	}
 	if updater != nil {
 		if needRestart := updater.RecordStartup(); needRestart {
-			// 崩溃次数已达上限，已回滚到旧版本，需要用旧二进制重新启动
-			log.Printf("[Agent] 已回滚到旧版本，请通过 systemd 重启")
-			os.Exit(1)
+			// 崩溃次数已达上限，RecordStartup 已将旧版本还原到 selfPath。
+			// 优先通过 ReexecSelf() 就地加载旧二进制（同 PID，无需 systemd 重启）；
+			// 若 execve 失败则 ReexecSelf 内部会调用 os.Exit(1) 由 systemd 兜底。
+			log.Printf("[Agent] 连续崩溃已达阈值，已回滚到旧版本，尝试就地加载旧二进制...")
+			updater.ReexecSelf() // 不会返回
 		}
 	}
 

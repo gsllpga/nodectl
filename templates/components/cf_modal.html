@@ -2387,6 +2387,9 @@
 
                 const supportedList = Array.isArray(n.supported_tunnel_protocols) ? n.supported_tunnel_protocols : [];
                 const supportedText = supportedList.length > 0 ? supportedList.join(', ') : '无可用 Tunnel 协议';
+                const exampleHost = (domain !== '-' && supportedList.length > 0)
+                    ? `${String(supportedList[0]).replace(/_/g, '-')}.${domain}`
+                    : '-';
                 const status = online
                     ? '<span class="cft-node-status-badge cft-node-status-online">在线</span>'
                     : '<span class="cft-node-status-badge cft-node-status-offline">离线</span>';
@@ -2410,8 +2413,12 @@
                             <span style="font-family:monospace;color:#333;">${tunnelID}</span>
                         </div>
                         <div style="margin-bottom:4px; display: flex; align-items: center; gap: 8px;">
-                            <span style="display:inline-block;width:60px;color:#888;">完整域名:</span> 
+                            <span style="display:inline-block;width:60px;color:#888;">基础域名:</span> 
                             ${domain !== '-' ? `<a href="https://${domain}" target="_blank" style="color:#007aff;text-decoration:none;">${domain}</a>` : '<span style="color:#333;">-</span>'}
+                        </div>
+                        <div style="margin-bottom:4px; display: flex; align-items: center; gap: 8px;">
+                            <span style="display:inline-block;width:60px;color:#888;">接入域名:</span> 
+                            ${exampleHost !== '-' ? `<span style="font-family:monospace;color:#333;">${cftEscapeHtml(exampleHost)}</span>` : '<span style="color:#333;">-</span>'}
                         </div>
                         <div style="display: flex; align-items: center; gap: 8px;">
                             <span style="display:inline-block;width:60px;color:#888;">支持协议:</span> 

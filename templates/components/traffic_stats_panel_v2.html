@@ -779,6 +779,7 @@
             }
 
             recalcRankSummaryFromItems(rank.items);
+            if (nodeUUID === state.selectedNodeUUID) updateSelectedBadge();
         }
 
         // 连接实时流量 WebSocket
@@ -864,7 +865,24 @@
             const el = document.getElementById('ts-selected-node');
             if (!el) return;
             const node = state.nodeMap[state.selectedNodeUUID] || {};
-            el.innerHTML = `<span class="dot"></span><span class="ts-node-main">${flagEmoji(node.region)} <span class="ts-node-name">${esc(node.name || '--')}</span></span>`;
+
+            const limit = Number(node.traffic_limit || 0);
+            const rankItems = (state.rank && Array.isArray(state.rank.items)) ? state.rank.items : [];
+            const selectedItem = rankItems.find(x => x.uuid === state.selectedNodeUUID);
+            let used = 0;
+            if (selectedItem) {
+                used = Number(selectedItem.total_bytes || 0);
+            }
+
+            let limitHTML = '';
+            if (limit > 0) {
+                const pct = Math.min(100, (used / limit) * 100).toFixed(2);
+                limitHTML = `<span style="font-size: 13px; font-weight: normal; margin-left: 8px; color: #666; background: #f0f0f5; padding: 2px 8px; border-radius: 6px; letter-spacing: 0;">${fmtBytes(used)} / ${fmtBytes(limit)} (${pct}%)</span>`;
+            } else if (used > 0) {
+                limitHTML = `<span style="font-size: 13px; font-weight: normal; margin-left: 8px; color: #666; background: #f0f0f5; padding: 2px 8px; border-radius: 6px; letter-spacing: 0;">已用 ${fmtBytes(used)}</span>`;
+            }
+
+            el.innerHTML = `<span class="dot"></span><span class="ts-node-main">${flagEmoji(node.region)} <span class="ts-node-name">${esc(node.name || '--')}</span>${limitHTML}</span>`;
         }
 
         async function loadLandingNodes() {
@@ -875,7 +893,7 @@
             state.nodes = Array.isArray(data.nodes) ? data.nodes : [];
             state.nodeMap = {};
             state.nodes.forEach(n => {
-                state.nodeMap[n.uuid] = { uuid: n.uuid, name: n.name, region: n.region || '' };
+                state.nodeMap[n.uuid] = { uuid: n.uuid, name: n.name, region: n.region || '', traffic_limit: n.traffic_limit || 0 };
             });
 
             if (nodeSelect()) {
@@ -905,7 +923,9 @@
             });
             items.forEach(it => {
                 if (!state.nodeMap[it.uuid]) {
-                    state.nodeMap[it.uuid] = { uuid: it.uuid, name: it.name, region: it.region || '' };
+                    state.nodeMap[it.uuid] = { uuid: it.uuid, name: it.name, region: it.region || '', traffic_limit: it.traffic_limit || 0 };
+                } else {
+                    state.nodeMap[it.uuid].traffic_limit = it.traffic_limit || 0;
                 }
             });
 
