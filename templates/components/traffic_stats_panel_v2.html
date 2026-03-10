@@ -576,9 +576,12 @@
             linePoints: [],
             // 实时速率（来自 WS 推送）: node_uuid -> { rx_rate_bps, tx_rate_bps, last_live_at }
             liveRates: {},
+            // 实时累计（来自 WS 推送）: node_uuid -> { traffic_up, traffic_down, total_bytes }
+            liveTotals: {},
             // 节点在线状态（由后端判定）: node_uuid -> { offline, last_live_at }
             nodeStatus: {},
             liveWs: null,
+            rankRerenderTimer: null,
         };
 
         const nodeSelect = () => document.getElementById('ts-node-select');
@@ -739,6 +742,45 @@
             return kbs.toFixed(2) + ' KB/s';
         }
 
+        function scheduleRankRerender() {
+            if (state.rankRerenderTimer) return;
+            state.rankRerenderTimer = setTimeout(function () {
+                state.rankRerenderTimer = null;
+                renderRank();
+            }, 300);
+        }
+
+        function recalcRankSummaryFromItems(items) {
+            const safeItems = Array.isArray(items) ? items : [];
+            let totalUp = 0;
+            let totalDown = 0;
+            safeItems.forEach(it => {
+                totalUp += Number(it.traffic_up || 0);
+                totalDown += Number(it.traffic_down || 0);
+            });
+            document.getElementById('ts-rank-total-up').textContent = fmtBytes(totalUp);
+            document.getElementById('ts-rank-total-down').textContent = fmtBytes(totalDown);
+            document.getElementById('ts-rank-total-all').textContent = fmtBytes(totalUp + totalDown);
+        }
+
+        function applyLiveTotalToRank(nodeUUID, totalRXBytes, totalTXBytes) {
+            const rank = state.rank;
+            if (!rank || !Array.isArray(rank.items)) return;
+            const target = rank.items.find(x => x.uuid === nodeUUID);
+            if (!target) return;
+
+            target.traffic_up = Number(totalTXBytes || 0);
+            target.traffic_down = Number(totalRXBytes || 0);
+            target.total_bytes = Number(totalTXBytes || 0) + Number(totalRXBytes || 0);
+            if (Number(target.traffic_up || 0) > 0) {
+                target.upload_ratio = (Number(target.traffic_down || 0) / Number(target.traffic_up || 0)).toFixed(2);
+            } else {
+                target.upload_ratio = '0.00';
+            }
+
+            recalcRankSummaryFromItems(rank.items);
+        }
+
         // 连接实时流量 WebSocket
         function connectLiveWS() {
             if (state.liveWs) {
@@ -760,6 +802,15 @@
                             tx_rate_bps: msg.tx_rate_bps || 0,
                             last_live_at: msg.last_live_at || 0
                         };
+                        if (typeof msg.total_rx_bytes === 'number' && typeof msg.total_tx_bytes === 'number') {
+                            state.liveTotals[msg.node_uuid] = {
+                                traffic_up: msg.total_tx_bytes || 0,
+                                traffic_down: msg.total_rx_bytes || 0,
+                                total_bytes: (msg.total_tx_bytes || 0) + (msg.total_rx_bytes || 0)
+                            };
+                            applyLiveTotalToRank(msg.node_uuid, msg.total_rx_bytes || 0, msg.total_tx_bytes || 0);
+                            scheduleRankRerender();
+                        }
                         if (typeof msg.offline === 'boolean') {
                             state.nodeStatus[msg.node_uuid] = {
                                 offline: msg.offline,
@@ -871,12 +922,32 @@
 
         function renderRank() {
             const list = document.getElementById('ts-rank-list');
-            const items = (state.rank && Array.isArray(state.rank.items)) ? state.rank.items : [];
+            const items = (state.rank && Array.isArray(state.rank.items)) ? [...state.rank.items] : [];
 
             if (!items.length) {
                 list.innerHTML = '<div style="padding:8px; color:#999; font-size:12px;">暂无流量数据</div>';
                 return;
             }
+
+            items.forEach(item => {
+                const liveTotal = state.liveTotals[item.uuid];
+                if (liveTotal) {
+                    item.traffic_up = Number(liveTotal.traffic_up || 0);
+                    item.traffic_down = Number(liveTotal.traffic_down || 0);
+                    item.total_bytes = Number(liveTotal.total_bytes || 0);
+                    if (Number(item.traffic_up || 0) > 0) {
+                        item.upload_ratio = (Number(item.traffic_down || 0) / Number(item.traffic_up || 0)).toFixed(2);
+                    } else {
+                        item.upload_ratio = '0.00';
+                    }
+                }
+            });
+
+            items.sort((a, b) => Number(b.total_bytes || 0) - Number(a.total_bytes || 0));
+            if (state.rank && Array.isArray(state.rank.items)) {
+                state.rank.items = items;
+            }
+            recalcRankSummaryFromItems(items);
 
             const maxTotal = Math.max(1, ...items.map(x => Number(x.total_bytes || 0)));
             list.innerHTML = items.map(item => {

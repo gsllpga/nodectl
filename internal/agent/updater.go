@@ -214,6 +214,18 @@ func (u *Updater) TriggerCheck(ctx context.Context) error {
 	return nil
 }
 
+// IsPostUpdatePending 返回当前是否处于“更新后待健康确认”阶段（存在 .bak）
+func (u *Updater) IsPostUpdatePending() bool {
+	bakPath := u.selfPath + ".bak"
+	_, err := os.Stat(bakPath)
+	return err == nil
+}
+
+// HealthTimeout 返回更新后首个 WS 握手健康检查超时时间
+func (u *Updater) HealthTimeout() time.Duration {
+	return healthCheckTimeout
+}
+
 // checkAndUpdate 执行一次完整的检查和更新流程
 func (u *Updater) checkAndUpdate(ctx context.Context) {
 	if !u.mu.TryLock() {

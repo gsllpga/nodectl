@@ -3,7 +3,10 @@
 
 package agent
 
-import "context"
+import (
+	"context"
+	"time"
+)
 
 // Updater 非 Linux 平台的空实现桩
 type Updater struct{}
@@ -22,3 +25,9 @@ func (u *Updater) Run(ctx context.Context) {}
 
 // TriggerCheck 非 Linux 不支持更新检查
 func (u *Updater) TriggerCheck(ctx context.Context) error { return nil }
+
+// IsPostUpdatePending 非 Linux 恒为 false
+func (u *Updater) IsPostUpdatePending() bool { return false }
+
+// HealthTimeout 非 Linux 返回 0 表示禁用
+func (u *Updater) HealthTimeout() time.Duration { return 0 }
