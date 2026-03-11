@@ -648,7 +648,7 @@ func HandleTrafficLive(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// 周期推送快照：由后端统一判定离线，避免前端自行计时
-	ticker := time.NewTicker(3 * time.Second)
+	ticker := time.NewTicker(2 * time.Second)
 	defer ticker.Stop()
 
 	// 持续推送

@@ -126,7 +126,23 @@ func CheckAndHandleNodeTrafficThreshold(node *database.NodePool, usedBytes int64
 	}
 
 	if !node.TrafficThresholdReached {
+		// 从数据库查询节点的协议列表（reset-links 命令需要）
+		var fullNode database.NodePool
+		if err := database.DB.Select("links", "tunnel_enabled", "tunnel_id", "tunnel_domain", "tunnel_token", "disabled_links").Where("uuid = ?", node.UUID).First(&fullNode).Error; err != nil {
+			logger.Log.Warn("阈值停机查询节点协议失败", "uuid", node.UUID, "error", err)
+			return true
+		}
+		protocols := make([]string, 0, len(fullNode.Links))
+		for proto := range fullNode.Links {
+			protocols = append(protocols, proto)
+		}
+		if len(protocols) == 0 {
+			logger.Log.Warn("阈值停机: 节点无已知协议，跳过重置", "uuid", node.UUID)
+			return true
+		}
+
 		payload := map[string]interface{}{
+			"protocols":                 protocols,
 			"reason":                    "traffic-threshold-stop",
 			"source":                    source,
 			"traffic_threshold_percent": node.TrafficThresholdPercent,

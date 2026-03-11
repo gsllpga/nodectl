@@ -321,7 +321,7 @@
         border-radius: 10px;
         padding: 8px;
         cursor: pointer;
-        transition: all .2s;
+        transition: border-color .2s, box-shadow .2s;
         background: #fff;
     }
 
@@ -1040,6 +1040,78 @@
             updateTrendUsageMetric();
 
             const maxTotal = Math.max(1, ...items.map(x => Number(x.total_bytes || 0)));
+
+            // 构建新排序后的 uuid 列表，用于判断是否需要完整重建
+            const newOrder = items.map(x => x.uuid);
+            const existingEls = list.querySelectorAll('.ts-rank-item');
+            const existingOrder = Array.from(existingEls).map(el => el.getAttribute('data-uuid'));
+            const orderMatch = newOrder.length === existingOrder.length && newOrder.every((u, i) => u === existingOrder[i]);
+
+            if (orderMatch && existingEls.length > 0) {
+                // 就地更新：顺序未变，仅更新每个已存在元素的文字和样式
+                items.forEach((item, i) => {
+                    const el = existingEls[i];
+                    const up = Number(item.traffic_up || 0);
+                    const down = Number(item.traffic_down || 0);
+                    const total = Number(item.total_bytes || 0);
+                    const isActive = item.uuid === state.selectedNodeUUID;
+                    const widthPct = Math.max(1, total / maxTotal * 100);
+                    const upPct = total > 0 ? up / total * 100 : 0;
+                    const offline = state.nodeStatus[item.uuid]
+                        ? !!state.nodeStatus[item.uuid].offline
+                        : !!item.offline;
+
+                    el.classList.toggle('active', isActive);
+                    el.classList.toggle('offline', offline);
+
+                    const totalEl = el.querySelector('.ts-rank-total');
+                    if (totalEl) totalEl.textContent = fmtGb(total);
+
+                    const barFill = el.querySelector('.ts-rank-bar-fill');
+                    if (barFill) barFill.style.width = widthPct.toFixed(2) + '%';
+                    const barUp = el.querySelector('.ts-rank-bar-up');
+                    if (barUp) barUp.style.width = upPct.toFixed(2) + '%';
+                    const barDown = el.querySelector('.ts-rank-bar-down');
+                    if (barDown) barDown.style.width = (100 - upPct).toFixed(2) + '%';
+
+                    const metaDiv = el.querySelector('.ts-rank-meta > div');
+                    if (metaDiv) {
+                        const spans = metaDiv.querySelectorAll('span');
+                        if (spans[0]) spans[0].textContent = '↑ ' + fmtGb(up);
+                        if (spans[1]) spans[1].textContent = '↓ ' + fmtGb(down);
+                        if (spans[2]) spans[2].textContent = Number(item.upload_ratio || 0).toFixed(2);
+                    }
+
+                    // 更新活跃指示点
+                    const nameEl = el.querySelector('.ts-rank-name');
+                    if (nameEl) {
+                        const dot = nameEl.querySelector('.ts-dot');
+                        if (isActive && !dot) {
+                            const newDot = document.createElement('i');
+                            newDot.className = 'ts-dot';
+                            newDot.style.cssText = 'background:#34c759; margin:0; width:6px; height:6px;';
+                            nameEl.appendChild(newDot);
+                        } else if (!isActive && dot) {
+                            dot.remove();
+                        }
+                    }
+
+                    // 更新实时速率
+                    const rateEl = el.querySelector('.ts-live-rate');
+                    if (rateEl) {
+                        const live = state.liveRates[item.uuid];
+                        if (live && !offline) {
+                            rateEl.innerHTML = '<span style="color:#34c759;">↑ ' + fmtRate(live.rx_rate_bps) + '</span> <span style="color:#1e88ff;">↓ ' + fmtRate(live.tx_rate_bps) + '</span>';
+                        } else {
+                            rateEl.innerHTML = '<span style="color:#ccc;">--</span>';
+                        }
+                    }
+                });
+                syncRankListHeight();
+                return;
+            }
+
+            // 完整重建：顺序变化或首次渲染
             list.innerHTML = items.map(item => {
                 const up = Number(item.traffic_up || 0);
                 const down = Number(item.traffic_down || 0);
