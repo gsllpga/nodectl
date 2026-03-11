@@ -1400,7 +1400,8 @@
                                 </svg>
                                 <span class="cft-tooltip-content">
                                     Tunnel
-                                    加速仅支持：vmess_ws、vmess_http、vmess_wst、vmess_hut、vless_wst、vless_hut、trojan_wst、trojan_hut。<br>
+                                    加速仅支持：vmess_ws、vmess_wst、vmess_hut、vless_wst、vless_hut、trojan_wst、trojan_hut。<br>
+                                    注：vmess_http 不兼容 CF Tunnel（cloudflared 会解析 HTTP body 导致错误）。<br>
                                     其它协议不会走 Tunnel 加速，且在启用 Tunnel 的节点订阅中会被排除。
                                 </span>
                             </span>

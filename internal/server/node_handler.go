@@ -883,7 +883,7 @@ func buildNodeTunnelCommandPayload(node database.NodePool) (map[string]interface
 
 		// TLS 协议（_wst/_hut）的 sing-box 端口启用了 TLS（自签证书），
 		// cloudflared 必须使用 https:// 连接，并配合 noTLSVerify 跳过证书验证。
-		// 非 TLS 协议（vmess_ws/vmess_http）的 sing-box 端口是纯 HTTP。
+		// 非 TLS 协议（vmess_ws）的 sing-box 端口是纯 HTTP。
 		scheme := "http"
 		if isTLSBackendProtocol(proto) {
 			scheme = "https"
@@ -973,9 +973,14 @@ func buildTunnelHostForProtocol(baseDomain, protocol string) string {
 	return prefix + "." + base
 }
 
+// isTunnelCompatibleProtocol 判断协议是否兼容 Cloudflare Tunnel。
+// 注意：vmess_http（sing-box "http" transport）不兼容 CF Tunnel，因为 cloudflared
+// 作为 HTTP 反向代理会解析 HTTP body，而 VMess 的二进制流会导致
+// "unexpected EOF" / "chunked line ends with bare LF" 等解析错误。
+// 只有 WebSocket 和 HTTPUpgrade 系列协议能通过 Upgrade 机制让 cloudflared 跳过 HTTP 解析。
 func isTunnelCompatibleProtocol(protocol string) bool {
 	switch strings.TrimSpace(protocol) {
-	case "vmess_ws", "vmess_http", "vmess_wst", "vmess_hut", "vless_wst", "vless_hut", "trojan_wst", "trojan_hut":
+	case "vmess_ws", "vmess_wst", "vmess_hut", "vless_wst", "vless_hut", "trojan_wst", "trojan_hut":
 		return true
 	default:
 		return false

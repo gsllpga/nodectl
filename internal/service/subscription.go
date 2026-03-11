@@ -291,9 +291,12 @@ func resolveNodeAccelerateHost(node database.NodePool, proto string, fallbackIP 
 	return prefix + "." + tunnelDomain
 }
 
+// isTunnelCompatibleProtocolForSub 判断该协议是否能走 Tunnel 加速。
+// vmess_http（sing-box "http" transport）不兼容 CF Tunnel：cloudflared 作为 HTTP
+// 反向代理会解析 HTTP body，VMess 二进制流导致 "unexpected EOF" 错误。
 func isTunnelCompatibleProtocolForSub(proto string) bool {
 	switch strings.TrimSpace(proto) {
-	case "vmess_ws", "vmess_http", "vmess_wst", "vmess_hut", "vless_wst", "vless_hut", "trojan_wst", "trojan_hut":
+	case "vmess_ws", "vmess_wst", "vmess_hut", "vless_wst", "vless_hut", "trojan_wst", "trojan_hut":
 		return true
 	default:
 		return false
@@ -322,7 +325,7 @@ func shouldUseTunnelForSubscription(node database.NodePool, proto string) bool {
 
 func resolveTunnelEdgePortForProto(proto string, fallback int) int {
 	switch strings.TrimSpace(proto) {
-	case "vmess_ws", "vmess_http":
+	case "vmess_ws":
 		return 80
 	default:
 		return 443
