@@ -72,25 +72,28 @@ func saveNodeTrafficReportOnce(installID string, rxBytes, txBytes int64, reporte
 }
 
 type TrafficLandingNode struct {
-	UUID         string `json:"uuid"`
-	InstallID    string `json:"install_id"`
-	Name         string `json:"name"`
-	Region       string `json:"region"`
-	TrafficLimit int64  `json:"traffic_limit"`
+	UUID             string `json:"uuid"`
+	InstallID        string `json:"install_id"`
+	Name             string `json:"name"`
+	Region           string `json:"region"`
+	TrafficLimit     int64  `json:"traffic_limit"`
+	TrafficLimitType string `json:"traffic_limit_type"`
 }
 
 type TrafficConsumptionItem struct {
-	UUID            string `json:"uuid"`
-	InstallID       string `json:"install_id"`
-	Name            string `json:"name"`
-	Region          string `json:"region"`
-	Offline         bool   `json:"offline"`
-	TrafficLimit    int64  `json:"traffic_limit"`
-	TrafficUp       int64  `json:"traffic_up"`
-	TrafficDown     int64  `json:"traffic_down"`
-	TotalBytes      int64  `json:"total_bytes"`
-	UploadRatio     string `json:"upload_ratio"`
-	TrafficUpdateAt string `json:"traffic_update_at"`
+	UUID             string `json:"uuid"`
+	InstallID        string `json:"install_id"`
+	Name             string `json:"name"`
+	Region           string `json:"region"`
+	Offline          bool   `json:"offline"`
+	TrafficLimit     int64  `json:"traffic_limit"`
+	TrafficLimitType string `json:"traffic_limit_type"`
+	TrafficUsedBytes int64  `json:"traffic_used_bytes"`
+	TrafficUp        int64  `json:"traffic_up"`
+	TrafficDown      int64  `json:"traffic_down"`
+	TotalBytes       int64  `json:"total_bytes"`
+	UploadRatio      string `json:"upload_ratio"`
+	TrafficUpdateAt  string `json:"traffic_update_at"`
 }
 
 type TrafficConsumptionRank struct {
@@ -244,11 +247,12 @@ func GetTrafficLandingNodes() ([]TrafficLandingNode, error) {
 	result := make([]TrafficLandingNode, 0, len(nodes))
 	for _, n := range nodes {
 		result = append(result, TrafficLandingNode{
-			UUID:         n.UUID,
-			InstallID:    n.InstallID,
-			Name:         n.Name,
-			Region:       strings.ToUpper(strings.TrimSpace(n.Region)),
-			TrafficLimit: n.TrafficLimit,
+			UUID:             n.UUID,
+			InstallID:        n.InstallID,
+			Name:             n.Name,
+			Region:           strings.ToUpper(strings.TrimSpace(n.Region)),
+			TrafficLimit:     n.TrafficLimit,
+			TrafficLimitType: NormalizeTrafficLimitType(n.TrafficLimitType),
 		})
 	}
 	return result, nil
@@ -288,7 +292,7 @@ func GetTrafficConsumptionRank(limit int, rankDate string) (*TrafficConsumptionR
 
 	var nodes []database.NodePool
 	if err := database.DB.
-		Select("uuid", "install_id", "name", "region", "traffic_limit", "traffic_up", "traffic_down", "traffic_update_at", "updated_at").
+		Select("uuid", "install_id", "name", "region", "traffic_limit", "traffic_limit_type", "traffic_up", "traffic_down", "traffic_update_at", "updated_at").
 		Where("install_id <> ?", "").
 		Order("updated_at DESC").
 		Find(&nodes).Error; err != nil {
@@ -383,6 +387,8 @@ func GetTrafficConsumptionRank(limit int, rankDate string) (*TrafficConsumptionR
 		up := upByNode[n.UUID]
 		down := downByNode[n.UUID]
 		total := up + down
+		limitType := NormalizeTrafficLimitType(n.TrafficLimitType)
+		usedByLimit := ComputeTrafficUsedByLimitType(up, down, limitType)
 
 		offline := !IsNodeOnline(n.InstallID)
 
@@ -397,17 +403,19 @@ func GetTrafficConsumptionRank(limit int, rankDate string) (*TrafficConsumptionR
 		}
 
 		items = append(items, TrafficConsumptionItem{
-			UUID:            n.UUID,
-			InstallID:       n.InstallID,
-			Name:            n.Name,
-			Region:          strings.ToUpper(strings.TrimSpace(n.Region)),
-			Offline:         offline,
-			TrafficLimit:    n.TrafficLimit,
-			TrafficUp:       up,
-			TrafficDown:     down,
-			TotalBytes:      total,
-			UploadRatio:     ratio,
-			TrafficUpdateAt: updateAt,
+			UUID:             n.UUID,
+			InstallID:        n.InstallID,
+			Name:             n.Name,
+			Region:           strings.ToUpper(strings.TrimSpace(n.Region)),
+			Offline:          offline,
+			TrafficLimit:     n.TrafficLimit,
+			TrafficLimitType: limitType,
+			TrafficUsedBytes: usedByLimit,
+			TrafficUp:        up,
+			TrafficDown:      down,
+			TotalBytes:       total,
+			UploadRatio:      ratio,
+			TrafficUpdateAt:  updateAt,
 		})
 	}
 

@@ -79,6 +79,7 @@ func initBasicSettings() {
 		{Key: "tg_bot_register_commands", Value: "false", Description: "是否清理历史菜单并注册 /sub 指令"},
 		{Key: "tg_login_notify_mode", Value: "off", Description: "后台登录 TG 通知模式(off/success_only/failure_only/all)"},
 		{Key: "tg_speedtest_notify_enabled", Value: "false", Description: "整组测速完成后是否发送 TG 通知"},
+		{Key: "tg_threshold_stop_notify_enabled", Value: "false", Description: "节点达到阈值停机后是否发送 TG 通知"},
 		{Key: "sys_log_level", Value: "info", Description: "系统日志等级 (debug/info/warn/error)"},
 		// Agent 相关配置
 		{Key: "agent_ws_push_interval_sec", Value: "2", Description: "Agent 实时速率推送间隔 (秒)"},

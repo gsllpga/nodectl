@@ -872,6 +872,8 @@ func fieldToCN(key string) string {
 		return "重置日"
 	case "traffic_limit":
 		return "流量限制"
+	case "traffic_limit_type":
+		return "流量限额类型"
 	default:
 		return key
 	}
@@ -903,6 +905,8 @@ func formatValueCN(key, val string) string {
 	}
 
 	switch key {
+	case "traffic_limit_type":
+		return TrafficLimitTypeCN(val)
 	case "sys_log_level":
 		switch strings.ToLower(val) {
 		case "debug":

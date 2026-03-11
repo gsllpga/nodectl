@@ -872,7 +872,7 @@
             const selectedItem = rankItems.find(x => x.uuid === state.selectedNodeUUID);
             let used = 0;
             if (selectedItem) {
-                used = Number(selectedItem.total_bytes || 0);
+                used = Number(selectedItem.traffic_used_bytes || selectedItem.total_bytes || 0);
             }
 
             let limitHTML = '';
@@ -894,7 +894,13 @@
             state.nodes = Array.isArray(data.nodes) ? data.nodes : [];
             state.nodeMap = {};
             state.nodes.forEach(n => {
-                state.nodeMap[n.uuid] = { uuid: n.uuid, name: n.name, region: n.region || '', traffic_limit: n.traffic_limit || 0 };
+                state.nodeMap[n.uuid] = {
+                    uuid: n.uuid,
+                    name: n.name,
+                    region: n.region || '',
+                    traffic_limit: n.traffic_limit || 0,
+                    traffic_limit_type: n.traffic_limit_type || 'total'
+                };
             });
 
             if (nodeSelect()) {
@@ -924,9 +930,16 @@
             });
             items.forEach(it => {
                 if (!state.nodeMap[it.uuid]) {
-                    state.nodeMap[it.uuid] = { uuid: it.uuid, name: it.name, region: it.region || '', traffic_limit: it.traffic_limit || 0 };
+                    state.nodeMap[it.uuid] = {
+                        uuid: it.uuid,
+                        name: it.name,
+                        region: it.region || '',
+                        traffic_limit: it.traffic_limit || 0,
+                        traffic_limit_type: it.traffic_limit_type || 'total'
+                    };
                 } else {
                     state.nodeMap[it.uuid].traffic_limit = it.traffic_limit || 0;
+                    state.nodeMap[it.uuid].traffic_limit_type = it.traffic_limit_type || 'total';
                 }
             });
 

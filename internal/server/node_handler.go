@@ -26,6 +26,7 @@ func apiUpdateNode(w http.ResponseWriter, r *http.Request) {
 
 	var req struct {
 		database.NodePool
+		TrafficLimitRaw string `json:"traffic_limit_raw"`
 		// Add backwards compatibility explicitly if needed, but since we embedded NodePool, it has IPMode and LinkIPModes
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -97,7 +98,11 @@ func apiUpdateNode(w http.ResponseWriter, r *http.Request) {
 	targetNode.IPV6 = req.IPV6
 	targetNode.IPMode = req.IPMode
 	targetNode.ResetDay = req.ResetDay
+	targetNode.TrafficLimitType = service.NormalizeTrafficLimitType(req.TrafficLimitType)
 	targetNode.TrafficLimit = req.TrafficLimit
+	if raw := strings.TrimSpace(req.TrafficLimitRaw); raw != "" {
+		targetNode.TrafficLimit = service.ParseTrafficLimitInputToBytes(raw)
+	}
 
 	// 4. 安全检查：判断是否处于安全环境
 	isSecure := service.CheckRequestSecure(r)
@@ -166,6 +171,7 @@ func apiUpdateNode(w http.ResponseWriter, r *http.Request) {
 		sendJSON(w, "error", "数据库更新失败")
 		return
 	}
+	service.UpdateNodeTrafficThresholdConfigFromNode(targetNode)
 
 	changedDetails := make([]string, 0)
 	if oldNode.Name != targetNode.Name {
@@ -191,6 +197,9 @@ func apiUpdateNode(w http.ResponseWriter, r *http.Request) {
 	}
 	if oldNode.TrafficLimit != targetNode.TrafficLimit {
 		changedDetails = append(changedDetails, fmt.Sprintf("traffic_limit: %d -> %d", oldNode.TrafficLimit, targetNode.TrafficLimit))
+	}
+	if service.NormalizeTrafficLimitType(oldNode.TrafficLimitType) != service.NormalizeTrafficLimitType(targetNode.TrafficLimitType) {
+		changedDetails = append(changedDetails, fmt.Sprintf("traffic_limit_type: %s -> %s", service.NormalizeTrafficLimitType(oldNode.TrafficLimitType), service.NormalizeTrafficLimitType(targetNode.TrafficLimitType)))
 	}
 
 	oldDisabledSet := make(map[string]struct{}, len(oldNode.DisabledLinks))
@@ -298,10 +307,12 @@ func apiAddNode(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req struct {
-		Name         string `json:"name"`
-		RoutingType  int    `json:"routing_type"`
-		ResetDay     int    `json:"reset_day"`
-		TrafficLimit int64  `json:"traffic_limit"`
+		Name             string `json:"name"`
+		RoutingType      int    `json:"routing_type"`
+		ResetDay         int    `json:"reset_day"`
+		TrafficLimit     int64  `json:"traffic_limit"`
+		TrafficLimitRaw  string `json:"traffic_limit_raw"`
+		TrafficLimitType string `json:"traffic_limit_type"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		logger.Log.Warn("解析 JSON 失败", "error", err, "ip", clientIP, "path", reqPath)
@@ -321,13 +332,21 @@ func apiAddNode(w http.ResponseWriter, r *http.Request) {
 	if req.ResetDay > 0 {
 		updates["reset_day"] = req.ResetDay
 	}
-	if req.TrafficLimit > 0 {
-		updates["traffic_limit"] = req.TrafficLimit
+	trafficLimit := req.TrafficLimit
+	if raw := strings.TrimSpace(req.TrafficLimitRaw); raw != "" {
+		trafficLimit = service.ParseTrafficLimitInputToBytes(raw)
 	}
+	if trafficLimit > 0 {
+		updates["traffic_limit"] = trafficLimit
+	}
+	updates["traffic_limit_type"] = service.NormalizeTrafficLimitType(req.TrafficLimitType)
 	if len(updates) > 0 {
 		if err := database.DB.Model(&database.NodePool{}).Where("uuid = ?", node.UUID).Updates(updates).Error; err != nil {
 			logger.Log.Error("补充更新节点属性失败", "uuid", node.UUID, "error", err)
 		}
+	}
+	if err := database.DB.Where("uuid = ?", node.UUID).First(&node).Error; err == nil {
+		service.UpdateNodeTrafficThresholdConfigFromNode(*node)
 	}
 
 	logger.Log.Info("节点添加成功", "uuid", node.UUID, "name", node.Name, "routing_type", node.RoutingType, "ip", clientIP, "path", reqPath)
@@ -407,7 +426,7 @@ func apiGetOfflineNotifySettings(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var nodes []database.NodePool
-	if err := database.DB.Select("uuid", "name", "install_id", "region", "offline_notify_enabled", "offline_notify_grace_sec", "offline_last_notify_at", "sort_index", "updated_at").
+	if err := database.DB.Select("uuid", "name", "install_id", "region", "offline_notify_enabled", "offline_notify_grace_sec", "offline_last_notify_at", "traffic_threshold_enabled", "traffic_threshold_percent", "traffic_threshold_reached", "sort_index", "updated_at").
 		Order("sort_index ASC, updated_at DESC").
 		Find(&nodes).Error; err != nil {
 		sendJSON(w, "error", "读取离线通知配置失败")
@@ -418,13 +437,16 @@ func apiGetOfflineNotifySettings(w http.ResponseWriter, r *http.Request) {
 	for _, n := range nodes {
 		grace := service.NormalizeNodeOfflineGraceSec(n.OfflineNotifyGraceSec)
 		item := map[string]interface{}{
-			"uuid":                     n.UUID,
-			"install_id":               n.InstallID,
-			"name":                     n.Name,
-			"region":                   n.Region,
-			"offline_notify_enabled":   n.OfflineNotifyEnabled,
-			"offline_notify_grace_sec": grace,
-			"online":                   service.IsNodeOnline(n.InstallID),
+			"uuid":                      n.UUID,
+			"install_id":                n.InstallID,
+			"name":                      n.Name,
+			"region":                    n.Region,
+			"offline_notify_enabled":    n.OfflineNotifyEnabled,
+			"offline_notify_grace_sec":  grace,
+			"traffic_threshold_enabled": n.TrafficThresholdEnabled,
+			"traffic_threshold_percent": service.NormalizeTrafficThresholdPercent(n.TrafficThresholdPercent),
+			"traffic_threshold_reached": n.TrafficThresholdReached,
+			"online":                    service.IsNodeOnline(n.InstallID),
 		}
 		if n.OfflineLastNotifyAt != nil && !n.OfflineLastNotifyAt.IsZero() {
 			item["offline_last_notify_at"] = n.OfflineLastNotifyAt.Format("2006-01-02 15:04:05")
@@ -445,9 +467,11 @@ func apiUpdateOfflineNotifySetting(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req struct {
-		UUID                  string `json:"uuid"`
-		OfflineNotifyEnabled  *bool  `json:"offline_notify_enabled"`
-		OfflineNotifyGraceSec *int   `json:"offline_notify_grace_sec"`
+		UUID                    string `json:"uuid"`
+		OfflineNotifyEnabled    *bool  `json:"offline_notify_enabled"`
+		OfflineNotifyGraceSec   *int   `json:"offline_notify_grace_sec"`
+		TrafficThresholdEnabled *bool  `json:"traffic_threshold_enabled"`
+		TrafficThresholdPercent *int   `json:"traffic_threshold_percent"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		sendJSON(w, "error", "请求格式错误")
@@ -460,11 +484,46 @@ func apiUpdateOfflineNotifySetting(w http.ResponseWriter, r *http.Request) {
 	}
 
 	updates := map[string]interface{}{}
+	masterTouched := false
+	thresholdTouched := false
+	finalOfflineEnabled := false
+	finalThresholdEnabled := false
+	finalThresholdPercent := 0
+	if req.OfflineNotifyEnabled != nil || req.TrafficThresholdEnabled != nil || req.TrafficThresholdPercent != nil {
+		var old database.NodePool
+		if err := database.DB.Select("offline_notify_enabled", "traffic_threshold_enabled", "traffic_threshold_percent").Where("uuid = ?", req.UUID).First(&old).Error; err != nil {
+			sendJSON(w, "error", "节点不存在")
+			return
+		}
+		finalOfflineEnabled = old.OfflineNotifyEnabled
+		finalThresholdEnabled = old.TrafficThresholdEnabled
+		finalThresholdPercent = service.NormalizeTrafficThresholdPercent(old.TrafficThresholdPercent)
+	}
 	if req.OfflineNotifyEnabled != nil {
-		updates["offline_notify_enabled"] = *req.OfflineNotifyEnabled
+		v := *req.OfflineNotifyEnabled
+		updates["offline_notify_enabled"] = v
+		finalOfflineEnabled = v
+		masterTouched = true
 	}
 	if req.OfflineNotifyGraceSec != nil {
 		updates["offline_notify_grace_sec"] = service.NormalizeNodeOfflineGraceSec(*req.OfflineNotifyGraceSec)
+	}
+	if req.TrafficThresholdEnabled != nil {
+		finalThresholdEnabled = *req.TrafficThresholdEnabled
+		thresholdTouched = true
+	}
+	if req.TrafficThresholdPercent != nil {
+		v := service.NormalizeTrafficThresholdPercent(*req.TrafficThresholdPercent)
+		updates["traffic_threshold_percent"] = v
+		finalThresholdPercent = v
+		thresholdTouched = true
+	}
+	if masterTouched || thresholdTouched {
+		finalThresholdEnabled = finalOfflineEnabled && finalThresholdEnabled && finalThresholdPercent > 0
+		updates["traffic_threshold_enabled"] = finalThresholdEnabled
+	}
+	if (masterTouched || thresholdTouched) && (!finalThresholdEnabled || finalThresholdPercent <= 0) {
+		updates["traffic_threshold_reached"] = false
 	}
 	if len(updates) == 0 {
 		sendJSON(w, "error", "没有可更新的字段")
@@ -485,9 +544,10 @@ func apiUpdateOfflineNotifySetting(w http.ResponseWriter, r *http.Request) {
 	// 内存立刻拉平最新的状态，保证推送不再查表
 	// ----------------------------------------------------
 	var node database.NodePool
-	queryErr := database.DB.Select("install_id", "name", "offline_notify_enabled", "offline_notify_grace_sec").Where("uuid = ?", req.UUID).First(&node).Error
+	queryErr := database.DB.Select("uuid", "install_id", "name", "traffic_limit", "traffic_limit_type", "traffic_threshold_enabled", "traffic_threshold_percent", "traffic_threshold_reached", "offline_notify_enabled", "offline_notify_grace_sec").Where("uuid = ?", req.UUID).First(&node).Error
 	if queryErr == nil {
 		service.UpdateNodeNotifyConfigFromDB(node.InstallID, node.OfflineNotifyEnabled, node.OfflineNotifyGraceSec, node.Name)
+		service.UpdateNodeTrafficThresholdConfigFromNode(node)
 	}
 
 	if req.OfflineNotifyEnabled != nil {
@@ -1371,6 +1431,7 @@ func apiDeleteNode(w http.ResponseWriter, r *http.Request) {
 	service.CleanupNodeState(targetNode.InstallID, targetNode.UUID)
 	// 清理内存中可能残存的离线通知配置数据
 	service.DeleteNodeNotifyConfig(targetNode.InstallID)
+	service.DeleteNodeTrafficThresholdConfig(targetNode.InstallID)
 
 	logger.Log.Info("节点已删除", "uuid", req.UUID, "name", targetNode.Name, "ip", clientIP, "path", reqPath)
 	if cleanupResult.RemovedDNSCount > 0 || cleanupResult.DeletedTunnel || cleanupResult.SharedTunnel {

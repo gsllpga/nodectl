@@ -513,6 +513,8 @@ func HandleAgentWS(w http.ResponseWriter, r *http.Request) {
 		totalTX := state.TotalTXBytes
 		hub.mu.Unlock()
 
+		_ = CheckAndHandleNodeTrafficThresholdRealtime(installID, totalTX, totalRX)
+
 		// 持久化 agent_version 到 NodePool（仅版本变更时更新，避免重复写库）
 		if msg.AgentVersion != "" {
 			go func(iid, newVer string) {

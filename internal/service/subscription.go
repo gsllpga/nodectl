@@ -46,10 +46,14 @@ func GenerateRawNodesYAML(routingType int, useFlag bool) (string, error) {
 
 	var proxyList []*ClashNode
 
-	for _, node := range nodes {
+	for i := range nodes {
+		node := &nodes[i]
+		if shouldExcludeNodeByTrafficThreshold(node) {
+			continue
+		}
 		enabledProtocolCount := 0
 		for p := range node.Links {
-			if !contains(node.DisabledLinks, p) && shouldIncludeProtocolInSubscription(node, p) {
+			if !contains(node.DisabledLinks, p) && shouldIncludeProtocolInSubscription(*node, p) {
 				enabledProtocolCount++
 			}
 		}
@@ -58,7 +62,7 @@ func GenerateRawNodesYAML(routingType int, useFlag bool) (string, error) {
 			if contains(node.DisabledLinks, proto) {
 				continue
 			}
-			if !shouldIncludeProtocolInSubscription(node, proto) {
+			if !shouldIncludeProtocolInSubscription(*node, proto) {
 				continue
 			}
 
@@ -67,7 +71,7 @@ func GenerateRawNodesYAML(routingType int, useFlag bool) (string, error) {
 			if m, ok := node.LinkIPModes[proto]; ok && m != 0 {
 				protoIPMode = m
 			}
-			ipOptions := determineIPs(node, ipStrategy, protoIPMode)
+			ipOptions := determineIPs(*node, ipStrategy, protoIPMode)
 
 			// 根据 IP 策略可能生成 1 个，也可能生成 2 个(双栈)，也可能跳过(0个)
 			for _, ipOpt := range ipOptions {
@@ -79,10 +83,10 @@ func GenerateRawNodesYAML(routingType int, useFlag bool) (string, error) {
 				}
 				proxyNode := ParseProxyLink(link, baseName, node.Region, useFlag)
 				if proxyNode != nil {
-					targetHost := resolveNodeAccelerateHost(node, proto, ipOpt.IP)
+					targetHost := resolveNodeAccelerateHost(*node, proto, ipOpt.IP)
 					if targetHost != "" {
 						proxyNode.Server = targetHost // 覆盖 Clash 解析后的 Server IP / 域名
-						if shouldUseTunnelForSubscription(node, proto) {
+						if shouldUseTunnelForSubscription(*node, proto) {
 							proxyNode.Port = resolveTunnelEdgePortForProto(proto, proxyNode.Port)
 							applyTunnelHostToClashNode(proxyNode, targetHost)
 						}
@@ -191,10 +195,14 @@ func GenerateV2RaySubBase64(useFlag bool) (string, error) {
 
 	var lines []string
 
-	for _, node := range nodes {
+	for i := range nodes {
+		node := &nodes[i]
+		if shouldExcludeNodeByTrafficThreshold(node) {
+			continue
+		}
 		enabledProtocolCount := 0
 		for p := range node.Links {
-			if !contains(node.DisabledLinks, p) && shouldIncludeProtocolInSubscription(node, p) {
+			if !contains(node.DisabledLinks, p) && shouldIncludeProtocolInSubscription(*node, p) {
 				enabledProtocolCount++
 			}
 		}
@@ -203,7 +211,7 @@ func GenerateV2RaySubBase64(useFlag bool) (string, error) {
 			if contains(node.DisabledLinks, proto) {
 				continue
 			}
-			if !shouldIncludeProtocolInSubscription(node, proto) {
+			if !shouldIncludeProtocolInSubscription(*node, proto) {
 				continue
 			}
 
@@ -212,7 +220,7 @@ func GenerateV2RaySubBase64(useFlag bool) (string, error) {
 			if m, ok := node.LinkIPModes[proto]; ok && m != 0 {
 				protoIPMode = m
 			}
-			ipOptions := determineIPs(node, ipStrategy, protoIPMode)
+			ipOptions := determineIPs(*node, ipStrategy, protoIPMode)
 
 			for _, ipOpt := range ipOptions {
 				var baseName string
@@ -231,9 +239,9 @@ func GenerateV2RaySubBase64(useFlag bool) (string, error) {
 				cleanLink := strings.Split(link, "#")[0]
 
 				// 核心：使用刚才写的替换引擎，重构链接
-				targetHost := resolveNodeAccelerateHost(node, proto, ipOpt.IP)
+				targetHost := resolveNodeAccelerateHost(*node, proto, ipOpt.IP)
 				targetLink := ReplaceLinkIP(cleanLink, targetHost)
-				if shouldUseTunnelForSubscription(node, proto) {
+				if shouldUseTunnelForSubscription(*node, proto) {
 					targetLink = ReplaceLinkPort(targetLink, resolveTunnelEdgePortForProto(proto, 0))
 					targetLink = ReplaceLinkSNIAndHost(targetLink, targetHost)
 				}
@@ -323,6 +331,14 @@ func shouldIncludeProtocolInSubscription(node database.NodePool, proto string) b
 		return true
 	}
 	return isTunnelCompatibleProtocolForSub(proto)
+}
+
+func shouldExcludeNodeByTrafficThreshold(node *database.NodePool) bool {
+	if node == nil {
+		return false
+	}
+	used := ComputeTrafficUsedByLimitType(node.TrafficUp, node.TrafficDown, node.TrafficLimitType)
+	return CheckAndHandleNodeTrafficThreshold(node, used, "subscription")
 }
 
 func shouldUseTunnelForSubscription(node database.NodePool, proto string) bool {

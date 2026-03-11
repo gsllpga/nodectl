@@ -35,7 +35,7 @@ func apiGetSettings(w http.ResponseWriter, r *http.Request) {
 		"proxy_port_socks5", "proxy_socks5_user", "proxy_socks5_pass", "proxy_socks5_random_auth", "pref_use_emoji_flag", "pref_force_protocol_prefix", "sub_custom_name", "pref_ip_strategy", "pref_default_install_protocols",
 		"sys_log_level", "airport_filter_invalid", "pref_speed_test_file_size", "pref_traffic_stats_retention_days", "pref_traffic_persist_interval_sec",
 		"auth_cookie_ttl_mode",
-		"tg_bot_enabled", "tg_bot_token", "tg_bot_whitelist", "tg_bot_register_commands", "tg_login_notify_mode", "tg_speedtest_notify_enabled", "clash_proxies_update_interval", "clash_rules_update_interval", "clash_public_rules_update_interval",
+		"tg_bot_enabled", "tg_bot_token", "tg_bot_whitelist", "tg_bot_register_commands", "tg_login_notify_mode", "tg_speedtest_notify_enabled", "tg_threshold_stop_notify_enabled", "clash_proxies_update_interval", "clash_rules_update_interval", "clash_public_rules_update_interval",
 		"geo_auto_update", "mihomo_auto_update",
 		// 新增协议与内核优化配置
 		"proxy_port_trojan", "proxy_hy2_sni", "proxy_tuic_sni", "proxy_enable_bbr",
@@ -92,7 +92,7 @@ func apiUpdateSettings(w http.ResponseWriter, r *http.Request) {
 		"sys_log_level":          true,
 		"airport_filter_invalid": true, "pref_speed_test_file_size": true, "pref_traffic_stats_retention_days": true, "pref_traffic_persist_interval_sec": true,
 		"auth_cookie_ttl_mode": true,
-		"tg_bot_enabled":       true, "tg_bot_token": true, "tg_bot_whitelist": true, "tg_bot_register_commands": true, "tg_login_notify_mode": true, "tg_speedtest_notify_enabled": true,
+		"tg_bot_enabled":       true, "tg_bot_token": true, "tg_bot_whitelist": true, "tg_bot_register_commands": true, "tg_login_notify_mode": true, "tg_speedtest_notify_enabled": true, "tg_threshold_stop_notify_enabled": true,
 		"clash_proxies_update_interval": true, "clash_rules_update_interval": true, "clash_public_rules_update_interval": true,
 		"geo_auto_update": true, "mihomo_auto_update": true,
 		// 新增协议与内核优化配置

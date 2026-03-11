@@ -238,6 +238,7 @@ func Start(tmplFS embed.FS) {
 	service.InitCertManager() // 初始化证书目录
 	//避免空指针报错
 	service.InitMihomo()
+	service.InitTrafficThresholdCache()
 	service.StartAutoUpdateScheduler()
 	service.StartOfflineNotifyLoop()
 	if err := middleware.ReloadLoginRateLimitConfigFromDB(); err != nil {

@@ -47,8 +47,8 @@ type offlineNotifyRuntime struct {
 }
 
 func NormalizeNodeOfflineGraceSec(v int) int {
-	if v < 1 {
-		return 180
+	if v < 0 {
+		return 0
 	}
 	if v > 86400 {
 		return 86400
@@ -217,8 +217,6 @@ func InitNodeNotifyConfigCache() {
 	}
 	nodeNotifyCacheMu.Unlock()
 
-	logger.Log.Info("已加载全量节点通知配置至内存", "count", len(nodeNotifyCache))
-
 	// 启动 1 分钟缓冲协程定性未能在系统启动时及时连上的节点
 	go func() {
 		time.Sleep(1 * time.Minute)
@@ -232,9 +230,6 @@ func InitNodeNotifyConfigCache() {
 				config.PreBootOffline = true
 				offlineCount++
 			}
-		}
-		if offlineCount > 0 {
-			logger.Log.Info("缓冲期结束，已标记系统启动前断连的节点", "offline_count", offlineCount)
 		}
 	}()
 }
@@ -256,10 +251,11 @@ func updateNodeOfflineLastNotifyAt(nodeUUID string, at time.Time) {
 }
 
 type tgNotifyTarget struct {
-	UserID     int64
-	AllowNode  bool
-	AllowLogin bool
-	AllowSpeed bool
+	UserID             int64
+	AllowNode          bool
+	AllowLogin         bool
+	AllowSpeed         bool
+	AllowThresholdStop bool
 }
 
 func parseTGNotifyTargets(raw string) []tgNotifyTarget {
@@ -284,7 +280,7 @@ func parseTGNotifyTargets(raw string) []tgNotifyTarget {
 			continue
 		}
 
-		target := tgNotifyTarget{UserID: id, AllowNode: true, AllowLogin: true, AllowSpeed: true}
+		target := tgNotifyTarget{UserID: id, AllowNode: true, AllowLogin: true, AllowSpeed: true, AllowThresholdStop: true}
 
 		if len(entry) == 2 {
 			rest := strings.TrimSpace(entry[1])
@@ -309,6 +305,8 @@ func parseTGNotifyTargets(raw string) []tgNotifyTarget {
 						target.AllowLogin = allow
 					case "speedtest", "speed_test", "batch_speedtest", "speed_notify":
 						target.AllowSpeed = allow
+					case "threshold", "threshold_stop", "threshold_notify", "threshold_stop_notify":
+						target.AllowThresholdStop = allow
 					}
 				}
 			}
@@ -576,6 +574,65 @@ func SendBatchSpeedTestNotification(subName, taskKey, status string, totalCount,
 	return sentAny
 }
 
+// SendThresholdStopNotification 节点达到流量阈值后发送停机通知。
+func SendThresholdStopNotification(nodeName string, thresholdPercent int, usedBytes, thresholdBytes, limitBytes int64) bool {
+	keys := []string{"tg_bot_enabled", "tg_bot_token", "tg_bot_whitelist", "tg_threshold_stop_notify_enabled"}
+	var cfgList []database.SysConfig
+	if err := database.DB.Where("key IN ?", keys).Find(&cfgList).Error; err != nil {
+		logger.Log.Warn("读取 TG 阈值停机通知配置失败", "error", err)
+		return false
+	}
+
+	cfg := map[string]string{}
+	for _, c := range cfgList {
+		cfg[c.Key] = strings.TrimSpace(c.Value)
+	}
+
+	if cfg["tg_bot_enabled"] != "true" || cfg["tg_threshold_stop_notify_enabled"] != "true" {
+		return false
+	}
+
+	token := cfg["tg_bot_token"]
+	if token == "" {
+		return false
+	}
+
+	targets := parseTGNotifyTargets(cfg["tg_bot_whitelist"])
+	users := make([]int64, 0, len(targets))
+	for _, t := range targets {
+		if t.AllowThresholdStop {
+			users = append(users, t.UserID)
+		}
+	}
+	if len(users) == 0 {
+		return false
+	}
+
+	bot, err := tgbotapi.NewBotAPI(token)
+	if err != nil {
+		logger.Log.Warn("初始化 TG Bot 失败，无法发送阈值停机通知", "error", err)
+		return false
+	}
+
+	if strings.TrimSpace(nodeName) == "" {
+		nodeName = "未命名节点"
+	}
+
+	msgText := fmt.Sprintf("⛔ 节点阈值停机通知\n节点：%s\n阈值：%d%%\n已用：%s\n阈值线：%s\n限额：%s\n动作：已触发重置链接并从订阅中剔除", nodeName, thresholdPercent, formatBytes(usedBytes), formatBytes(thresholdBytes), formatBytes(limitBytes))
+
+	sentAny := false
+	for _, uid := range users {
+		msg := tgbotapi.NewMessage(uid, msgText)
+		if _, err := bot.Send(msg); err != nil {
+			logger.Log.Warn("发送 TG 阈值停机通知失败", "user_id", uid, "node_name", nodeName, "error", err)
+			continue
+		}
+		sentAny = true
+	}
+
+	return sentAny
+}
+
 // OnNodeConnectionStatusChanged 在节点 WS 连接状态变化时触发。
 func OnNodeConnectionStatusChanged(installID string, online bool) {
 	installID = strings.TrimSpace(installID)
@@ -617,7 +674,11 @@ func OnNodeConnectionStatusChanged(installID string, online bool) {
 			graceSec = node.OfflineNotifyGraceSec
 		}
 		st.disconnectedAt = now
-		st.pendingOfflineAt = now.Add(time.Duration(graceSec) * time.Second)
+		if graceSec <= 0 {
+			st.pendingOfflineAt = time.Time{}
+		} else {
+			st.pendingOfflineAt = now.Add(time.Duration(graceSec) * time.Second)
+		}
 	}
 	offlineNotifyMu.Unlock()
 
@@ -1080,10 +1141,11 @@ func handleMenuNodes(bot *tgbotapi.BotAPI, chatID int64, messageID int, data str
 	var maxUsedWidth int
 
 	type listNodeInfo struct {
-		id    string
-		name  string
-		used  string
-		limit string
+		id        string
+		name      string
+		used      string
+		limit     string
+		limitType string
 	}
 	var infos []listNodeInfo
 
@@ -1093,7 +1155,8 @@ func handleMenuNodes(bot *tgbotapi.BotAPI, chatID int64, messageID int, data str
 			maxNameWidth = nameWidth
 		}
 
-		usedStr := formatBytes(node.TrafficUp + node.TrafficDown)
+		usedBytes := ComputeTrafficUsedByLimitType(node.TrafficUp, node.TrafficDown, node.TrafficLimitType)
+		usedStr := formatBytes(usedBytes)
 		usedWidth := getStringWidth(usedStr)
 		if usedWidth > maxUsedWidth {
 			maxUsedWidth = usedWidth
@@ -1103,7 +1166,7 @@ func handleMenuNodes(bot *tgbotapi.BotAPI, chatID int64, messageID int, data str
 		if node.TrafficLimit > 0 {
 			limitStr = formatBytes(node.TrafficLimit)
 		}
-		infos = append(infos, listNodeInfo{node.UUID, node.Name, usedStr, limitStr})
+		infos = append(infos, listNodeInfo{node.UUID, node.Name, usedStr, limitStr, TrafficLimitTypeCN(node.TrafficLimitType)})
 	}
 
 	for _, info := range infos {
@@ -1119,7 +1182,7 @@ func handleMenuNodes(bot *tgbotapi.BotAPI, chatID int64, messageID int, data str
 		}
 		paddedUsed := strings.Repeat(" ", usedPad) + info.used
 
-		sb.WriteString(fmt.Sprintf("`%s | %s | %s`\n", paddedName, paddedUsed, info.limit))
+		sb.WriteString(fmt.Sprintf("`%s | %s | %s(%s)`\n", paddedName, paddedUsed, info.limit, info.limitType))
 	}
 
 	editMsg := tgbotapi.NewEditMessageText(chatID, messageID, sb.String())
@@ -1174,18 +1237,20 @@ func handleNodeInfo(bot *tgbotapi.BotAPI, chatID int64, messageID int, data stri
 
 	upStr := formatBytes(node.TrafficUp)
 	downStr := formatBytes(node.TrafficDown)
-	usedStr := formatBytes(node.TrafficUp + node.TrafficDown)
+	usedStr := formatBytes(ComputeTrafficUsedByLimitType(node.TrafficUp, node.TrafficDown, node.TrafficLimitType))
 	limitStr := "不限量"
 	if node.TrafficLimit > 0 {
 		limitStr = formatBytes(node.TrafficLimit)
 	}
+	limitTypeStr := TrafficLimitTypeCN(node.TrafficLimitType)
 
 	var sb strings.Builder
 	sb.WriteString(fmt.Sprintf("💻 **[%s] 的专属信息**\n\n", node.Name))
 	sb.WriteString(fmt.Sprintf("▪️ **网络组：** %s\n", routingType))
 	sb.WriteString(fmt.Sprintf("▪️ **已用上传：** %s\n", upStr))
 	sb.WriteString(fmt.Sprintf("▪️ **已用下载：** %s\n", downStr))
-	sb.WriteString(fmt.Sprintf("▪️ **总计消耗：** %s / %s\n", usedStr, limitStr))
+	sb.WriteString(fmt.Sprintf("▪️ **限额类型：** %s\n", limitTypeStr))
+	sb.WriteString(fmt.Sprintf("▪️ **计费消耗：** %s / %s\n", usedStr, limitStr))
 	if node.Remark != "" {
 		sb.WriteString(fmt.Sprintf("▪️ **备注：** %s\n", node.Remark))
 	}
