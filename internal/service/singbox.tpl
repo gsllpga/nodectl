@@ -1509,8 +1509,8 @@ ExecStart=/usr/local/bin/nodectl-agent --config /etc/nodectl-agent/config.json
 Restart=always
 RestartSec=5
 LimitNOFILE=65535
-StandardOutput=journal
-StandardError=journal
+StandardOutput=append:/var/log/nodectl-agent.log
+StandardError=append:/var/log/nodectl-agent.log
 
 [Install]
 WantedBy=multi-user.target
@@ -1527,11 +1527,7 @@ SYSTEMD_SVC
         info "✅ nodectl-agent 运行中 (PID: $(pidof nodectl-agent))"
     else
         warn "⚠️ nodectl-agent 进程未检测到，请检查日志"
-        if [ "$OS" != "alpine" ]; then
-            warn "  查看日志: journalctl -u nodectl-agent -n 20"
-        else
-            warn "  查看日志: tail -20 /var/log/nodectl-agent.log"
-        fi
+        warn "  查看日志: tail -20 /var/log/nodectl-agent.log"
     fi
 
     info "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
@@ -2389,7 +2385,7 @@ action_traffic_restart() {
             info "✅ nodectl-agent 已重启"
         else
             err "nodectl-agent 重启失败"
-            journalctl -u nodectl-agent -n 10 --no-pager 2>/dev/null
+            tail -10 /var/log/nodectl-agent.log 2>/dev/null
         fi
     elif command -v rc-service >/dev/null 2>&1; then
         rc-service nodectl-agent restart

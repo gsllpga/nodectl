@@ -424,25 +424,26 @@ func renderTunnelConfigYAML(tunnelID, credPath string, routes []tunnelRoutePaylo
 }
 
 func installCloudflaredCommand() string {
-	return `set -e
-if command -v cloudflared >/dev/null 2>&1; then
-  echo "cloudflared already installed"
-  exit 0
-fi
-ARCH="$(uname -m)"
-case "$ARCH" in
-  x86_64|amd64) FILE="cloudflared-linux-amd64" ;;
-  aarch64|arm64) FILE="cloudflared-linux-arm64" ;;
-  armv7l|armv7) FILE="cloudflared-linux-arm" ;;
-  i386|i686) FILE="cloudflared-linux-386" ;;
-  *) echo "unsupported arch: $ARCH"; exit 1 ;;
-esac
-URL="https://github.com/cloudflare/cloudflared/releases/latest/download/${FILE}"
-TMP="/tmp/cloudflared.nodectl"
-curl -fsSL "$URL" -o "$TMP"
-install -m 0755 "$TMP" /usr/local/bin/cloudflared
-rm -f "$TMP"
-echo "cloudflared installed"`
+	return `if command -v cloudflared >/dev/null 2>&1; then
+  echo "[cloudflared] already installed: $(cloudflared version 2>/dev/null || echo unknown)"
+else
+  echo "[cloudflared] not found, installing..."
+  ARCH="$(uname -m)"
+  case "$ARCH" in
+    x86_64|amd64) FILE="cloudflared-linux-amd64" ;;
+    aarch64|arm64) FILE="cloudflared-linux-arm64" ;;
+    armv7l|armv7) FILE="cloudflared-linux-arm" ;;
+    i386|i686) FILE="cloudflared-linux-386" ;;
+    *) echo "[cloudflared] unsupported arch: $ARCH"; exit 1 ;;
+  esac
+  URL="https://github.com/cloudflare/cloudflared/releases/latest/download/${FILE}"
+  TMP="/tmp/cloudflared.nodectl"
+  echo "[cloudflared] downloading from $URL ..."
+  curl -fsSL "$URL" -o "$TMP" || { echo "[cloudflared] download failed"; exit 1; }
+  install -m 0755 "$TMP" /usr/local/bin/cloudflared
+  rm -f "$TMP"
+  echo "[cloudflared] installed: $(cloudflared version 2>/dev/null || echo unknown)"
+fi`
 }
 
 func (rt *Runtime) applyTunnelConfig(payload tunnelCmdPayload, reply func(CommandResult)) error {
@@ -590,22 +591,71 @@ func (rt *Runtime) executeTunnelStart(cmd ServerCommand, reply func(CommandResul
 		return
 	}
 
+	log.Printf("[Agent] tunnel-start: 收到 %d 条路由, tunnel_id=%s", len(payload.Routes), payload.TunnelID)
+	for _, r := range payload.Routes {
+		log.Printf("[Agent] tunnel-start: 路由 %s -> %s", r.Hostname, r.Service)
+	}
+
 	if err := rt.applyTunnelConfig(payload, reply); err != nil {
+		log.Printf("[Agent] tunnel-start: 配置写入失败: %v", err)
 		reply(CommandResult{Type: "result", Status: "error", Message: err.Error()})
 		return
 	}
+	log.Printf("[Agent] tunnel-start: 配置文件已写入")
 
-	shellCmd := installCloudflaredCommand() + `
+	// 安装 cloudflared（不使用 exit 0，后续命令一定会执行）
+	installCmd := installCloudflaredCommand()
+	if err := rt.runStreamingScript(installCmd, "安装 cloudflared", reply); err != nil {
+		log.Printf("[Agent] tunnel-start: cloudflared 安装失败: %v", err)
+		reply(CommandResult{Type: "result", Status: "error", Message: fmt.Sprintf("cloudflared 安装失败: %v", err)})
+		return
+	}
+
+	// 启动 systemd 服务（独立脚本，避免被 installCmd 的 exit 影响）
+	startCmd := `echo "[tunnel] daemon-reload..."
 systemctl daemon-reload
+echo "[tunnel] enabling service..."
 systemctl enable nodectl-tunnel.service
-systemctl restart nodectl-tunnel.service`
-	rt.execStreamingScript(shellCmd, "启动 tunnel", reply)
+echo "[tunnel] restarting service..."
+systemctl restart nodectl-tunnel.service
+sleep 2
+echo "[tunnel] checking service status..."
+if systemctl is-active --quiet nodectl-tunnel.service; then
+  echo "[tunnel] ✅ nodectl-tunnel.service is running (PID: $(systemctl show -p MainPID nodectl-tunnel.service --value))"
+else
+  echo "[tunnel] ❌ nodectl-tunnel.service failed to start"
+  echo "[tunnel] --- service status ---"
+  systemctl status nodectl-tunnel.service --no-pager 2>&1 || true
+  echo "[tunnel] --- last 20 log lines ---"
+  cat /var/log/nodectl-tunnel/cloudflared.log 2>/dev/null | tail -20 || journalctl -u nodectl-tunnel.service -n 20 --no-pager 2>/dev/null || true
+fi`
+	if err := rt.runStreamingScript(startCmd, "启动 tunnel 服务", reply); err != nil {
+		log.Printf("[Agent] tunnel-start: 服务启动失败: %v", err)
+		reply(CommandResult{Type: "result", Status: "error", Message: fmt.Sprintf("tunnel 服务启动失败: %v", err)})
+		return
+	}
+
+	log.Printf("[Agent] tunnel-start: 完成")
+	reply(CommandResult{Type: "result", Status: "ok", Message: "启动 tunnel完成"})
 }
 
 // executeTunnelStop 停止节点 tunnel（不删除已安装组件和配置）
 func (rt *Runtime) executeTunnelStop(reply func(CommandResult)) {
-	shellCmd := `if command -v systemctl >/dev/null 2>&1 && systemctl list-unit-files | grep -q '^nodectl-tunnel.service'; then systemctl stop nodectl-tunnel.service; echo "nodectl-tunnel 已停止"; else echo "未检测到 nodectl-tunnel.service"; fi`
+	log.Printf("[Agent] tunnel-stop: 开始停止 tunnel 服务")
+	shellCmd := `echo "[tunnel] stopping service..."
+if command -v systemctl >/dev/null 2>&1 && systemctl list-unit-files | grep -q 'nodectl-tunnel.service'; then
+  systemctl stop nodectl-tunnel.service
+  sleep 1
+  if systemctl is-active --quiet nodectl-tunnel.service; then
+    echo "[tunnel] ⚠️ service still running after stop"
+  else
+    echo "[tunnel] ✅ nodectl-tunnel 已停止"
+  fi
+else
+  echo "[tunnel] 未检测到 nodectl-tunnel.service"
+fi`
 	rt.execStreamingScript(shellCmd, "停止 tunnel", reply)
+	log.Printf("[Agent] tunnel-stop: 完成")
 }
 
 func (rt *Runtime) refreshTunnelAfterCoreChange(payload *tunnelCmdPayload, reply func(CommandResult)) error {
@@ -613,15 +663,40 @@ func (rt *Runtime) refreshTunnelAfterCoreChange(payload *tunnelCmdPayload, reply
 		return nil
 	}
 
+	log.Printf("[Agent] tunnel-refresh: 刷新 Tunnel 配置")
 	reply(CommandResult{Type: "progress", Stage: "正在刷新 Tunnel 配置..."})
 	if err := rt.applyTunnelConfig(*payload, reply); err != nil {
+		log.Printf("[Agent] tunnel-refresh: 配置写入失败: %v", err)
 		return fmt.Errorf("刷新 Tunnel 配置失败: %w", err)
 	}
 
-	restartCmd := `if command -v systemctl >/dev/null 2>&1; then systemctl daemon-reload; systemctl enable nodectl-tunnel.service; systemctl restart nodectl-tunnel.service; echo "nodectl-tunnel 已刷新"; else echo "未检测到 systemctl，已跳过 tunnel 服务重启"; fi`
+	// 先确保 cloudflared 已安装
+	installCmd := installCloudflaredCommand()
+	if err := rt.runStreamingScript(installCmd, "安装 cloudflared", reply); err != nil {
+		log.Printf("[Agent] tunnel-refresh: cloudflared 安装失败: %v", err)
+		return fmt.Errorf("cloudflared 安装失败: %w", err)
+	}
+
+	restartCmd := `echo "[tunnel] refreshing service..."
+if command -v systemctl >/dev/null 2>&1; then
+  systemctl daemon-reload
+  systemctl enable nodectl-tunnel.service
+  systemctl restart nodectl-tunnel.service
+  sleep 2
+  if systemctl is-active --quiet nodectl-tunnel.service; then
+    echo "[tunnel] ✅ nodectl-tunnel 已刷新 (PID: $(systemctl show -p MainPID nodectl-tunnel.service --value))"
+  else
+    echo "[tunnel] ❌ 刷新后服务未运行"
+    systemctl status nodectl-tunnel.service --no-pager 2>&1 || true
+  fi
+else
+  echo "[tunnel] 未检测到 systemctl，已跳过 tunnel 服务重启"
+fi`
 	if err := rt.runStreamingScript(restartCmd, "刷新 tunnel", reply); err != nil {
+		log.Printf("[Agent] tunnel-refresh: 服务刷新失败: %v", err)
 		return fmt.Errorf("刷新 Tunnel 服务失败: %w", err)
 	}
+	log.Printf("[Agent] tunnel-refresh: 完成")
 	return nil
 }
 
@@ -638,7 +713,12 @@ func (rt *Runtime) execStreamingScript(shellCmd string, label string, reply func
 
 func (rt *Runtime) runStreamingScript(shellCmd string, label string, reply func(CommandResult)) error {
 	reply(CommandResult{Type: "progress", Stage: fmt.Sprintf("正在执行%s脚本...", label)})
-	log.Printf("[Agent] 执行%s: %s", label, shellCmd)
+	// 仅记录脚本前 200 字符到日志，避免巨大脚本刷屏
+	scriptPreview := shellCmd
+	if len(scriptPreview) > 200 {
+		scriptPreview = scriptPreview[:200] + "..."
+	}
+	log.Printf("[Agent] 执行%s: %s", label, scriptPreview)
 
 	cmd := exec.Command("/bin/sh", "-c", shellCmd)
 
@@ -648,6 +728,7 @@ func (rt *Runtime) runStreamingScript(shellCmd string, label string, reply func(
 	cmd.Stderr = pw
 
 	if err := cmd.Start(); err != nil {
+		log.Printf("[Agent] %s脚本启动失败: %v", label, err)
 		return fmt.Errorf("启动脚本失败: %v", err)
 	}
 
@@ -660,6 +741,8 @@ func (rt *Runtime) runStreamingScript(shellCmd string, label string, reply func(
 		scanner.Buffer(make([]byte, 64*1024), 256*1024)
 		for scanner.Scan() {
 			line := scanner.Text()
+			// 脚本输出同时写入 agent 日志和 WebSocket 回传
+			log.Printf("[Agent] [%s] %s", label, line)
 			reply(CommandResult{Type: "progress", Stage: line})
 		}
 	}()
@@ -672,7 +755,9 @@ func (rt *Runtime) runStreamingScript(shellCmd string, label string, reply func(
 	wg.Wait()
 
 	if err != nil {
-		log.Printf("[Agent] %s脚本退出: %v", label, err)
+		log.Printf("[Agent] %s脚本退出码非零: %v", label, err)
+	} else {
+		log.Printf("[Agent] %s脚本执行成功", label)
 	}
 	return err
 }
