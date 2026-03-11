@@ -24,7 +24,17 @@ var (
 	offlineNotifyMu       sync.Mutex
 	offlineNotifyState    = make(map[string]*offlineNotifyRuntime)
 	offlineNotifyLoopOnce sync.Once
+
+	nodeNotifyCacheMu sync.RWMutex
+	nodeNotifyCache   = make(map[string]*NodeNotifyConfig)
 )
+
+type NodeNotifyConfig struct {
+	UUID                  string
+	Name                  string
+	OfflineNotifyEnabled  bool
+	OfflineNotifyGraceSec int
+}
 
 type offlineNotifyRuntime struct {
 	initialized      bool
@@ -85,11 +95,21 @@ func handleOfflineNotifyTick(now time.Time) {
 
 func notifyOfflineIfDue(installID string, now time.Time) {
 	if IsNodeOnline(installID) {
+		offlineNotifyMu.Lock()
+		// 节点实际上是在线的，清除离线倒计时和脏数据
+		delete(offlineNotifyState, installID)
+		offlineNotifyMu.Unlock()
 		return
 	}
 
-	node, ok := getNodeNotifyConfigByInstallID(installID)
+	nodeNotifyCacheMu.RLock()
+	node, ok := nodeNotifyCache[installID]
+	nodeNotifyCacheMu.RUnlock()
+
 	if !ok || !node.OfflineNotifyEnabled {
+		offlineNotifyMu.Lock()
+		delete(offlineNotifyState, installID)
+		offlineNotifyMu.Unlock()
 		return
 	}
 
@@ -125,13 +145,66 @@ func notifyOfflineIfDue(installID string, now time.Time) {
 	offlineNotifyMu.Unlock()
 }
 
-func getNodeNotifyConfigByInstallID(installID string) (database.NodePool, bool) {
-	var node database.NodePool
-	if err := database.DB.Select("uuid", "install_id", "name", "offline_notify_enabled", "offline_notify_grace_sec").Where("install_id = ?", installID).First(&node).Error; err != nil {
-		return database.NodePool{}, false
+// UpdateNodeNotifyConfigFromDB 供外部修改节点通知配置后立刻同步到内存缓存。
+func UpdateNodeNotifyConfigFromDB(installID string, enabled bool, graceSec int, name string) {
+	nodeNotifyCacheMu.Lock()
+	defer nodeNotifyCacheMu.Unlock()
+
+	if node, exists := nodeNotifyCache[installID]; exists {
+		node.OfflineNotifyEnabled = enabled
+		node.OfflineNotifyGraceSec = NormalizeNodeOfflineGraceSec(graceSec)
+		if strings.TrimSpace(name) != "" {
+			node.Name = name
+		}
+	} else {
+		// 如果内存本来没有，可以查一次库把完整数据加载进来并设置
+		var dbNode database.NodePool
+		if err := database.DB.Where("install_id = ?", installID).First(&dbNode).Error; err == nil {
+			nodeNotifyCache[installID] = &NodeNotifyConfig{
+				UUID:                  dbNode.UUID,
+				Name:                  dbNode.Name,
+				OfflineNotifyEnabled:  enabled,
+				OfflineNotifyGraceSec: NormalizeNodeOfflineGraceSec(graceSec),
+			}
+		}
 	}
-	node.OfflineNotifyGraceSec = NormalizeNodeOfflineGraceSec(node.OfflineNotifyGraceSec)
-	return node, true
+}
+
+// DeleteNodeNotifyConfig 从内存缓存中彻底移除已经被删除的节点配置。
+func DeleteNodeNotifyConfig(installID string) {
+	nodeNotifyCacheMu.Lock()
+	delete(nodeNotifyCache, installID)
+	nodeNotifyCacheMu.Unlock()
+
+	offlineNotifyMu.Lock()
+	delete(offlineNotifyState, installID)
+	offlineNotifyMu.Unlock()
+}
+
+// InitNodeNotifyConfigCache 全量加载数据库节点的通知配置至内存
+func InitNodeNotifyConfigCache() {
+	var nodes []database.NodePool
+	if err := database.DB.Select("uuid", "install_id", "name", "offline_notify_enabled", "offline_notify_grace_sec").Find(&nodes).Error; err != nil {
+		logger.Log.Warn("初始化节点通知配置缓存失败", "error", err)
+		return
+	}
+
+	nodeNotifyCacheMu.Lock()
+	defer nodeNotifyCacheMu.Unlock()
+	// 重置缓存
+	nodeNotifyCache = make(map[string]*NodeNotifyConfig)
+	for _, n := range nodes {
+		if strings.TrimSpace(n.InstallID) == "" {
+			continue
+		}
+		nodeNotifyCache[n.InstallID] = &NodeNotifyConfig{
+			UUID:                  n.UUID,
+			Name:                  n.Name,
+			OfflineNotifyEnabled:  n.OfflineNotifyEnabled,
+			OfflineNotifyGraceSec: NormalizeNodeOfflineGraceSec(n.OfflineNotifyGraceSec),
+		}
+	}
+	logger.Log.Info("已加载全量节点通知配置至内存", "count", len(nodeNotifyCache))
 }
 
 func updateNodeOfflineLastNotifyAt(nodeUUID string, at time.Time) {
@@ -472,7 +545,6 @@ func OnNodeConnectionStatusChanged(installID string, online bool) {
 
 	StartOfflineNotifyLoop()
 	now := time.Now()
-	node, nodeFound := getNodeNotifyConfigByInstallID(installID)
 
 	offlineNotifyMu.Lock()
 	st := offlineNotifyState[installID]
@@ -480,37 +552,48 @@ func OnNodeConnectionStatusChanged(installID string, online bool) {
 		st = &offlineNotifyRuntime{}
 		offlineNotifyState[installID] = st
 	}
+	wasInitialized := st.initialized
 	prevOnline := st.online
 	prevLastNotified := st.lastNotified
-	wasInitialized := st.initialized
+
+	isNewDisconnect := (!wasInitialized || prevOnline) && !online
+	offlineNotifyMu.Unlock()
+
+	nodeNotifyCacheMu.RLock()
+	node, nodeFound := nodeNotifyCache[installID]
+	nodeNotifyCacheMu.RUnlock()
+
+	offlineNotifyMu.Lock()
+	// 获取锁更新最新状态
 	st.initialized = true
 	st.online = online
+
 	if online {
 		st.pendingOfflineAt = time.Time{}
 		st.disconnectedAt = time.Time{}
-	} else {
+	} else if isNewDisconnect {
 		graceSec := 180
 		if nodeFound {
-			graceSec = NormalizeNodeOfflineGraceSec(node.OfflineNotifyGraceSec)
+			graceSec = node.OfflineNotifyGraceSec
 		}
 		st.disconnectedAt = now
 		st.pendingOfflineAt = now.Add(time.Duration(graceSec) * time.Second)
 	}
 	offlineNotifyMu.Unlock()
 
-	if !nodeFound || !node.OfflineNotifyEnabled {
-		return
-	}
+	if online {
+		if wasInitialized && !prevOnline && prevLastNotified == "offline" {
+			// 仅在“此前已成功发送离线通知”后，恢复在线才发送上线通知
+			if nodeFound && node.OfflineNotifyEnabled {
+				if sendNodeStatusNotification(node.Name, true, now) {
+					updateNodeOfflineLastNotifyAt(node.UUID, now)
+				}
+			}
+		}
 
-	if online && wasInitialized && !prevOnline && prevLastNotified == "offline" {
-		// 仅在“此前已成功发送离线通知”后，恢复在线才发送上线通知
-		if sendNodeStatusNotification(node.Name, true, now) {
-			updateNodeOfflineLastNotifyAt(node.UUID, now)
-		}
+		// 节点已恢复健康并闭环，从内存中剔除清空，避免脏数据内存泄漏
 		offlineNotifyMu.Lock()
-		if latest := offlineNotifyState[installID]; latest != nil {
-			latest.lastNotified = "online"
-		}
+		delete(offlineNotifyState, installID)
 		offlineNotifyMu.Unlock()
 	}
 }
@@ -519,6 +602,7 @@ func OnNodeConnectionStatusChanged(installID string, online bool) {
 func StartTelegramBot() {
 	// 等待数据库初始化完成
 	time.Sleep(2 * time.Second)
+	InitNodeNotifyConfigCache()
 	RestartTelegramBot()
 }
 

@@ -481,9 +481,17 @@ func apiUpdateOfflineNotifySetting(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// ----------------------------------------------------
+	// 内存立刻拉平最新的状态，保证推送不再查表
+	// ----------------------------------------------------
+	var node database.NodePool
+	queryErr := database.DB.Select("install_id", "name", "offline_notify_enabled", "offline_notify_grace_sec").Where("uuid = ?", req.UUID).First(&node).Error
+	if queryErr == nil {
+		service.UpdateNodeNotifyConfigFromDB(node.InstallID, node.OfflineNotifyEnabled, node.OfflineNotifyGraceSec, node.Name)
+	}
+
 	if req.OfflineNotifyEnabled != nil {
-		var node database.NodePool
-		if err := database.DB.Select("install_id").Where("uuid = ?", req.UUID).First(&node).Error; err == nil {
+		if queryErr == nil {
 			service.OnNodeConnectionStatusChanged(node.InstallID, service.IsNodeOnline(node.InstallID))
 		}
 	}
@@ -1361,6 +1369,8 @@ func apiDeleteNode(w http.ResponseWriter, r *http.Request) {
 
 	// 3. 清理内存中的实时状态（Agent 连接、流量缓存、前端订阅）
 	service.CleanupNodeState(targetNode.InstallID, targetNode.UUID)
+	// 清理内存中可能残存的离线通知配置数据
+	service.DeleteNodeNotifyConfig(targetNode.InstallID)
 
 	logger.Log.Info("节点已删除", "uuid", req.UUID, "name", targetNode.Name, "ip", clientIP, "path", reqPath)
 	if cleanupResult.RemovedDNSCount > 0 || cleanupResult.DeletedTunnel || cleanupResult.SharedTunnel {
