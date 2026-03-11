@@ -34,6 +34,8 @@ type NodeNotifyConfig struct {
 	Name                  string
 	OfflineNotifyEnabled  bool
 	OfflineNotifyGraceSec int
+	OfflineLastNotifyAt   time.Time // 上次离线通知发送时间 (来自 DB)
+	PreBootOffline        bool      // 节点是否在系统刚启动并度过 60s 缓冲期时被定性为已离线
 }
 
 type offlineNotifyRuntime struct {
@@ -127,6 +129,11 @@ func notifyOfflineIfDue(installID string, now time.Time) {
 	sent := sendNodeStatusNotification(node.Name, false, eventTime)
 	if sent {
 		updateNodeOfflineLastNotifyAt(node.UUID, eventTime)
+		nodeNotifyCacheMu.Lock()
+		if c, exists := nodeNotifyCache[installID]; exists {
+			c.OfflineLastNotifyAt = eventTime
+		}
+		nodeNotifyCacheMu.Unlock()
 	}
 
 	offlineNotifyMu.Lock()
@@ -184,27 +191,60 @@ func DeleteNodeNotifyConfig(installID string) {
 // InitNodeNotifyConfigCache 全量加载数据库节点的通知配置至内存
 func InitNodeNotifyConfigCache() {
 	var nodes []database.NodePool
-	if err := database.DB.Select("uuid", "install_id", "name", "offline_notify_enabled", "offline_notify_grace_sec").Find(&nodes).Error; err != nil {
+	if err := database.DB.Select("uuid", "install_id", "name", "offline_notify_enabled", "offline_notify_grace_sec", "offline_last_notify_at").Find(&nodes).Error; err != nil {
 		logger.Log.Warn("初始化节点通知配置缓存失败", "error", err)
 		return
 	}
 
 	nodeNotifyCacheMu.Lock()
-	defer nodeNotifyCacheMu.Unlock()
 	// 重置缓存
 	nodeNotifyCache = make(map[string]*NodeNotifyConfig)
 	for _, n := range nodes {
 		if strings.TrimSpace(n.InstallID) == "" {
 			continue
 		}
+		var lastNotify time.Time
+		if n.OfflineLastNotifyAt != nil {
+			lastNotify = *n.OfflineLastNotifyAt
+		}
 		nodeNotifyCache[n.InstallID] = &NodeNotifyConfig{
 			UUID:                  n.UUID,
 			Name:                  n.Name,
 			OfflineNotifyEnabled:  n.OfflineNotifyEnabled,
 			OfflineNotifyGraceSec: NormalizeNodeOfflineGraceSec(n.OfflineNotifyGraceSec),
+			OfflineLastNotifyAt:   lastNotify,
 		}
 	}
+	nodeNotifyCacheMu.Unlock()
+
 	logger.Log.Info("已加载全量节点通知配置至内存", "count", len(nodeNotifyCache))
+
+	// 启动 1 分钟缓冲协程定性未能在系统启动时及时连上的节点
+	go func() {
+		time.Sleep(1 * time.Minute)
+
+		nodeNotifyCacheMu.Lock()
+		defer nodeNotifyCacheMu.Unlock()
+
+		offlineCount := 0
+		for installID, config := range nodeNotifyCache {
+			if config.OfflineNotifyEnabled && !IsNodeOnline(installID) {
+				config.PreBootOffline = true
+				offlineCount++
+			}
+		}
+		if offlineCount > 0 {
+			logger.Log.Info("缓冲期结束，已标记系统启动前断连的节点", "offline_count", offlineCount)
+		}
+	}()
+}
+
+// IsValidInstallID 供 WebSocket 及其他模块快速校验节点有效性（完全基于内存字典）
+func IsValidInstallID(installID string) bool {
+	nodeNotifyCacheMu.RLock()
+	defer nodeNotifyCacheMu.RUnlock()
+	_, exists := nodeNotifyCache[installID]
+	return exists
 }
 
 func updateNodeOfflineLastNotifyAt(nodeUUID string, at time.Time) {
@@ -582,11 +622,23 @@ func OnNodeConnectionStatusChanged(installID string, online bool) {
 	offlineNotifyMu.Unlock()
 
 	if online {
-		if wasInitialized && !prevOnline && prevLastNotified == "offline" {
-			// 仅在“此前已成功发送离线通知”后，恢复在线才发送上线通知
-			if nodeFound && node.OfflineNotifyEnabled {
+		if nodeFound && node.OfflineNotifyEnabled {
+			// 如果该节点是在重启前发过离线通知 (OfflineLastNotifyAt 有值)
+			// 或者在刚才 60 秒的启动震荡期结束后，被盖棺定论打上了死胎记 (PreBootOffline == true)
+			// 这些情况全都在系统恢复生命周期管理后给您补发通知，以免暗箱掉线的节点漏报
+			isBootRecovery := !node.OfflineLastNotifyAt.IsZero() || node.PreBootOffline
+
+			if (wasInitialized && !prevOnline && prevLastNotified == "offline") || isBootRecovery {
 				if sendNodeStatusNotification(node.Name, true, now) {
-					updateNodeOfflineLastNotifyAt(node.UUID, now)
+					// 抹去数据库的 offline_last_notify_at 痕迹并置为 NULL
+					database.DB.Model(&database.NodePool{}).Where("uuid = ?", node.UUID).Update("offline_last_notify_at", nil)
+					// 清理节点的暗箱启动和离线标记
+					nodeNotifyCacheMu.Lock()
+					if c, exists := nodeNotifyCache[installID]; exists {
+						c.OfflineLastNotifyAt = time.Time{}
+						c.PreBootOffline = false
+					}
+					nodeNotifyCacheMu.Unlock()
 				}
 			}
 		}

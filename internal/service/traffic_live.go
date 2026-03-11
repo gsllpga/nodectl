@@ -427,6 +427,12 @@ func HandleAgentWS(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 
+		// 硬核校验：如果内存名单里根本没有这个节点（被删的孤儿），直接挂断不接客，并且不刷屏
+		if !IsValidInstallID(installID) {
+			conn.Close(websocket.StatusPolicyViolation, "unknown node")
+			return
+		}
+
 		// 首次识别到 install_id 时注册连接
 		if agentInstallID == "" {
 			agentInstallID = installID
@@ -446,16 +452,8 @@ func HandleAgentWS(w http.ResponseWriter, r *http.Request) {
 			)
 		}
 
-		// 解析 node_uuid
+		// 解析 node_uuid，因为前边硬核校验过了，此时必定有缓存或能查到数据库
 		nodeUUID := hub.resolveNodeUUID(installID)
-		if nodeUUID == "" {
-			logger.Log.Warn("Agent WS 未知节点",
-				"install_id", installID,
-				"ip", clientIP,
-				"node_name_by_ip", hub.resolveNodeNameByIP(clientIP),
-			)
-			continue
-		}
 
 		// 更新内存态
 		hub.mu.Lock()
