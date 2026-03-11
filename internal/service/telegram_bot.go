@@ -29,8 +29,9 @@ var (
 type offlineNotifyRuntime struct {
 	initialized      bool
 	online           bool
-	pendingOfflineAt time.Time
-	lastNotified     string // offline | online | ""
+	disconnectedAt   time.Time // 实际断线时刻
+	pendingOfflineAt time.Time // 宽限期到期时间
+	lastNotified     string    // offline | online | ""
 }
 
 func NormalizeNodeOfflineGraceSec(v int) int {
@@ -92,8 +93,19 @@ func notifyOfflineIfDue(installID string, now time.Time) {
 		return
 	}
 
-	if sendNodeStatusNotification(node.Name, false, now) {
-		updateNodeOfflineLastNotifyAt(node.UUID, now)
+	// 使用实际断线时间而非当前轮询时间
+	offlineNotifyMu.Lock()
+	var eventTime time.Time
+	if st := offlineNotifyState[installID]; st != nil && !st.disconnectedAt.IsZero() {
+		eventTime = st.disconnectedAt
+	}
+	offlineNotifyMu.Unlock()
+	if eventTime.IsZero() {
+		eventTime = now
+	}
+
+	if sendNodeStatusNotification(node.Name, false, eventTime) {
+		updateNodeOfflineLastNotifyAt(node.UUID, eventTime)
 	}
 
 	offlineNotifyMu.Lock()
@@ -468,21 +480,23 @@ func OnNodeConnectionStatusChanged(installID string, online bool) {
 	st.online = online
 	if online {
 		st.pendingOfflineAt = time.Time{}
+		st.disconnectedAt = time.Time{}
 	} else {
 		graceSec := 180
 		if nodeFound {
 			graceSec = NormalizeNodeOfflineGraceSec(node.OfflineNotifyGraceSec)
 		}
+		st.disconnectedAt = now
 		st.pendingOfflineAt = now.Add(time.Duration(graceSec) * time.Second)
 	}
-	lastNotified := st.lastNotified
 	offlineNotifyMu.Unlock()
 
 	if !nodeFound || !node.OfflineNotifyEnabled {
 		return
 	}
 
-	if online && wasInitialized && !prevOnline && lastNotified == "offline" {
+	if online && wasInitialized && !prevOnline {
+		// 从离线恢复上线：立即发送上线通知（不再要求之前必须发过离线通知）
 		if sendNodeStatusNotification(node.Name, true, now) {
 			updateNodeOfflineLastNotifyAt(node.UUID, now)
 		}

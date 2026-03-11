@@ -318,11 +318,16 @@ func HandleAgentWS(w http.ResponseWriter, r *http.Request) {
 
 	ctx := r.Context()
 
+	// Agent 每 2 秒上报一次，设 15 秒读超时检测静默离线（如进程崩溃、网络中断等半开连接）
+	const agentReadTimeout = 15 * time.Second
+
 	// 首个消息用于识别 install_id 并注册连接
 	var agentInstallID string
 
 	for {
-		_, data, err := conn.Read(ctx)
+		readCtx, readCancel := context.WithTimeout(ctx, agentReadTimeout)
+		_, data, err := conn.Read(readCtx)
+		readCancel()
 		if err != nil {
 			nodeName := ""
 			if agentInstallID != "" {
@@ -331,8 +336,10 @@ func HandleAgentWS(w http.ResponseWriter, r *http.Request) {
 			// 正常关闭或网络断开
 			if websocket.CloseStatus(err) == websocket.StatusNormalClosure {
 				logger.Log.Info("Agent WS 正常断开", "ip", clientIP, "install_id", agentInstallID, "node_name", nodeName)
+			} else if ctx.Err() != nil {
+				logger.Log.Info("Agent WS 连接随请求上下文关闭", "ip", clientIP, "install_id", agentInstallID, "node_name", nodeName)
 			} else {
-				logger.Log.Warn("Agent WS 读取异常", "error", err, "ip", clientIP, "install_id", agentInstallID, "node_name", nodeName)
+				logger.Log.Warn("Agent WS 读取异常（可能静默离线）", "error", err, "ip", clientIP, "install_id", agentInstallID, "node_name", nodeName)
 			}
 			// 注销 Agent 连接
 			if agentInstallID != "" {

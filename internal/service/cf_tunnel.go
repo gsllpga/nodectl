@@ -668,28 +668,27 @@ func generateTunnelSecret() string {
 
 // ===================== 节点专属 Tunnel 管理 =====================
 
-// sanitizeNodeTunnelName 将节点名称转换为安全的 Tunnel 名称
+// generateNodeTunnelSuffix 生成 6 位随机字母数字后缀，用于节点 Tunnel 命名防碰撞
+func generateNodeTunnelSuffix() (string, error) {
+	const charset = "abcdefghijklmnopqrstuvwxyz0123456789"
+	b := make([]byte, 6)
+	if _, err := rand.Read(b); err != nil {
+		return "", err
+	}
+	for i := range b {
+		b[i] = charset[int(b[i])%len(charset)]
+	}
+	return string(b), nil
+}
+
+// sanitizeNodeTunnelName 生成节点专属 Tunnel 名称：nodetunnel-{random6}
+// 使用随机后缀代替节点名，避免特殊字符和命名碰撞
 func sanitizeNodeTunnelName(name string) string {
-	name = strings.TrimSpace(name)
-	if name == "" {
-		return "nodectl-node"
+	suffix, err := generateNodeTunnelSuffix()
+	if err != nil {
+		return "nodetunnel-node"
 	}
-	var b strings.Builder
-	for _, r := range strings.ToLower(name) {
-		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') {
-			b.WriteRune(r)
-		} else {
-			b.WriteRune('-')
-		}
-	}
-	result := strings.Trim(b.String(), "-")
-	for strings.Contains(result, "--") {
-		result = strings.ReplaceAll(result, "--", "-")
-	}
-	if result == "" {
-		return "nodectl-node"
-	}
-	return "nodectl-" + result
+	return "nodetunnel-" + suffix
 }
 
 // fetchTunnelTokenString 从 CF API 获取指定 Tunnel 的运行 Token（不保存到全局配置）

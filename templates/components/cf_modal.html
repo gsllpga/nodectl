@@ -1317,6 +1317,34 @@
                             </div>
                         </div>
                     </div>
+
+                    <div style="border:1px solid #e5eaf3; border-radius:10px; overflow:hidden; margin-top:10px;">
+                        <div
+                            style="display:flex; justify-content:space-between; align-items:center; padding:10px 12px; background:#fafcff;">
+                            <div style="font-size:12px; font-weight:600; color:#333;">📦 nodetunnel Tunnel 列表</div>
+                            <button class="cft-btn cft-btn-secondary" type="button"
+                                onclick="event.stopPropagation(); cftQueryNodetunnelTunnels();"
+                                style="padding:6px 12px;">查询</button>
+                        </div>
+                        <div id="cft-nodetunnel-list-body" style="display:none; padding:10px 12px; background:#fff;">
+                            <div id="cft-nodetunnel-list-empty" style="font-size:12px; color:#888;">点击"查询"后显示名称以 nodetunnel 开头的节点专属 Tunnel。</div>
+                            <div id="cft-nodetunnel-list-wrap"
+                                style="display:none; border:1px solid #e5e5ea; border-radius:8px; overflow:hidden; margin-top:8px;">
+                                <table class="cft-perm-table">
+                                    <thead>
+                                        <tr>
+                                            <th>名称</th>
+                                            <th style="width:220px;">Tunnel ID</th>
+                                            <th style="width:120px;">状态</th>
+                                            <th style="width:170px;">创建时间</th>
+                                            <th class="center" style="width:90px;">操作</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="cft-nodetunnel-list-tbody"></tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
                 </div>
 
                 <div class="cft-form-section" id="cft-form-security" style="display:none;">
@@ -2105,6 +2133,56 @@
         }
     }
 
+    async function cftQueryNodetunnelTunnels() {
+        const emptyEl = document.getElementById('cft-nodetunnel-list-empty');
+        const wrapEl = document.getElementById('cft-nodetunnel-list-wrap');
+        const tbody = document.getElementById('cft-nodetunnel-list-tbody');
+        const body = document.getElementById('cft-nodetunnel-list-body');
+        if (!emptyEl || !wrapEl || !tbody || !body) return;
+
+        body.style.display = 'block';
+        emptyEl.style.display = 'block';
+        emptyEl.textContent = '查询中...';
+        wrapEl.style.display = 'none';
+        tbody.innerHTML = '';
+
+        try {
+            const res = await fetch('/api/cf/tunnel/list?prefix=nodetunnel');
+            const json = await res.json();
+            if (json.status !== 'success') {
+                emptyEl.textContent = json.message || '查询失败';
+                return;
+            }
+
+            const list = Array.isArray(json.data) ? json.data : [];
+            if (list.length === 0) {
+                emptyEl.textContent = '未找到 nodetunnel 前缀 Tunnel';
+                return;
+            }
+
+            tbody.innerHTML = list.map(item => {
+                const id = String(item.id || '');
+                const name = String(item.name || '-');
+                const status = String(item.status || '-');
+                const created = String(item.created_at || '-');
+                return `
+                <tr>
+                    <td>${name}</td>
+                    <td style="font-size:10px; word-break:break-all;">${id}</td>
+                    <td>${status}</td>
+                    <td style="font-size:11px;">${created}</td>
+                    <td class="center"><button class="cft-btn cft-btn-danger" style="padding:4px 8px;" onclick="cftDeleteTunnelByID('${id}', '${name.replace(/'/g, "\\'")}')">删除</button></td>
+                </tr>
+            `;
+            }).join('');
+
+            emptyEl.style.display = 'none';
+            wrapEl.style.display = 'block';
+        } catch (e) {
+            emptyEl.textContent = '请求失败';
+        }
+    }
+
     async function cftDeleteTunnelByID(tunnelID, tunnelName) {
         if (!tunnelID) return;
         if (!confirm(`确认删除 Tunnel：${tunnelName || tunnelID}？`)) return;
@@ -2119,6 +2197,7 @@
             if (json.status === 'success') {
                 cftShowSaveIndicator('success', 'Tunnel 已删除');
                 cftQueryNodectlTunnels();
+                cftQueryNodetunnelTunnels();
                 cftLoadStatus();
                 cftLoadSettings();
             } else {
@@ -2261,14 +2340,25 @@
         el.style.display = 'block';
     }
 
-    function cftShowTunnelCmdLog(title) {
+    function cftShowTunnelCmdLog(title, nodeUUID) {
         const panel = document.getElementById('cftTunnelCmdLogPanel');
         const titleEl = document.getElementById('cftTunnelCmdLogTitle');
         const body = document.getElementById('cftTunnelCmdLogBody');
         if (!panel || !titleEl || !body) return;
         titleEl.textContent = title || '命令执行日志';
         body.innerHTML = '';
+
+        // 将日志面板移动到对应节点下方
+        if (nodeUUID) {
+            const nodeItem = document.querySelector(`.cft-node-item[data-uuid="${nodeUUID}"]`);
+            if (nodeItem && nodeItem.parentNode) {
+                nodeItem.parentNode.insertBefore(panel, nodeItem.nextSibling);
+            }
+        }
+
         panel.style.display = 'block';
+        // 滚动到日志面板可见
+        setTimeout(() => panel.scrollIntoView({ behavior: 'smooth', block: 'nearest' }), 100);
     }
 
     function cftAppendTunnelCmdLog(entry) {
@@ -2305,9 +2395,9 @@
         }
     }
 
-    function cftStreamTunnelCommandLog(commandID, title) {
+    function cftStreamTunnelCommandLog(commandID, title, nodeUUID) {
         if (!commandID) return;
-        cftShowTunnelCmdLog(title || '命令执行日志');
+        cftShowTunnelCmdLog(title || '命令执行日志', nodeUUID);
         if (cftTunnelCmdEventSource) {
             cftTunnelCmdEventSource.close();
             cftTunnelCmdEventSource = null;
@@ -2336,6 +2426,23 @@
     async function cftLoadTunnelNodeSettings() {
         const listContainer = document.getElementById('cft-tunnel-node-list');
         if (!listContainer) return;
+
+        // 在重建列表前，暂存日志面板状态并从 DOM 中摘出
+        const logPanel = document.getElementById('cftTunnelCmdLogPanel');
+        let logPanelVisible = false;
+        let logPanelNodeUUID = '';
+        if (logPanel) {
+            logPanelVisible = logPanel.style.display === 'block';
+            // 记录日志面板当前关联的节点 UUID（通过其前一个兄弟元素）
+            const prevSibling = logPanel.previousElementSibling;
+            if (prevSibling && prevSibling.dataset && prevSibling.dataset.uuid) {
+                logPanelNodeUUID = prevSibling.dataset.uuid;
+            }
+            // 临时移到列表容器外部（section 级别）防止被 innerHTML 销毁
+            const section = document.getElementById('cft-form-tunnel-nodes');
+            if (section) section.appendChild(logPanel);
+        }
+
         listContainer.innerHTML = '<div style="padding:16px;text-align:center;color:#999;border:1px solid #e5e5ea;border-radius:8px;background:#fff;">加载中...</div>';
 
         try {
@@ -2397,7 +2504,7 @@
                     ? '<span class="cft-node-status-badge cft-node-status-online">在线</span>'
                     : '<span class="cft-node-status-badge cft-node-status-offline">离线</span>';
                 return `
-                <div class="cft-node-item">
+                <div class="cft-node-item" data-uuid="${uuid}">
                     <div class="cft-node-header" onclick="this.parentElement.classList.toggle('expanded')">
                         <div class="cft-col-name" title="${name}">${flagHtml} ${name}</div>
                         <div class="cft-col-status">${status}</div>
@@ -2443,6 +2550,14 @@
                 </div>
             `;
             }).join('');
+
+            // 列表重建后，将日志面板恢复到对应节点下方
+            if (logPanel && logPanelVisible && logPanelNodeUUID) {
+                const targetNode = listContainer.querySelector(`.cft-node-item[data-uuid="${logPanelNodeUUID}"]`);
+                if (targetNode) {
+                    targetNode.parentNode.insertBefore(logPanel, targetNode.nextSibling);
+                }
+            }
         } catch (e) {
             listContainer.innerHTML = '<div style="padding:16px;text-align:center;color:#d74242;border:1px solid #e5e5ea;border-radius:8px;background:#fff;">加载失败，请稍后重试</div>';
         }
@@ -2463,7 +2578,7 @@
             }
             cftShowSaveIndicator('success', '设置已保存');
             if (json.command_id) {
-                cftStreamTunnelCommandLog(json.command_id, enabled ? '启用 Tunnel：安装与启动日志' : '禁用 Tunnel：停止日志');
+                cftStreamTunnelCommandLog(json.command_id, enabled ? '启用 Tunnel：安装与启动日志' : '禁用 Tunnel：停止日志', uuid);
             } else if (enabled) {
                 cftShowTunnelNodeBanner('当前节点已启用 Tunnel，但节点离线或无需下发命令。');
             }
@@ -2495,7 +2610,7 @@
             }
             cftShowSaveIndicator('success', json.message || '删除成功');
             if (json.command_id) {
-                cftStreamTunnelCommandLog(json.command_id, '删除 Tunnel：停止日志');
+                cftStreamTunnelCommandLog(json.command_id, '删除 Tunnel：停止日志', uuid);
             }
             cftLoadTunnelNodeSettings();
         } catch (e) {
