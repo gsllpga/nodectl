@@ -241,6 +241,7 @@ func Start(tmplFS embed.FS) {
 	service.InitTrafficThresholdCache()
 	service.StartAutoUpdateScheduler()
 	service.StartOfflineNotifyLoop()
+	service.StartAgentStartupSilentUpdateCheck()
 	if err := middleware.ReloadLoginRateLimitConfigFromDB(); err != nil {
 		logger.Log.Warn("加载登录IP限流配置失败，已使用默认策略", "error", err)
 	}

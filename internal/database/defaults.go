@@ -49,6 +49,7 @@ func initBasicSettings() {
 		{Key: "mihomo_core_version", Value: "", Description: "Mihomo 核心版本号"},
 		{Key: "geo_auto_update", Value: "false", Description: "是否启用 GeoIP 数据库自动更新"},
 		{Key: "mihomo_auto_update", Value: "false", Description: "是否启用 Mihomo 核心自动更新"},
+		{Key: "agent_startup_silent_update_enabled", Value: "false", Description: "程序启动时是否执行 Agent 静默更新检查"},
 		{Key: "pref_ip_strategy", Value: "ipv4_prefer", Description: "节点IP生成策略"},
 		{Key: "clash_custom_modules", Value: "[]", Description: "用户自定义的 Clash 分流模块"},
 		{Key: "clash_custom_proxy_rules", Value: "[]", Description: "自定义分流策略组配置"},
