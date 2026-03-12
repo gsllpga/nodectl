@@ -1035,6 +1035,11 @@ func DeleteCFTunnelDNSHost(host string) error {
 
 	zoneID, err := getZoneID(domain)
 	if err != nil {
+		// 容错：当 Zone 不存在（例如用户已在 CF 删除域名）时，按“记录已不存在”处理，不阻断节点删除流程
+		if strings.Contains(err.Error(), "未找到域名") && strings.Contains(err.Error(), "Zone") {
+			logger.Log.Warn("删除 Tunnel DNS 跳过：Zone 不存在，按已删除处理", "host", host, "domain", domain, "error", err)
+			return nil
+		}
 		return fmt.Errorf("获取 Zone ID 失败: %w", err)
 	}
 
