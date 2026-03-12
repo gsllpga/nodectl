@@ -501,7 +501,6 @@ func (rt *Runtime) applyTunnelConfig(payload tunnelCmdPayload, reply func(Comman
 	configDir := "/etc/nodectl-tunnel"
 	configPath := filepath.Join(configDir, "config.yml")
 	credPath := filepath.Join(configDir, "credentials.json")
-	servicePath := "/etc/systemd/system/nodectl-tunnel.service"
 
 	reply(CommandResult{Type: "progress", Stage: "写入 tunnel 配置文件..."})
 	if err := os.MkdirAll(configDir, 0755); err != nil {
@@ -527,7 +526,55 @@ func (rt *Runtime) applyTunnelConfig(payload tunnelCmdPayload, reply func(Comman
 	if err := os.MkdirAll(logDir, 0755); err != nil {
 		log.Printf("[Agent] 创建 cloudflared 日志目录失败: %v", err)
 	}
-	serviceContent := `[Unit]
+
+	// 检测 init 系统并写入对应的服务文件
+	initSys := detectInitSystem()
+	log.Printf("[Agent] 检测到 init 系统: %s", initSys)
+
+	switch initSys {
+	case "openrc":
+		// Alpine/OpenRC: 写入 /etc/init.d/ 脚本
+		// 与 singbox.tpl 中的 OpenRC 服务格式保持一致：
+		// - 使用 supervise-daemon 实现崩溃自动重启
+		// - 使用 checkpath 创建目录
+		openrcScript := `#!/sbin/openrc-run
+
+name="nodectl-tunnel"
+description="NodeCTL cloudflared tunnel"
+command="/usr/local/bin/cloudflared"
+command_args="--config /etc/nodectl-tunnel/config.yml --loglevel info --logfile /var/log/nodectl-tunnel/cloudflared.log tunnel --no-autoupdate run"
+pidfile="/run/${RC_SVCNAME}.pid"
+command_background="yes"
+output_log="/var/log/nodectl-tunnel/cloudflared-stdout.log"
+error_log="/var/log/nodectl-tunnel/cloudflared-stderr.log"
+# 自动拉起（程序崩溃、OOM、被 kill 后自动恢复）
+supervisor=supervise-daemon
+supervise_daemon_args="--respawn-max 0 --respawn-delay 5"
+
+depend() {
+	   need net
+	   after firewall
+}
+
+start_pre() {
+	   checkpath --directory --mode 0755 /var/log/nodectl-tunnel
+	   checkpath --directory --mode 0755 /run
+}
+`
+		initScriptPath := "/etc/init.d/nodectl-tunnel"
+		if err := os.WriteFile(initScriptPath, []byte(openrcScript), 0755); err != nil {
+			return fmt.Errorf("写入 OpenRC 服务脚本失败: %w", err)
+		}
+		log.Printf("[Agent] OpenRC 服务脚本已写入: %s", initScriptPath)
+
+	default:
+		// systemd (Debian/Ubuntu/CentOS 等): 写入 /etc/systemd/system/
+		servicePath := "/etc/systemd/system/nodectl-tunnel.service"
+		// 确保 systemd 目录存在（极端情况下的防御性处理）
+		if err := os.MkdirAll("/etc/systemd/system", 0755); err != nil {
+			return fmt.Errorf("创建 systemd 目录失败: %w", err)
+		}
+		serviceContent := `[Unit]
 Description=NodeCTL cloudflared tunnel
 After=network-online.target
 Wants=network-online.target
@@ -545,14 +592,57 @@ StandardError=append:/var/log/nodectl-tunnel/cloudflared-stderr.log
 [Install]
 WantedBy=multi-user.target
 `
-	if err := os.WriteFile(servicePath, []byte(serviceContent), 0644); err != nil {
-		return fmt.Errorf("写入 systemd 服务失败: %w", err)
+		if err := os.WriteFile(servicePath, []byte(serviceContent), 0644); err != nil {
+			return fmt.Errorf("写入 systemd 服务失败: %w", err)
+		}
+		log.Printf("[Agent] systemd 服务文件已写入: %s", servicePath)
 	}
 
 	// 清理旧版 tunnel.env（不再需要）
 	os.Remove(filepath.Join(configDir, "tunnel.env"))
 
 	return nil
+}
+
+// detectInitSystem 检测当前系统的 init 系统类型
+// 返回 "systemd" 或 "openrc"
+// 检测策略与 singbox.tpl 中的 detect_os + setup_service 保持一致：
+//  1. 优先通过 /etc/os-release 的 ID/ID_LIKE 识别 Alpine → openrc
+//  2. 检查 rc-service 命令 → openrc
+//  3. 检查 systemctl + /run/systemd/system → systemd
+//  4. 默认回退 systemd
+func detectInitSystem() string {
+	// 方法1: 读取 /etc/os-release 识别发行版（与 singbox.tpl detect_os 一致）
+	if data, err := os.ReadFile("/etc/os-release"); err == nil {
+		content := strings.ToLower(string(data))
+		if strings.Contains(content, "alpine") {
+			return "openrc"
+		}
+	}
+
+	// 方法2: 检查 OpenRC 命令（适用于非标准发行版但安装了 OpenRC 的情况）
+	if _, err := exec.LookPath("rc-service"); err == nil {
+		return "openrc"
+	}
+
+	// 方法3: 检查 systemctl 命令是否可用且 systemd 实际运行
+	if _, err := exec.LookPath("systemctl"); err == nil {
+		if _, err := os.Stat("/run/systemd/system"); err == nil {
+			return "systemd"
+		}
+		// systemctl 存在但 /run/systemd/system 不存在，可能是容器环境
+		if _, err := os.Stat("/etc/systemd/system"); err == nil {
+			return "systemd"
+		}
+	}
+
+	// 方法4: 检查 /etc/alpine-release 文件（兜底）
+	if _, err := os.Stat("/etc/alpine-release"); err == nil {
+		return "openrc"
+	}
+
+	// 默认回退到 systemd（大多数现代 Linux 发行版）
+	return "systemd"
 }
 
 // decodeTunnelTokenToCredFile 从 Tunnel Token 解码凭据并写入 JSON 文件
@@ -662,23 +752,45 @@ func (rt *Runtime) executeTunnelStart(cmd ServerCommand, reply func(CommandResul
 		return
 	}
 
-	// 启动 systemd 服务（独立脚本，避免被 installCmd 的 exit 影响）
-	startCmd := `echo "[tunnel] daemon-reload..."
-systemctl daemon-reload
-echo "[tunnel] enabling service..."
-systemctl enable nodectl-tunnel.service
-echo "[tunnel] restarting service..."
-systemctl restart nodectl-tunnel.service
-sleep 2
-echo "[tunnel] checking service status..."
-if systemctl is-active --quiet nodectl-tunnel.service; then
-  echo "[tunnel] ✅ nodectl-tunnel.service is running (PID: $(systemctl show -p MainPID nodectl-tunnel.service --value))"
+	// 启动服务（自动适配 systemd / OpenRC）
+	startCmd := `
+if command -v rc-service >/dev/null 2>&1; then
+	 # OpenRC (Alpine Linux 等)
+	 echo "[tunnel] 检测到 OpenRC，使用 rc-service 管理..."
+	 rc-update add nodectl-tunnel default 2>/dev/null || true
+	 echo "[tunnel] restarting service..."
+	 rc-service nodectl-tunnel restart
+	 sleep 2
+	 echo "[tunnel] checking service status..."
+	 if rc-service nodectl-tunnel status 2>/dev/null | grep -qi "started"; then
+	   echo "[tunnel] ✅ nodectl-tunnel is running (PID: $(cat /run/nodectl-tunnel.pid 2>/dev/null || echo unknown))"
+	 else
+	   echo "[tunnel] ❌ nodectl-tunnel failed to start"
+	   echo "[tunnel] --- last 20 log lines ---"
+	   tail -20 /var/log/nodectl-tunnel/cloudflared.log 2>/dev/null || true
+	 fi
+elif command -v systemctl >/dev/null 2>&1; then
+	 # systemd (Debian/Ubuntu/CentOS 等)
+	 echo "[tunnel] 检测到 systemd，使用 systemctl 管理..."
+	 echo "[tunnel] daemon-reload..."
+	 systemctl daemon-reload
+	 echo "[tunnel] enabling service..."
+	 systemctl enable nodectl-tunnel.service
+	 echo "[tunnel] restarting service..."
+	 systemctl restart nodectl-tunnel.service
+	 sleep 2
+	 echo "[tunnel] checking service status..."
+	 if systemctl is-active --quiet nodectl-tunnel.service; then
+	   echo "[tunnel] ✅ nodectl-tunnel.service is running (PID: $(systemctl show -p MainPID nodectl-tunnel.service --value))"
+	 else
+	   echo "[tunnel] ❌ nodectl-tunnel.service failed to start"
+	   echo "[tunnel] --- service status ---"
+	   systemctl status nodectl-tunnel.service --no-pager 2>&1 || true
+	   echo "[tunnel] --- last 20 log lines ---"
+	   cat /var/log/nodectl-tunnel/cloudflared.log 2>/dev/null | tail -20 || journalctl -u nodectl-tunnel.service -n 20 --no-pager 2>/dev/null || true
+	 fi
 else
-  echo "[tunnel] ❌ nodectl-tunnel.service failed to start"
-  echo "[tunnel] --- service status ---"
-  systemctl status nodectl-tunnel.service --no-pager 2>&1 || true
-  echo "[tunnel] --- last 20 log lines ---"
-  cat /var/log/nodectl-tunnel/cloudflared.log 2>/dev/null | tail -20 || journalctl -u nodectl-tunnel.service -n 20 --no-pager 2>/dev/null || true
+	 echo "[tunnel] ❌ 未检测到 systemctl 或 rc-service，无法管理服务"
 fi`
 	if err := rt.runStreamingScript(startCmd, "启动 tunnel 服务", reply); err != nil {
 		log.Printf("[Agent] tunnel-start: 服务启动失败: %v", err)
@@ -694,16 +806,31 @@ fi`
 func (rt *Runtime) executeTunnelStop(reply func(CommandResult)) {
 	log.Printf("[Agent] tunnel-stop: 开始停止 tunnel 服务")
 	shellCmd := `echo "[tunnel] stopping service..."
-if command -v systemctl >/dev/null 2>&1 && systemctl list-unit-files | grep -q 'nodectl-tunnel.service'; then
+if command -v rc-service >/dev/null 2>&1 && rc-service nodectl-tunnel status 2>/dev/null | grep -qi "started\|running"; then
+  rc-service nodectl-tunnel stop
+  sleep 1
+  if rc-service nodectl-tunnel status 2>/dev/null | grep -qi "started\|running"; then
+    echo "[tunnel] ⚠️ service still running after stop"
+  else
+    echo "[tunnel] ✅ nodectl-tunnel 已停止 (OpenRC)"
+  fi
+elif command -v systemctl >/dev/null 2>&1 && systemctl list-unit-files 2>/dev/null | grep -q 'nodectl-tunnel.service'; then
   systemctl stop nodectl-tunnel.service
   sleep 1
   if systemctl is-active --quiet nodectl-tunnel.service; then
     echo "[tunnel] ⚠️ service still running after stop"
   else
-    echo "[tunnel] ✅ nodectl-tunnel 已停止"
+    echo "[tunnel] ✅ nodectl-tunnel 已停止 (systemd)"
   fi
 else
-  echo "[tunnel] 未检测到 nodectl-tunnel.service"
+  echo "[tunnel] 未检测到 nodectl-tunnel 服务"
+  # 尝试直接 kill cloudflared 进程作为兜底
+  if pgrep -f "cloudflared.*nodectl-tunnel" >/dev/null 2>&1; then
+    echo "[tunnel] 发现残留 cloudflared 进程，尝试终止..."
+    pkill -f "cloudflared.*nodectl-tunnel" 2>/dev/null || true
+    sleep 1
+    echo "[tunnel] ✅ 进程已终止"
+  fi
 fi`
 	rt.execStreamingScript(shellCmd, "停止 tunnel", reply)
 	log.Printf("[Agent] tunnel-stop: 完成")
@@ -729,19 +856,31 @@ func (rt *Runtime) refreshTunnelAfterCoreChange(payload *tunnelCmdPayload, reply
 	}
 
 	restartCmd := `echo "[tunnel] refreshing service..."
-if command -v systemctl >/dev/null 2>&1; then
-  systemctl daemon-reload
-  systemctl enable nodectl-tunnel.service
-  systemctl restart nodectl-tunnel.service
-  sleep 2
-  if systemctl is-active --quiet nodectl-tunnel.service; then
-    echo "[tunnel] ✅ nodectl-tunnel 已刷新 (PID: $(systemctl show -p MainPID nodectl-tunnel.service --value))"
-  else
-    echo "[tunnel] ❌ 刷新后服务未运行"
-    systemctl status nodectl-tunnel.service --no-pager 2>&1 || true
-  fi
+if command -v rc-service >/dev/null 2>&1 && [ -f /etc/init.d/nodectl-tunnel ]; then
+	 echo "[tunnel] 使用 OpenRC 刷新服务..."
+	 rc-update add nodectl-tunnel default 2>/dev/null || true
+	 rc-service nodectl-tunnel restart
+	 sleep 2
+	 if rc-service nodectl-tunnel status 2>/dev/null | grep -qi "started"; then
+	   echo "[tunnel] ✅ nodectl-tunnel 已刷新 (PID: $(cat /run/nodectl-tunnel.pid 2>/dev/null || echo unknown))"
+	 else
+	   echo "[tunnel] ❌ 刷新后服务未运行"
+	   tail -20 /var/log/nodectl-tunnel/cloudflared.log 2>/dev/null || true
+	 fi
+elif command -v systemctl >/dev/null 2>&1; then
+	 echo "[tunnel] 使用 systemd 刷新服务..."
+	 systemctl daemon-reload
+	 systemctl enable nodectl-tunnel.service
+	 systemctl restart nodectl-tunnel.service
+	 sleep 2
+	 if systemctl is-active --quiet nodectl-tunnel.service; then
+	   echo "[tunnel] ✅ nodectl-tunnel 已刷新 (PID: $(systemctl show -p MainPID nodectl-tunnel.service --value))"
+	 else
+	   echo "[tunnel] ❌ 刷新后服务未运行"
+	   systemctl status nodectl-tunnel.service --no-pager 2>&1 || true
+	 fi
 else
-  echo "[tunnel] 未检测到 systemctl，已跳过 tunnel 服务重启"
+	 echo "[tunnel] 未检测到 systemctl 或 rc-service，已跳过 tunnel 服务重启"
 fi`
 	if err := rt.runStreamingScript(restartCmd, "刷新 tunnel", reply); err != nil {
 		log.Printf("[Agent] tunnel-refresh: 服务刷新失败: %v", err)
