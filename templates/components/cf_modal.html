@@ -549,6 +549,18 @@
         border: 1px solid #ffd7b0;
     }
 
+    .cft-node-status-deployed {
+        color: #1f8f4a;
+        background: #e8f7ed;
+        border: 1px solid #c9ebd6;
+    }
+
+    .cft-node-status-undeployed {
+        color: #888;
+        background: #f5f5f7;
+        border: 1px solid #e5e5ea;
+    }
+
     .cft-cmdlog-panel {
         margin-top: 12px;
         border: 1px solid #e5e5ea;
@@ -3380,10 +3392,10 @@
     function cftBuildTunnelNodeItem(n) {
                     const uuid = cftEscapeHtml(n.uuid || "");
                     const name = cftEscapeHtml(n.name || "-");
-                    const online = !!n.online;
                     const enabled = !!n.tunnel_enabled;
                     const tunnelName = cftEscapeHtml(n.tunnel_name || "-");
                     const tunnelID = cftEscapeHtml(n.tunnel_id || "-");
+                    const hasTunnel = !!(n.tunnel_id && String(n.tunnel_id).trim() !== "" && String(n.tunnel_id).trim() !== "-");
                     const domain = cftEscapeHtml(n.tunnel_domain || "-");
 
                     function buildFlagFallbackDataUri(code) {
@@ -3434,9 +3446,9 @@
                         tunnelHosts.length > 0
                             ? `<div style="display:flex;flex-direction:column;gap:4px;">${tunnelHosts.map((host) => `<span style="font-family:monospace;color:#333;">${cftEscapeHtml(host)}</span>`).join("")}</div>`
                             : '<span style="color:#333;">-</span>';
-                    const status = online
-                        ? '<span class="cft-node-status-badge cft-node-status-online">在线</span>'
-                        : '<span class="cft-node-status-badge cft-node-status-offline">离线</span>';
+                    const status = hasTunnel
+                        ? '<span class="cft-node-status-badge cft-node-status-deployed">已部署</span>'
+                        : '<span class="cft-node-status-badge cft-node-status-undeployed">未部署</span>';
                     return `
                 <div class="cft-node-item" data-uuid="${uuid}">
                     <div class="cft-node-header" onclick="this.parentElement.classList.toggle('expanded')">
