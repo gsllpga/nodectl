@@ -408,12 +408,17 @@ func apiGetNodes(w http.ResponseWriter, r *http.Request) {
 	var config database.SysConfig
 	database.DB.Where("key = ?", "panel_url").First(&config)
 
+	// 获取 tunnel 子域名（用于前端生成安装命令时选择回调地址模式）
+	var tunnelSubdomainConfig database.SysConfig
+	database.DB.Where("key = ?", "cf_tunnel_subdomain").First(&tunnelSubdomainConfig)
+
 	// 4. 返回结构化数据
 	sendJSON(w, "success", map[string]interface{}{
 		"data": map[string]interface{}{
-			"direct_nodes": directNodes,
-			"land_nodes":   landNodes,
-			"panel_url":    config.Value,
+			"direct_nodes":       directNodes,
+			"land_nodes":         landNodes,
+			"panel_url":          config.Value,
+			"tunnel_subdomain":   tunnelSubdomainConfig.Value,
 		},
 	})
 }

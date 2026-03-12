@@ -844,7 +844,8 @@ func DeleteCFTunnelByID(tunnelID string) error {
 		return fmt.Errorf("删除 Tunnel 失败: %w", err)
 	}
 
-	if getCFConfig("cf_tunnel_id") == tunnelID {
+	currentTunnelID := strings.TrimSpace(getCFConfig("cf_tunnel_id"))
+	if currentTunnelID == tunnelID {
 		StopCFTunnel()
 		os.Remove(cfTunnelCredentialsPath(tunnelID))
 		os.Remove(cfTunnelConfigYml)
@@ -852,6 +853,7 @@ func DeleteCFTunnelByID(tunnelID string) error {
 
 		setCFConfig("cf_tunnel_id", "")
 		setCFConfig("cf_tunnel_token", "")
+		setCFConfig("cf_tunnel_subdomain", "")
 		setCFConfig("cf_tunnel_enabled", "false")
 	}
 
@@ -899,6 +901,7 @@ func DeleteCFTunnel() error {
 	// 清空配置
 	setCFConfig("cf_tunnel_id", "")
 	setCFConfig("cf_tunnel_token", "")
+	setCFConfig("cf_tunnel_subdomain", "")
 	setCFConfig("cf_tunnel_enabled", "false")
 
 	logger.Log.Info("Tunnel 已删除", "id", tunnelID)

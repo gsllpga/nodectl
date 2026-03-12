@@ -202,7 +202,8 @@ func GetTrafficHub() *TrafficHub {
 			cmdResults:  make(map[string]chan AgentCommandResult),
 			cmdLogs:     make(map[string]*CommandLog),
 		}
-		go globalHub.runPersistLoop()
+		go globalHub.runTotalPersistLoop()
+		go globalHub.runPointPersistLoop()
 	})
 	return globalHub
 }
@@ -217,14 +218,25 @@ func normalizeTrafficPersistIntervalSec(v int) int {
 	return v
 }
 
-func loadTrafficPersistIntervalSec() int {
+// loadTrafficTotalPersistIntervalSec 按数据库类型返回固定累计落库间隔：
+// - SQLite: 30s
+// - PostgreSQL: 10s
+func loadTrafficTotalPersistIntervalSec() int {
+	cfg := database.LoadDBConfig()
+	if strings.EqualFold(strings.TrimSpace(cfg.Type), "postgres") {
+		return 10
+	}
+	return 30
+}
+
+func loadTrafficPointPersistIntervalSec() int {
 	var cfg database.SysConfig
-	if err := database.DB.Where("key = ?", "pref_traffic_persist_interval_sec").First(&cfg).Error; err != nil {
-		return 300
+	if err := database.DB.Where("key = ?", "pref_traffic_point_persist_interval_sec").First(&cfg).Error; err != nil {
+		return 600
 	}
 	parsed, err := strconv.Atoi(strings.TrimSpace(cfg.Value))
 	if err != nil {
-		return 300
+		return 600
 	}
 	return normalizeTrafficPersistIntervalSec(parsed)
 }
@@ -237,9 +249,9 @@ func loadNodeTrafficBase(installID string) (rxBase, txBase int64) {
 	return node.TrafficDown, node.TrafficUp
 }
 
-func (h *TrafficHub) runPersistLoop() {
+func (h *TrafficHub) runTotalPersistLoop() {
 	for {
-		interval := loadTrafficPersistIntervalSec()
+		interval := loadTrafficTotalPersistIntervalSec()
 		now := time.Now()
 		intervalDur := time.Duration(interval) * time.Second
 		next := now.Truncate(intervalDur).Add(intervalDur)
@@ -248,36 +260,87 @@ func (h *TrafficHub) runPersistLoop() {
 			sleepDur = intervalDur
 		}
 		time.Sleep(sleepDur)
-		h.flushDirtyNodeTraffic()
+		h.flushDirtyNodeTrafficTotal()
 	}
 }
 
-func (h *TrafficHub) flushDirtyNodeTraffic() {
-	type flushItem struct {
-		installID string
-		rx        int64
-		tx        int64
+func (h *TrafficHub) runPointPersistLoop() {
+	for {
+		interval := loadTrafficPointPersistIntervalSec()
+		now := time.Now()
+		intervalDur := time.Duration(interval) * time.Second
+		next := now.Truncate(intervalDur).Add(intervalDur)
+		sleepDur := next.Sub(now)
+		if sleepDur <= 0 {
+			sleepDur = intervalDur
+		}
+		time.Sleep(sleepDur)
+		h.flushNodeTrafficPoint()
 	}
-	items := make([]flushItem, 0, 64)
+}
+
+type dirtyTrafficItem struct {
+	installID string
+	rx        int64
+	tx        int64
+}
+
+func (h *TrafficHub) collectDirtyNodeTrafficAndClear() []dirtyTrafficItem {
+	items := make([]dirtyTrafficItem, 0, 64)
 
 	h.mu.Lock()
 	for iid, st := range h.nodes {
 		if st == nil || !st.Dirty {
 			continue
 		}
-		items = append(items, flushItem{installID: iid, rx: st.TotalRXBytes, tx: st.TotalTXBytes})
+		items = append(items, dirtyTrafficItem{installID: iid, rx: st.TotalRXBytes, tx: st.TotalTXBytes})
 		st.Dirty = false
 	}
 	h.mu.Unlock()
 
+	return items
+}
+
+func (h *TrafficHub) flushDirtyNodeTrafficTotal() {
+	items := h.collectDirtyNodeTrafficAndClear()
+	now := time.Now()
 	for _, item := range items {
-		if _, err := SaveNodeTrafficReport(item.installID, item.rx, item.tx, time.Now()); err != nil {
+		if _, err := SaveNodeTrafficTotalOnly(item.installID, item.rx, item.tx, now); err != nil {
 			logger.Log.Error("实时累计流量写库失败", "install_id", item.installID, "error", err)
 			h.mu.Lock()
 			if st, ok := h.nodes[item.installID]; ok && st != nil {
 				st.Dirty = true
 			}
 			h.mu.Unlock()
+		}
+	}
+}
+
+func (h *TrafficHub) flushNodeTrafficPoint() {
+	type pointItem struct {
+		installID string
+		rx        int64
+		tx        int64
+	}
+	items := make([]pointItem, 0, 64)
+
+	h.mu.RLock()
+	for iid, st := range h.nodes {
+		if st == nil {
+			continue
+		}
+		// 离线节点不写入历史点数据，避免浪费存储
+		if !IsNodeOnline(iid) {
+			continue
+		}
+		items = append(items, pointItem{installID: iid, rx: st.TotalRXBytes, tx: st.TotalTXBytes})
+	}
+	h.mu.RUnlock()
+
+	now := time.Now()
+	for _, item := range items {
+		if _, err := SaveNodeTrafficPointOnly(item.installID, item.rx, item.tx, now); err != nil {
+			logger.Log.Error("实时流量点数据写库失败", "install_id", item.installID, "error", err)
 		}
 	}
 }

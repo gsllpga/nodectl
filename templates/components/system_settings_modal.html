@@ -2688,7 +2688,7 @@
                                     align-items: center;
                                     gap: 4px;
                                 ">
-                                实时流量落库间隔 (秒)
+                                历史流量数据落库间隔 (秒)
                                 <div class="sys-info-tooltip-wrap" tabindex="0">
                                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
                                         stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -2709,20 +2709,21 @@
                                                 margin: 0;
                                                 padding-bottom: 4px;
                                             ">
-                                            • <b>实时累计:</b> Agent
-                                            每次上报原始计数器，后端实时累加。
+                                            •
+                                            <b>点数据:</b>
+                                            用于历史曲线/统计分析的采样点。
                                         </p>
                                         <p style="margin: 0">
                                             •
                                             <b>落库间隔:</b>
-                                            控制后端将内存累计写入数据库频率，范围
+                                            仅影响历史点采样密度，不影响累计值安全性，范围
                                             10-3600 秒。
                                         </p>
                                     </div>
                                 </div>
                             </label>
-                            <input type="number" id="sys_pref_traffic_persist_interval_sec" class="sys-input"
-                                placeholder="默认: 300" min="10" max="3600" oninput="triggerSysAutoSave()" />
+                            <input type="number" id="sys_pref_traffic_point_persist_interval_sec" class="sys-input"
+                                placeholder="默认: 600" min="10" max="3600" oninput="triggerSysAutoSave()" />
                         </div>
 
                         <div class="sys-field">
@@ -3776,9 +3777,10 @@
                 document.getElementById(
                     "sys_pref_traffic_stats_retention_days",
                 ).value = data.pref_traffic_stats_retention_days || "30";
+
                 document.getElementById(
-                    "sys_pref_traffic_persist_interval_sec",
-                ).value = data.pref_traffic_persist_interval_sec || "300";
+                    "sys_pref_traffic_point_persist_interval_sec",
+                ).value = data.pref_traffic_point_persist_interval_sec || "600";
                 document.getElementById(
                     "sys_agent_ws_push_interval_sec",
                 ).value = data.agent_ws_push_interval_sec || "2";
@@ -4596,9 +4598,11 @@
                 pref_traffic_stats_retention_days: document.getElementById(
                     "sys_pref_traffic_stats_retention_days",
                 ).value,
-                pref_traffic_persist_interval_sec: document.getElementById(
-                    "sys_pref_traffic_persist_interval_sec",
-                ).value,
+
+                pref_traffic_point_persist_interval_sec:
+                    document.getElementById(
+                        "sys_pref_traffic_point_persist_interval_sec",
+                    ).value,
                 auth_cookie_ttl_mode: document.getElementById(
                     "sys_auth_cookie_ttl_mode",
                 ).value,

@@ -20,7 +20,7 @@ func isNodeTrafficStatsPrimaryKeyConflict(err error) bool {
 	return strings.Contains(msg, "node_traffic_stats_pkey") && strings.Contains(msg, "SQLSTATE 23505")
 }
 
-func saveNodeTrafficReportOnce(installID string, rxBytes, txBytes int64, reportedAt time.Time) (bool, error) {
+func saveNodeTrafficTotalOnce(installID string, rxBytes, txBytes int64, reportedAt time.Time) (bool, error) {
 	found := false
 	err := database.DB.Transaction(func(tx *gorm.DB) error {
 		var node database.NodePool
@@ -42,6 +42,27 @@ func saveNodeTrafficReportOnce(installID string, rxBytes, txBytes int64, reporte
 			}).Error; err != nil {
 			return err
 		}
+
+		return nil
+	})
+
+	if err != nil {
+		return false, err
+	}
+	return found, nil
+}
+
+func saveNodeTrafficPointOnce(installID string, rxBytes, txBytes int64, reportedAt time.Time) (bool, error) {
+	found := false
+	err := database.DB.Transaction(func(tx *gorm.DB) error {
+		var node database.NodePool
+		if err := tx.Where("install_id = ?", installID).First(&node).Error; err != nil {
+			if err == gorm.ErrRecordNotFound {
+				return nil
+			}
+			return err
+		}
+		found = true
 
 		rec := database.NodeTrafficStat{
 			NodeUUID:   node.UUID,
@@ -67,7 +88,6 @@ func saveNodeTrafficReportOnce(installID string, rxBytes, txBytes int64, reporte
 	if err != nil {
 		return false, err
 	}
-
 	return found, nil
 }
 
@@ -207,8 +227,8 @@ func cleanupExpiredTrafficStats(tx *gorm.DB, now time.Time, retentionDays int) e
 	return tx.Where("day_key < ?", cutoffDayKey).Delete(&database.NodeTrafficStat{}).Error
 }
 
-// SaveNodeTrafficReport 在节点上报流量时同时更新 node_pool 和历史统计表。
-func SaveNodeTrafficReport(installID string, rxBytes, txBytes int64, reportedAt time.Time) (bool, error) {
+// SaveNodeTrafficTotalOnly 仅更新 node_pool 累计流量，不写历史点数据。
+func SaveNodeTrafficTotalOnly(installID string, rxBytes, txBytes int64, reportedAt time.Time) (bool, error) {
 	installID = strings.TrimSpace(installID)
 	if installID == "" {
 		return false, nil
@@ -217,7 +237,20 @@ func SaveNodeTrafficReport(installID string, rxBytes, txBytes int64, reportedAt 
 		reportedAt = time.Now()
 	}
 
-	found, err := saveNodeTrafficReportOnce(installID, rxBytes, txBytes, reportedAt)
+	return saveNodeTrafficTotalOnce(installID, rxBytes, txBytes, reportedAt)
+}
+
+// SaveNodeTrafficPointOnly 仅写入历史点数据，不更新 node_pool 累计流量。
+func SaveNodeTrafficPointOnly(installID string, rxBytes, txBytes int64, reportedAt time.Time) (bool, error) {
+	installID = strings.TrimSpace(installID)
+	if installID == "" {
+		return false, nil
+	}
+	if reportedAt.IsZero() {
+		reportedAt = time.Now()
+	}
+
+	found, err := saveNodeTrafficPointOnce(installID, rxBytes, txBytes, reportedAt)
 	if err == nil {
 		return found, nil
 	}
@@ -231,7 +264,7 @@ func SaveNodeTrafficReport(installID string, rxBytes, txBytes int64, reportedAt 
 		return false, fmt.Errorf("写入失败且序列同步失败: %v; 原始错误: %w", syncErr, err)
 	}
 
-	return saveNodeTrafficReportOnce(installID, rxBytes, txBytes, reportedAt)
+	return saveNodeTrafficPointOnce(installID, rxBytes, txBytes, reportedAt)
 }
 
 // GetTrafficLandingNodes 返回可用于统计的落地节点列表。

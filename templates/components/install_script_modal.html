@@ -275,6 +275,65 @@
         color: #333;
     }
 
+    /* 回调地址说明 Tooltip（样式参考 system_settings_modal） */
+    .script-info-tooltip-wrap {
+        position: relative;
+        display: inline-flex;
+        align-items: center;
+        margin-left: 4px;
+        cursor: help;
+        outline: none;
+    }
+
+    .script-info-tooltip-wrap svg {
+        color: #a1a1aa;
+        transition: color 0.2s;
+    }
+
+    .script-info-tooltip-wrap:hover svg,
+    .script-info-tooltip-wrap:focus svg {
+        color: #007aff;
+    }
+
+    .script-tooltip-content {
+        position: absolute;
+        top: 140%;
+        left: -8px;
+        width: 260px;
+        background: #111827;
+        color: #fff;
+        font-size: 12px;
+        line-height: 1.5;
+        border-radius: 8px;
+        padding: 10px 12px;
+        box-shadow: 0 6px 18px rgba(0, 0, 0, 0.2);
+        z-index: 20;
+        opacity: 0;
+        visibility: hidden;
+        transform: translateY(-4px);
+        transition: all 0.2s ease;
+        pointer-events: none;
+        white-space: normal;
+    }
+
+    .script-tooltip-content::after {
+        content: "";
+        position: absolute;
+        top: -6px;
+        left: 16px;
+        width: 10px;
+        height: 10px;
+        background: #111827;
+        transform: rotate(45deg);
+    }
+
+    .script-info-tooltip-wrap:hover .script-tooltip-content,
+    .script-info-tooltip-wrap:focus .script-tooltip-content {
+        opacity: 1;
+        visibility: visible;
+        transform: translateY(0);
+    }
+
     /* ✨ 移动端适配：统一弹窗宽度留白与代码框内边距 */
     @media (max-width: 768px) {
         .script-modal-card {
@@ -291,6 +350,15 @@
             gap: 8px;
             /* 手机端协议按钮间距微调 */
         }
+
+        .script-tooltip-content {
+            left: -20px;
+            width: 240px;
+        }
+
+        .script-tooltip-content::after {
+            left: 24px;
+        }
     }
 </style>
 
@@ -299,7 +367,7 @@
         <div class="script-header">
             <div class="script-title">
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
-                    stroke-linecap="round" stroke-linejoin="round" style="color: #007aff;">
+                    stroke-linecap="round" stroke-linejoin="round" style="color: #007aff">
                     <polyline points="4 17 10 11 4 5"></polyline>
                     <line x1="12" y1="19" x2="20" y2="19"></line>
                 </svg>
@@ -308,10 +376,61 @@
         </div>
 
         <div class="script-body">
-            <!-- Panel URL 未配置警告 -->
-            <div id="panelUrlWarning"
-                style="display: none; background: #fff3cd; color: #856404; padding: 12px 14px; border-radius: 8px; margin-bottom: 16px; font-size: 13px; border: 1px solid #ffeeba; line-height: 1.5;">
-                <b style="display: flex; align-items: center; gap: 4px; margin-bottom: 4px;">
+            <!-- 回调地址选择 -->
+            <div id="callbackModeWrap" style="margin-bottom: 12px">
+                <div style="
+                        font-size: 12px;
+                        font-weight: 700;
+                        color: #666;
+                        margin-bottom: 8px;
+                        display: inline-flex;
+                        align-items: center;
+                        gap: 4px;
+                    ">
+                    回调地址选择
+                    <div class="script-info-tooltip-wrap" tabindex="0">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <circle cx="12" cy="12" r="10"></circle>
+                            <line x1="12" y1="8" x2="12" y2="12"></line>
+                            <line x1="12" y1="16" x2="12.01" y2="16"></line>
+                        </svg>
+                        <div class="script-tooltip-content">
+                            面板外部地址：依赖部署的服务器网络栈。<br />
+                            Tunnel 隧道地址：拥有IPV4及IPV6双栈能力。
+                        </div>
+                    </div>
+                </div>
+                <div style="display: flex; gap: 8px; flex-wrap: wrap">
+                    <label class="variant-check-item" style="padding: 6px 10px">
+                        <input type="radio" name="callback_mode" value="panel" onchange="updateScriptCmd()" />
+                        <span>面板外部地址</span>
+                    </label>
+                    <label class="variant-check-item" style="padding: 6px 10px">
+                        <input type="radio" name="callback_mode" value="tunnel" onchange="updateScriptCmd()" />
+                        <span>Tunnel 隧道地址</span>
+                    </label>
+                </div>
+            </div>
+
+            <!-- Panel URL 缺失提示 -->
+            <div id="panelUrlWarning" style="
+                    display: none;
+                    background: #fff3cd;
+                    color: #856404;
+                    padding: 12px 14px;
+                    border-radius: 8px;
+                    margin-bottom: 10px;
+                    font-size: 13px;
+                    border: 1px solid #ffeeba;
+                    line-height: 1.5;
+                ">
+                <b style="
+                        display: flex;
+                        align-items: center;
+                        gap: 4px;
+                        margin-bottom: 4px;
+                    ">
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
                         stroke-linecap="round" stroke-linejoin="round">
                         <path
@@ -320,12 +439,60 @@
                         <line x1="12" y1="9" x2="12" y2="13"></line>
                         <line x1="12" y1="17" x2="12.01" y2="17"></line>
                     </svg>
-                    注意：未配置 Panel URL
+                    未设置面板外部访问地址
                 </b>
-                系统未配置 <b>Panel URL</b>，如果在公网环境下，将导致 nodectl-agent 安装被跳过（节点无法自动上线和上报流量）。请前往 <a href="#"
-                    onclick="closeScriptModal(); openSystemSettingsModal(); return false;"
-                    style="color: #0056b3; font-weight: 500; text-decoration: underline;">【系统设置】->【基础设置】</a>
-                中填写正确的面板地址后再复制安装命令。
+                请前往
+                <a href="#" onclick="
+                        closeScriptModal();
+                        openSystemSettingsModal();
+                        return false;
+                    " style="
+                        color: #0056b3;
+                        font-weight: 500;
+                        text-decoration: underline;
+                    ">【系统设置】->【基础设置】</a>
+                填写面板外部访问地址。
+            </div>
+
+            <!-- Tunnel 缺失提示 -->
+            <div id="tunnelWarning" style="
+                    display: none;
+                    background: #fff3cd;
+                    color: #856404;
+                    padding: 12px 14px;
+                    border-radius: 8px;
+                    margin-bottom: 16px;
+                    font-size: 13px;
+                    border: 1px solid #ffeeba;
+                    line-height: 1.5;
+                ">
+                <b style="
+                        display: flex;
+                        align-items: center;
+                        gap: 4px;
+                        margin-bottom: 4px;
+                    ">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                        stroke-linecap="round" stroke-linejoin="round">
+                        <path
+                            d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z">
+                        </path>
+                        <line x1="12" y1="9" x2="12" y2="13"></line>
+                        <line x1="12" y1="17" x2="12.01" y2="17"></line>
+                    </svg>
+                    未设置 Tunnel 隧道地址
+                </b>
+                请前往
+                <a href="#" onclick="
+                        closeScriptModal();
+                        openCFTunnelModal();
+                        return false;
+                    " style="
+                        color: #0056b3;
+                        font-weight: 500;
+                        text-decoration: underline;
+                    ">【Cloudflare 管理】->【Tunnel 隧道】</a>
+                完成 Tunnel 配置。
             </div>
 
             <!-- 协议分组折叠面板，由 JS 动态渲染 -->
@@ -337,7 +504,9 @@
         </div>
 
         <div class="script-footer">
-            <button class="btn-script-cancel" onclick="closeScriptModal()">关闭</button>
+            <button class="btn-script-cancel" onclick="closeScriptModal()">
+                关闭
+            </button>
             <button class="btn-script-copy" onclick="copyScriptCmd()">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                     <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
@@ -350,63 +519,62 @@
 </div>
 
 <script>
-    const scriptModal = document.getElementById('installScriptModal');
-    const cmdDisplay = document.getElementById('installCmdDisplay');
-    const groupsWrap = document.getElementById('protocolCheckboxes');
+    const scriptModal = document.getElementById("installScriptModal");
+    const cmdDisplay = document.getElementById("installCmdDisplay");
+    const groupsWrap = document.getElementById("protocolCheckboxes");
     let currentScriptNode = null;
 
     // ─── 协议分组定义 ───
     const installProtoGroups = [
         {
-            id: 'vless', name: 'VLESS',
+            id: "vless",
+            name: "VLESS",
             variants: [
-                { key: 'vless', arg: 'vless', label: 'Reality' },
-                { key: 'vless_wst', arg: 'vless-wst', label: 'WS-TLS' },
-                { key: 'vless_hut', arg: 'vless-hut', label: 'HU-TLS' },
-            ]
+                { key: "vless", arg: "vless", label: "Reality" },
+                { key: "vless_wst", arg: "vless-wst", label: "WS-TLS" },
+                { key: "vless_hut", arg: "vless-hut", label: "HU-TLS" },
+            ],
         },
         {
-            id: 'vmess', name: 'VMess',
+            id: "vmess",
+            name: "VMess",
             variants: [
-                { key: 'vmess_tcp', arg: 'vmess-tcp', label: 'TCP' },
-                { key: 'vmess_ws', arg: 'vmess-ws', label: 'WS' },
-                { key: 'vmess_http', arg: 'vmess-http', label: 'HTTP' },
-                { key: 'vmess_quic', arg: 'vmess-quic', label: 'QUIC' },
-                { key: 'vmess_wst', arg: 'vmess-wst', label: 'WS-TLS' },
-                { key: 'vmess_hut', arg: 'vmess-hut', label: 'HU-TLS' },
-            ]
+                { key: "vmess_tcp", arg: "vmess-tcp", label: "TCP" },
+                { key: "vmess_ws", arg: "vmess-ws", label: "WS" },
+                { key: "vmess_http", arg: "vmess-http", label: "HTTP" },
+                { key: "vmess_quic", arg: "vmess-quic", label: "QUIC" },
+                { key: "vmess_wst", arg: "vmess-wst", label: "WS-TLS" },
+                { key: "vmess_hut", arg: "vmess-hut", label: "HU-TLS" },
+            ],
         },
         {
-            id: 'ss', name: 'Shadowsocks',
-            variants: [
-                { key: 'ss', arg: 'shadowsocks', label: 'Shadowsocks' },
-            ]
+            id: "ss",
+            name: "Shadowsocks",
+            variants: [{ key: "ss", arg: "shadowsocks", label: "Shadowsocks" }],
         },
         {
-            id: 'hy2', name: 'Hysteria2',
-            variants: [
-                { key: 'hy2', arg: 'hysteria2', label: 'Hysteria2' },
-            ]
+            id: "hy2",
+            name: "Hysteria2",
+            variants: [{ key: "hy2", arg: "hysteria2", label: "Hysteria2" }],
         },
         {
-            id: 'tuic', name: 'TUIC',
-            variants: [
-                { key: 'tuic', arg: 'tuic', label: 'TUIC' },
-            ]
+            id: "tuic",
+            name: "TUIC",
+            variants: [{ key: "tuic", arg: "tuic", label: "TUIC" }],
         },
         {
-            id: 'socks5', name: 'Socks5',
-            variants: [
-                { key: 'socks5', arg: 'socks5', label: 'Socks5' },
-            ]
+            id: "socks5",
+            name: "Socks5",
+            variants: [{ key: "socks5", arg: "socks5", label: "Socks5" }],
         },
         {
-            id: 'trojan', name: 'Trojan',
+            id: "trojan",
+            name: "Trojan",
             variants: [
-                { key: 'trojan', arg: 'trojan', label: 'Trojan' },
-                { key: 'trojan_wst', arg: 'trojan-wst', label: 'WS-TLS' },
-                { key: 'trojan_hut', arg: 'trojan-hut', label: 'HU-TLS' },
-            ]
+                { key: "trojan", arg: "trojan", label: "Trojan" },
+                { key: "trojan_wst", arg: "trojan-wst", label: "WS-TLS" },
+                { key: "trojan_hut", arg: "trojan-hut", label: "HU-TLS" },
+            ],
         },
     ];
 
@@ -415,26 +583,34 @@
 
     // ─── 渲染协议面板（行内展开，无折叠）───
     function renderGroups(activeSet) {
-        groupsWrap.innerHTML = '';
+        groupsWrap.innerHTML = "";
 
-        const multiGroups = installProtoGroups.filter(g => g.variants.length > 1);
-        const singleGroups = installProtoGroups.filter(g => g.variants.length === 1);
+        const multiGroups = installProtoGroups.filter(
+            (g) => g.variants.length > 1,
+        );
+        const singleGroups = installProtoGroups.filter(
+            (g) => g.variants.length === 1,
+        );
 
         // 多变种协议：每组独占一行，左侧显示协议名标签
         for (const group of multiGroups) {
-            const rowEl = document.createElement('div');
-            rowEl.className = 'proto-row';
+            const rowEl = document.createElement("div");
+            rowEl.className = "proto-row";
             rowEl.innerHTML = `
                 <span class="proto-row-label">${group.name}</span>
                 <div class="proto-row-chips">
-                    ${group.variants.map(v => `
+                    ${group.variants
+                    .map(
+                        (v) => `
                         <label class="variant-check-item">
                             <input type="checkbox" value="${v.arg}"
-                                ${activeSet.has(v.key) ? 'checked' : ''}
+                                ${activeSet.has(v.key) ? "checked" : ""}
                                 onchange="updateScriptCmd()">
                             <span>${v.label}</span>
                         </label>
-                    `).join('')}
+                    `,
+                    )
+                    .join("")}
                 </div>
             `;
             groupsWrap.appendChild(rowEl);
@@ -442,19 +618,21 @@
 
         // 单变种协议：全部合并到最后一行
         if (singleGroups.length > 0) {
-            const singlesEl = document.createElement('div');
-            singlesEl.className = 'proto-singles-row';
-            singlesEl.innerHTML = singleGroups.map(g => {
-                const v = g.variants[0];
-                return `
+            const singlesEl = document.createElement("div");
+            singlesEl.className = "proto-singles-row";
+            singlesEl.innerHTML = singleGroups
+                .map((g) => {
+                    const v = g.variants[0];
+                    return `
                     <label class="variant-check-item">
                         <input type="checkbox" value="${v.arg}"
-                            ${activeSet.has(v.key) ? 'checked' : ''}
+                            ${activeSet.has(v.key) ? "checked" : ""}
                             onchange="updateScriptCmd()">
                         <span>${g.name}</span>
                     </label>
                 `;
-            }).join('');
+                })
+                .join("");
             groupsWrap.appendChild(singlesEl);
         }
     }
@@ -463,28 +641,61 @@
     async function loadDefaultInstallProtoKeys() {
         try {
             const res = await fetch(`/api/get-settings?_t=${Date.now()}`, {
-                cache: 'no-store',
+                cache: "no-store",
                 headers: {
-                    'Cache-Control': 'no-cache',
-                    'Pragma': 'no-cache'
-                }
+                    "Cache-Control": "no-cache",
+                    Pragma: "no-cache",
+                },
             });
             const result = await res.json();
-            if (result?.status !== 'success') return new Set();
-            const rawValue = result?.data?.pref_default_install_protocols || '[]';
+            if (result?.status !== "success") return new Set();
+            const rawValue =
+                result?.data?.pref_default_install_protocols || "[]";
 
             let keys = [];
             try {
                 const parsed = JSON.parse(rawValue);
                 if (Array.isArray(parsed)) keys = parsed;
             } catch (_) {
-                keys = String(rawValue).split(',').map(v => v.trim()).filter(Boolean);
+                keys = String(rawValue)
+                    .split(",")
+                    .map((v) => v.trim())
+                    .filter(Boolean);
             }
 
-            const allKeys = new Set(installProtoGroups.flatMap(g => g.variants.map(v => v.key)));
-            return new Set(keys.filter(k => allKeys.has(k)));
+            const allKeys = new Set(
+                installProtoGroups.flatMap((g) => g.variants.map((v) => v.key)),
+            );
+            return new Set(keys.filter((k) => allKeys.has(k)));
         } catch (_) {
             return new Set();
+        }
+    }
+
+    async function loadTunnelSubdomainFromBackend() {
+        try {
+            const resp = await fetch(
+                `/api/cf/tunnel/settings?_t=${Date.now()}`,
+                {
+                    cache: "no-store",
+                    headers: {
+                        "Cache-Control": "no-cache",
+                        Pragma: "no-cache",
+                    },
+                },
+            );
+            const json = await resp.json();
+            const subdomain =
+                json?.status === "success" && json?.data
+                    ? String(json.data.cf_tunnel_subdomain || "").trim()
+                    : "";
+            window.cftTunnelSubdomain = subdomain;
+            window.cachedTunnelSubdomain = subdomain;
+            return subdomain;
+        } catch (_) {
+            const subdomain = String(window.cftTunnelSubdomain || "").trim();
+            window.cachedTunnelSubdomain = subdomain;
+            return subdomain;
         }
     }
 
@@ -497,13 +708,52 @@
             return;
         }
 
-        const warningEl = document.getElementById('panelUrlWarning');
-        if (warningEl) {
-            if (!window.panelUrl) {
-                warningEl.style.display = 'block';
-            } else {
-                warningEl.style.display = 'none';
-            }
+        const panelWarningEl = document.getElementById("panelUrlWarning");
+        const tunnelWarningEl = document.getElementById("tunnelWarning");
+        const callbackModeWrap = document.getElementById("callbackModeWrap");
+
+        const panelBase = (window.panelUrl || "").replace(/\/+$/, "");
+        const tunnelSubdomain = await loadTunnelSubdomainFromBackend();
+        const tunnelBase = (
+            tunnelSubdomain ? `https://${tunnelSubdomain}` : ""
+        ).replace(/\/+$/, "");
+        const hasPanel = !!panelBase;
+        const hasTunnel = !!tunnelBase;
+
+        if (callbackModeWrap) {
+            callbackModeWrap.style.display = "block";
+        }
+
+        const panelRadio = document.querySelector(
+            'input[name="callback_mode"][value="panel"]',
+        );
+        const tunnelRadio = document.querySelector(
+            'input[name="callback_mode"][value="tunnel"]',
+        );
+
+        if (hasTunnel && hasPanel) {
+            if (tunnelRadio) tunnelRadio.checked = true;
+        } else if (hasPanel) {
+            if (panelRadio) panelRadio.checked = true;
+        } else if (hasTunnel) {
+            if (tunnelRadio) tunnelRadio.checked = true;
+        } else {
+            if (panelRadio) panelRadio.checked = true;
+        }
+
+        const selectedModeAtOpen =
+            document.querySelector('input[name="callback_mode"]:checked')
+                ?.value || "panel";
+
+        if (panelWarningEl) {
+            panelWarningEl.style.display =
+                selectedModeAtOpen === "panel" && !hasPanel ? "block" : "none";
+        }
+        if (tunnelWarningEl) {
+            tunnelWarningEl.style.display =
+                selectedModeAtOpen === "tunnel" && !hasTunnel
+                    ? "block"
+                    : "none";
         }
 
         // 选择优先级：偏好设置 > 节点当前已启用协议
@@ -511,54 +761,93 @@
         const defaultSet = await loadDefaultInstallProtoKeys();
 
         if (defaultSet.size > 0) {
-            defaultSet.forEach(k => activeSet.add(k));
+            defaultSet.forEach((k) => activeSet.add(k));
         } else if (currentScriptNode.links) {
             const disabledSet = new Set(currentScriptNode.disabled_links || []);
-            Object.keys(currentScriptNode.links).forEach(k => {
+            Object.keys(currentScriptNode.links).forEach((k) => {
                 if (!disabledSet.has(k)) activeSet.add(k);
             });
         }
 
         renderGroups(activeSet);
         updateScriptCmd();
-        scriptModal.classList.add('active');
+        scriptModal.classList.add("active");
     }
 
     // ─── 生成命令 ───
     function updateScriptCmd() {
         if (!currentScriptNode) return;
 
-        let host = window.panelUrl || window.location.origin;
+        const panelWarningEl = document.getElementById("panelUrlWarning");
+        const tunnelWarningEl = document.getElementById("tunnelWarning");
+
+        const panelBase = (window.panelUrl || "").replace(/\/+$/, "");
+        const tunnelSubdomain = window.cachedTunnelSubdomain || "";
+        const tunnelBase = (
+            tunnelSubdomain ? `https://${tunnelSubdomain}` : ""
+        ).replace(/\/+$/, "");
+
+        const hasPanel = !!panelBase;
+        const hasTunnel = !!tunnelBase;
+
+        const selectedMode =
+            document.querySelector('input[name="callback_mode"]:checked')
+                ?.value || "panel";
+
+        if (panelWarningEl) {
+            panelWarningEl.style.display =
+                selectedMode === "panel" && !hasPanel ? "block" : "none";
+        }
+        if (tunnelWarningEl) {
+            tunnelWarningEl.style.display =
+                selectedMode === "tunnel" && !hasTunnel ? "block" : "none";
+        }
+
+        const useTunnel = selectedMode === "tunnel" && hasTunnel;
+
+        const fallbackHost = panelBase || tunnelBase || window.location.origin;
+        let host = useTunnel ? tunnelBase : panelBase || fallbackHost;
         host = host.replace(/\/+$/, "");
 
-        const checkedBoxes = groupsWrap.querySelectorAll('input[type="checkbox"]:checked');
-        const selectedArgs = Array.from(checkedBoxes).map(cb => cb.value);
+        const checkedBoxes = groupsWrap.querySelectorAll(
+            'input[type="checkbox"]:checked',
+        );
+        const selectedArgs = Array.from(checkedBoxes).map((cb) => cb.value);
 
-        const protosHtml = selectedArgs.map(p => `<span class="hl-proto">${p}</span>`).join(" ");
+        const protosHtml = selectedArgs
+            .map((p) => `<span class="hl-proto">${p}</span>`)
+            .join(" ");
         const protosRaw = selectedArgs.join(" ");
 
         const scriptUrl = `${host}/api/public/install-script?id=${currentScriptNode.install_id}`;
 
-        const cmdHtml = `<span class="hl-cmd">bash</span> <span class="hl-param">-c</span> <span class="hl-string">"$(curl -fsSL ${scriptUrl})"</span> <span class="hl-param">--</span> ${protosHtml}`;
-        const rawCmd = `bash -c "$(curl -fsSL ${scriptUrl})" -- ${protosRaw}`;
+        let extraHtml = "";
+        let extraRaw = "";
+        if (useTunnel) {
+            extraHtml = ` <span class="hl-param">--report-url</span> <span class="hl-string">${host}</span>`;
+            extraRaw = ` --report-url ${host}`;
+        }
+
+        const cmdHtml = `<span class="hl-cmd">bash</span> <span class="hl-param">-c</span> <span class="hl-string">"$(curl -fsSL ${scriptUrl})"</span> <span class="hl-param">--</span> ${protosHtml}${extraHtml}`;
+        const rawCmd = `bash -c "$(curl -fsSL ${scriptUrl})" -- ${protosRaw}${extraRaw}`;
 
         cmdDisplay.innerHTML = cmdHtml;
-        cmdDisplay.setAttribute('data-clipboard-text', rawCmd);
+        cmdDisplay.setAttribute("data-clipboard-text", rawCmd);
     }
 
     function closeScriptModal() {
-        scriptModal.classList.remove('active');
+        scriptModal.classList.remove("active");
     }
 
     function copyScriptCmd() {
-        const text = cmdDisplay.getAttribute('data-clipboard-text');
+        const text = cmdDisplay.getAttribute("data-clipboard-text");
         navigator.clipboard.writeText(text).then(() => {
-            const btn = document.querySelector('.btn-script-copy');
+            const btn = document.querySelector(".btn-script-copy");
             const originalHtml = btn.innerHTML;
-            btn.style.background = '#34c759';
-            btn.innerHTML = '复制成功!';
+            btn.style.background = "#34c759";
+            btn.innerHTML = "复制成功!";
             setTimeout(() => {
-                btn.style.background = '#007aff';
+                btn.style.background = "#007aff";
                 btn.innerHTML = originalHtml;
             }, 1500);
         });

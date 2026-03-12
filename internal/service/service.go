@@ -339,5 +339,9 @@ func RenderInstallScript(node database.NodePool) (string, error) {
 		return "", fmt.Errorf("渲染脚本失败: %v", err)
 	}
 
-	return buf.String(), nil
+	// 统一安装脚本换行符为 LF，避免在部分环境中因 CRLF 导致 bash 解析异常
+	script := strings.ReplaceAll(buf.String(), "\r\n", "\n")
+	script = strings.ReplaceAll(script, "\r", "\n")
+
+	return script, nil
 }

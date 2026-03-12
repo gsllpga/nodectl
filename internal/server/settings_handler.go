@@ -33,7 +33,7 @@ func apiGetSettings(w http.ResponseWriter, r *http.Request) {
 		"proxy_port_reality", "proxy_ss_method",
 		"sys_force_http", "login_ip_retry_window_sec", "login_ip_max_retries", "login_ip_block_ttl_sec",
 		"proxy_port_socks5", "proxy_socks5_user", "proxy_socks5_pass", "proxy_socks5_random_auth", "pref_use_emoji_flag", "pref_force_protocol_prefix", "sub_custom_name", "pref_ip_strategy", "pref_default_install_protocols",
-		"sys_log_level", "airport_filter_invalid", "pref_speed_test_file_size", "pref_traffic_stats_retention_days", "pref_traffic_persist_interval_sec",
+		"sys_log_level", "airport_filter_invalid", "pref_speed_test_file_size", "pref_traffic_stats_retention_days", "pref_traffic_point_persist_interval_sec",
 		"auth_cookie_ttl_mode",
 		"tg_bot_enabled", "tg_bot_token", "tg_bot_whitelist", "tg_bot_register_commands", "tg_login_notify_mode", "tg_speedtest_notify_enabled", "tg_threshold_stop_notify_enabled", "clash_proxies_update_interval", "clash_rules_update_interval", "clash_public_rules_update_interval",
 		"geo_auto_update", "mihomo_auto_update", "agent_startup_silent_update_enabled",
@@ -90,7 +90,7 @@ func apiUpdateSettings(w http.ResponseWriter, r *http.Request) {
 		"proxy_ss_method": true, "proxy_port_socks5": true, "proxy_socks5_user": true, "proxy_socks5_pass": true, "proxy_socks5_random_auth": true, "pref_use_emoji_flag": true, "pref_force_protocol_prefix": true,
 		"sub_custom_name": true, "pref_ip_strategy": true, "pref_default_install_protocols": true,
 		"sys_log_level":          true,
-		"airport_filter_invalid": true, "pref_speed_test_file_size": true, "pref_traffic_stats_retention_days": true, "pref_traffic_persist_interval_sec": true,
+		"airport_filter_invalid": true, "pref_speed_test_file_size": true, "pref_traffic_stats_retention_days": true, "pref_traffic_point_persist_interval_sec": true,
 		"auth_cookie_ttl_mode": true,
 		"tg_bot_enabled":       true, "tg_bot_token": true, "tg_bot_whitelist": true, "tg_bot_register_commands": true, "tg_login_notify_mode": true, "tg_speedtest_notify_enabled": true, "tg_threshold_stop_notify_enabled": true,
 		"clash_proxies_update_interval": true, "clash_rules_update_interval": true, "clash_public_rules_update_interval": true,
@@ -167,11 +167,13 @@ func apiUpdateSettings(w http.ResponseWriter, r *http.Request) {
 				v = strconv.Itoa(days)
 			}
 
-			if k == "pref_traffic_persist_interval_sec" {
+
+
+			if k == "pref_traffic_point_persist_interval_sec" {
 				v = strings.TrimSpace(v)
 				seconds, err := strconv.Atoi(v)
 				if err != nil || seconds < 10 || seconds > 3600 {
-					sendJSON(w, "error", "实时流量落库间隔无效，仅支持 10-3600 秒")
+					sendJSON(w, "error", "实时流量点数据落库间隔无效，仅支持 10-3600 秒")
 					return
 				}
 				v = strconv.Itoa(seconds)

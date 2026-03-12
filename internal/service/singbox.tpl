@@ -44,6 +44,47 @@ INSTALL_ID="{{.InstallID}}" # 直接由后端渲染注入
 AGENT_DOWNLOAD_URL="{{.AgentDownloadURL}}"
 AGENT_WS_URL="{{.AgentWSURL}}"
 AGENT_WS_PUSH_INTERVAL_SEC="{{.AgentWSPushIntervalSec}}"
+
+# 运行时可选参数覆盖（用于 tunnel / 反代场景）
+# 仅新增一个参数: --report-url
+# 说明:
+#   --report-url 只需要传入面板基础地址（例如 https://panel.example.com）
+#   脚本会自动拼接:
+#     REPORT_URL  -> <base>/api/callback/report
+#     AGENT_WS_URL -> <base>/api/callback/traffic/ws
+# 示例:
+#   bash -c "$(curl -fsSL .../api/public/install-script?id=xxxx)" -- vless ss --report-url https://panel.example.com
+REPORT_URL_OVERRIDE=""
+
+apply_report_url_override() {
+    local input_url="$1"
+    input_url="${input_url%%[[:space:]]*}"
+    input_url="$(printf "%s" "$input_url" | sed 's#[[:space:]]##g')"
+    input_url="${input_url%/}"
+
+    if [[ "$input_url" != http://* && "$input_url" != https://* ]]; then
+        warn "--report-url 参数无效（必须以 http:// 或 https:// 开头），已忽略: $input_url"
+        return 1
+    fi
+
+    local base_url="$input_url"
+    if [[ "$base_url" == *"/api/"* ]]; then
+        base_url="${base_url%%/api/*}"
+    fi
+    base_url="${base_url%/}"
+
+    REPORT_URL="${base_url}/api/callback/report"
+
+    local ws_base="$base_url"
+    ws_base="${ws_base/https:\/\//wss://}"
+    ws_base="${ws_base/http:\/\//ws://}"
+    AGENT_WS_URL="${ws_base}/api/callback/traffic/ws"
+
+    info "已应用回调地址覆盖 (--report-url)"
+    info "  REPORT_URL: $REPORT_URL"
+    info "  AGENT_WS_URL: $AGENT_WS_URL"
+    return 0
+}
 # -----------------------
 # 彩色输出函数
 info() { echo -e "\033[1;34m[INFO]\033[0m $*"; }
@@ -212,10 +253,27 @@ select_protocols() {
             vless-hut|vless_hut|vless-httpupgrade-tls) ENABLE_VLESS_HUT=true; info "-> 启用 VLESS-HTTPUpgrade-TLS" ;;
             trojan-wst|trojan_wst|trojan-ws-tls) ENABLE_TROJAN_WST=true; info "-> 启用 Trojan-WS-TLS" ;;
             trojan-hut|trojan_hut|trojan-httpupgrade-tls) ENABLE_TROJAN_HUT=true; info "-> 启用 Trojan-HTTPUpgrade-TLS" ;;
+            --report-url)
+                shift
+                if [[ $# -eq 0 ]]; then
+                    warn "--report-url 缺少参数，已忽略"
+                    break
+                fi
+                REPORT_URL_OVERRIDE="$1"
+                info "-> 检测到回调地址参数覆盖"
+                ;;
+            --report-url=*)
+                REPORT_URL_OVERRIDE="${arg#*=}"
+                info "-> 检测到回调地址参数覆盖"
+                ;;
             *) warn "忽略未知参数: $arg" ;;
         esac
         shift
     done
+
+    if [ -n "$REPORT_URL_OVERRIDE" ]; then
+        apply_report_url_override "$REPORT_URL_OVERRIDE" || true
+    fi
 
     if ! _any_enabled; then
         err "未选择任何协议,退出安装"; exit 1
