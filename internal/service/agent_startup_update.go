@@ -27,10 +27,12 @@ var (
 
 // StartAgentStartupSilentUpdateCheck 启动时静默检查一次 Agent 版本并按需下发更新命令。
 // 设计目标：
-// 1) 不阻塞主流程（异步执行）
-// 2) 只在进程生命周期内执行一次
-// 3) 仅对在线节点且版本落后的 Agent 下发 check-agent-update
-// 4) 全程写日志，便于审计追踪
+//  1. 不阻塞主流程（异步执行）
+//  2. 只在进程生命周期内执行一次
+//  3. 先从 GitHub 获取最新版本，与数据库中各节点的版本号比较，
+//     若版本号一致则不下发更新检查命令（避免无谓的命令下发）
+//  4. 仅对在线节点且版本落后的 Agent 下发 check-agent-update
+//  5. 汇总式日志输出，不逐节点打印
 func StartAgentStartupSilentUpdateCheck() {
 	agentStartupUpdateOnce.Do(func() {
 		go func() {
@@ -85,11 +87,10 @@ func runAgentStartupSilentUpdateCheck(ctx context.Context) (retErr error) {
 		return fmt.Errorf("获取 GitHub 最新 Agent 版本失败: %w", err)
 	}
 
-	logger.Log.Info("启动静默 Agent 更新检查开始",
-		"latest_version", latestVersion,
-		"source", "github_releases_latest",
-		"delay_applied_sec", int(agentStartupCheckDelay/time.Second),
-	)
+	latest := normalizeSemver(latestVersion)
+	if !semver.IsValid(latest) {
+		return fmt.Errorf("远端版本号无效: %s", latestVersion)
+	}
 
 	if err := database.DB.Select("uuid", "install_id", "name", "agent_version").Find(&nodes).Error; err != nil {
 		return fmt.Errorf("查询节点列表失败: %w", err)
@@ -97,16 +98,19 @@ func runAgentStartupSilentUpdateCheck(ctx context.Context) (retErr error) {
 
 	total := len(nodes)
 	if total == 0 {
-		logger.Log.Info("启动静默 Agent 更新检查结束", "total_nodes", 0, "triggered", 0, "skipped", 0)
+		logger.Log.Info("启动静默 Agent 更新检查完成：无节点", "latest_version", latestVersion)
 		return nil
 	}
 
-	triggered := 0
-	skipped := 0
-	latest := normalizeSemver(latestVersion)
-	if !semver.IsValid(latest) {
-		return fmt.Errorf("远端版本号无效: %s", latestVersion)
+	// ── 第一轮：纯版本号比较，筛选出需要更新的节点 ──
+	type needUpdateNode struct {
+		InstallID string
+		Name      string
+		DBVersion string
 	}
+	var needUpdate []needUpdateNode
+	skippedUpToDate := 0
+	skippedInvalid := 0
 
 	for _, node := range nodes {
 		installID := strings.TrimSpace(node.InstallID)
@@ -118,66 +122,71 @@ func runAgentStartupSilentUpdateCheck(ctx context.Context) (retErr error) {
 		dbVerRaw := strings.TrimSpace(node.AgentVersion)
 		dbVer := normalizeSemver(dbVerRaw)
 
-		// 版本未知/无效：不冒进触发，记录日志后跳过
+		// 版本未知/无效：不冒进触发，跳过
 		if dbVer == "" || !semver.IsValid(dbVer) {
-			skipped++
-			logger.Log.Debug("启动静默 Agent 更新检查跳过：数据库版本无效",
-				"install_id", installID,
-				"node_name", nodeName,
-				"db_agent_version", dbVerRaw,
-				"latest_version", latestVersion,
-			)
+			skippedInvalid++
 			continue
 		}
 
-		// 已是最新或更高（比如测试版）
+		// 数据库版本 >= 远端最新版本：已是最新，无需下发
 		if semver.Compare(dbVer, latest) >= 0 {
-			skipped++
+			skippedUpToDate++
 			continue
 		}
 
-		// 仅对在线节点下发静默命令
-		if !IsNodeOnline(installID) {
-			skipped++
-			logger.Log.Debug("启动静默 Agent 更新检查跳过：节点离线",
-				"install_id", installID,
-				"node_name", nodeName,
-				"db_agent_version", dbVerRaw,
-				"latest_version", latestVersion,
-			)
+		needUpdate = append(needUpdate, needUpdateNode{
+			InstallID: installID,
+			Name:      nodeName,
+			DBVersion: dbVerRaw,
+		})
+	}
+
+	// 所有节点版本均已是最新，直接结束，不下发任何命令
+	if len(needUpdate) == 0 {
+		logger.Log.Info("启动静默 Agent 更新检查完成：所有节点版本均已是最新",
+			"latest_version", latestVersion,
+			"total_nodes", total,
+			"up_to_date", skippedUpToDate,
+			"version_invalid", skippedInvalid,
+		)
+		return nil
+	}
+
+	// ── 第二轮：仅对版本落后且在线的节点下发更新命令 ──
+	triggered := 0
+	skippedOffline := 0
+	skippedFireErr := 0
+
+	for _, n := range needUpdate {
+		if !IsNodeOnline(n.InstallID) {
+			skippedOffline++
 			continue
 		}
 
-		commandID, fireErr := FireCommandToNode(installID, "check-agent-update", map[string]interface{}{})
+		_, fireErr := FireCommandToNode(n.InstallID, "check-agent-update", map[string]interface{}{})
 		if fireErr != nil {
-			skipped++
-			logger.Log.Warn("启动静默 Agent 更新检查下发失败",
-				"install_id", installID,
-				"node_name", nodeName,
-				"db_agent_version", dbVerRaw,
-				"latest_version", latestVersion,
+			skippedFireErr++
+			logger.Log.Debug("启动静默 Agent 更新命令下发失败",
+				"install_id", n.InstallID,
+				"node_name", n.Name,
 				"error", fireErr,
 			)
 			continue
 		}
 
 		triggered++
-		logger.Log.Info("启动静默 Agent 更新命令已下发",
-			"event", "agent_startup_silent_update_triggered",
-			"install_id", installID,
-			"node_name", nodeName,
-			"db_agent_version", dbVerRaw,
-			"latest_version", latestVersion,
-			"command_id", commandID,
-			"silent", true,
-		)
 	}
 
-	logger.Log.Info("启动静默 Agent 更新检查结束",
-		"total_nodes", total,
-		"triggered", triggered,
-		"skipped", skipped,
+	// ── 汇总日志：一行显示所有统计 ──
+	logger.Log.Info("启动静默 Agent 更新检查完成",
 		"latest_version", latestVersion,
+		"total_nodes", total,
+		"need_update", len(needUpdate),
+		"triggered", triggered,
+		"skipped_up_to_date", skippedUpToDate,
+		"skipped_offline", skippedOffline,
+		"skipped_version_invalid", skippedInvalid,
+		"skipped_fire_error", skippedFireErr,
 	)
 
 	return nil
