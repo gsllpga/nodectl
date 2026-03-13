@@ -101,6 +101,8 @@ func initBasicSettings() {
 		{Key: "cf_ipopt_last_run_at", Value: "", Description: "上次优选任务开始时间（RFC3339格式）"},
 		{Key: "cf_ipopt_speed_urls", Value: "[]", Description: "测速地址列表（JSON数组）"},
 		{Key: "cf_ipopt_default_speed_url_id", Value: "", Description: "定时优选默认使用的测速地址ID"},
+		{Key: "cf_ipopt_manual_ips", Value: "[]", Description: "手动优选IP列表（JSON数组）"},
+		{Key: "cf_ipopt_manual_priority", Value: "disabled", Description: "手动优选IP优先级（disabled/preferred）"},
 	}
 
 	for _, config := range defaultConfigs {

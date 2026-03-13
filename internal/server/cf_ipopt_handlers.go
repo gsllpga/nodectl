@@ -495,3 +495,180 @@ func apiCFIPOptSpeedURLSetDefault(w http.ResponseWriter, r *http.Request) {
 	logger.Log.Info("设置定时优选默认测速地址", "ip", getClientIP(r), "id", req.ID)
 	sendJSON(w, "success", "设置成功")
 }
+
+// ===================== 手动优选列表 API =====================
+
+// apiCFIPOptManualList GET /api/cf/ipopt/manual/list
+// 获取手动优选IP列表
+func apiCFIPOptManualList(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	ips := service.GetManualIPOptList()
+	priority := service.GetManualIPOptPriority()
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"status":   "success",
+		"ips":      ips,
+		"priority": priority,
+	})
+}
+
+// apiCFIPOptManualAdd POST /api/cf/ipopt/manual/add
+// 添加手动优选IP
+func apiCFIPOptManualAdd(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var req struct {
+		Remark string `json:"remark"`
+		IP     string `json:"ip"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		sendJSON(w, "error", "请求格式错误")
+		return
+	}
+
+	req.Remark = strings.TrimSpace(req.Remark)
+	req.IP = strings.TrimSpace(req.IP)
+
+	if req.IP == "" {
+		sendJSON(w, "error", "IP地址不能为空")
+		return
+	}
+
+	item, err := service.AddManualIPOpt(req.Remark, req.IP)
+	if err != nil {
+		sendJSON(w, "error", err.Error())
+		return
+	}
+
+	logger.Log.Info("添加手动优选IP", "ip", getClientIP(r), "remark", req.Remark, "target_ip", req.IP)
+	sendJSON(w, "success", map[string]interface{}{
+		"message": "添加成功",
+		"item":    item,
+	})
+}
+
+// apiCFIPOptManualUpdate POST /api/cf/ipopt/manual/update
+// 更新手动优选IP
+func apiCFIPOptManualUpdate(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var req struct {
+		ID     string `json:"id"`
+		Remark string `json:"remark"`
+		IP     string `json:"ip"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		sendJSON(w, "error", "请求格式错误")
+		return
+	}
+
+	req.Remark = strings.TrimSpace(req.Remark)
+	req.IP = strings.TrimSpace(req.IP)
+
+	if err := service.UpdateManualIPOpt(req.ID, req.Remark, req.IP); err != nil {
+		sendJSON(w, "error", err.Error())
+		return
+	}
+
+	logger.Log.Info("更新手动优选IP", "ip", getClientIP(r), "id", req.ID, "remark", req.Remark, "target_ip", req.IP)
+	sendJSON(w, "success", "更新成功")
+}
+
+// apiCFIPOptManualDelete POST /api/cf/ipopt/manual/delete
+// 删除手动优选IP
+func apiCFIPOptManualDelete(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var req struct {
+		ID string `json:"id"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		sendJSON(w, "error", "请求格式错误")
+		return
+	}
+
+	if err := service.DeleteManualIPOpt(req.ID); err != nil {
+		sendJSON(w, "error", err.Error())
+		return
+	}
+
+	logger.Log.Info("删除手动优选IP", "ip", getClientIP(r), "id", req.ID)
+	sendJSON(w, "success", "删除成功")
+}
+
+// apiCFIPOptManualToggle POST /api/cf/ipopt/manual/toggle
+// 切换手动优选IP启用状态
+func apiCFIPOptManualToggle(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var req struct {
+		ID      string `json:"id"`
+		Enabled bool   `json:"enabled"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		sendJSON(w, "error", "请求格式错误")
+		return
+	}
+
+	if err := service.ToggleManualIPOpt(req.ID, req.Enabled); err != nil {
+		sendJSON(w, "error", err.Error())
+		return
+	}
+
+	logger.Log.Info("切换手动优选IP启用状态", "ip", getClientIP(r), "id", req.ID, "enabled", req.Enabled)
+	sendJSON(w, "success", "操作成功")
+}
+
+// apiCFIPOptManualPriority POST /api/cf/ipopt/manual/priority
+// 设置手动优选IP优先级
+func apiCFIPOptManualPriority(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var req struct {
+		Priority string `json:"priority"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		sendJSON(w, "error", "请求格式错误")
+		return
+	}
+
+	// 验证优先级值
+	if req.Priority != "disabled" && req.Priority != "preferred" {
+		sendJSON(w, "error", "无效的优先级值，可选值：disabled、preferred")
+		return
+	}
+
+	if err := service.SetManualIPOptPriority(req.Priority); err != nil {
+		sendJSON(w, "error", err.Error())
+		return
+	}
+
+	// 如果设置为首选，停用定时优选
+	if req.Priority == "preferred" {
+		service.StopCFIPOptScheduler()
+		logger.Log.Info("手动优选IP设为首选，定时优选功能已停用", "ip", getClientIP(r))
+	}
+
+	logger.Log.Info("设置手动优选IP优先级", "ip", getClientIP(r), "priority", req.Priority)
+	sendJSON(w, "success", "设置成功")
+}

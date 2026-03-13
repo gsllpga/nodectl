@@ -388,6 +388,13 @@ func Start(tmplFS embed.FS) {
 	mux.HandleFunc("/api/cf/ipopt/speed-urls/update", withAuthAndSecure(apiCFIPOptSpeedURLUpdate))          // 更新测速地址
 	mux.HandleFunc("/api/cf/ipopt/speed-urls/delete", withAuthAndSecure(apiCFIPOptSpeedURLDelete))          // 删除测速地址
 	mux.HandleFunc("/api/cf/ipopt/speed-urls/set-default", withAuthAndSecure(apiCFIPOptSpeedURLSetDefault)) // 设置默认测速地址
+	// 手动优选列表
+	mux.HandleFunc("/api/cf/ipopt/manual/list", withAuthAndSecure(apiCFIPOptManualList))         // 获取手动优选IP列表
+	mux.HandleFunc("/api/cf/ipopt/manual/add", withAuthAndSecure(apiCFIPOptManualAdd))           // 添加手动优选IP
+	mux.HandleFunc("/api/cf/ipopt/manual/update", withAuthAndSecure(apiCFIPOptManualUpdate))     // 更新手动优选IP
+	mux.HandleFunc("/api/cf/ipopt/manual/delete", withAuthAndSecure(apiCFIPOptManualDelete))     // 删除手动优选IP
+	mux.HandleFunc("/api/cf/ipopt/manual/toggle", withAuthAndSecure(apiCFIPOptManualToggle))     // 切换手动优选IP启用状态
+	mux.HandleFunc("/api/cf/ipopt/manual/priority", withAuthAndSecure(apiCFIPOptManualPriority)) // 设置手动优选IP优先级
 
 	// 启动 Telegram Bot 后台服务 (不阻塞 Web 线程)
 	go service.StartTelegramBot()

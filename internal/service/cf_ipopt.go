@@ -1631,3 +1631,228 @@ func GetSpeedTestURLByID(id string) string {
 	// 未找到则返回内置地址
 	return cfIPOptDefaultSpeedTestURL
 }
+
+// ===================== 手动优选列表管理 =====================
+
+// ManualIPOptItem 手动优选IP条目
+type ManualIPOptItem struct {
+	ID      string `json:"id"`      // 唯一ID
+	Remark  string `json:"remark"`  // 备注
+	IP      string `json:"ip"`      // IP地址
+	Enabled bool   `json:"enabled"` // 是否启用
+}
+
+// GetManualIPOptList 获取手动优选IP列表
+func GetManualIPOptList() []ManualIPOptItem {
+	ipsJSON := getCFIPOptConfig("cf_ipopt_manual_ips")
+
+	var ips []ManualIPOptItem
+	if ipsJSON != "" && ipsJSON != "[]" {
+		json.Unmarshal([]byte(ipsJSON), &ips)
+	}
+
+	return ips
+}
+
+// GetManualIPOptPriority 获取手动优选IP优先级
+// 返回值: "disabled" (停用), "preferred" (首选)
+func GetManualIPOptPriority() string {
+	priority := getCFIPOptConfig("cf_ipopt_manual_priority")
+	if priority == "" {
+		return "disabled"
+	}
+	return priority
+}
+
+// SetManualIPOptPriority 设置手动优选IP优先级
+func SetManualIPOptPriority(priority string) error {
+	if priority != "disabled" && priority != "preferred" {
+		return fmt.Errorf("无效的优先级值")
+	}
+	setCFIPOptConfig("cf_ipopt_manual_priority", priority)
+	logger.Log.Info("手动优选IP优先级已设置", "priority", priority)
+	return nil
+}
+
+// AddManualIPOpt 添加手动优选IP
+func AddManualIPOpt(remark, ip string) (*ManualIPOptItem, error) {
+	if ip == "" {
+		return nil, fmt.Errorf("IP地址不能为空")
+	}
+
+	// 读取现有列表
+	ipsJSON := getCFIPOptConfig("cf_ipopt_manual_ips")
+	var ips []ManualIPOptItem
+	if ipsJSON != "" && ipsJSON != "[]" {
+		json.Unmarshal([]byte(ipsJSON), &ips)
+	}
+
+	// 生成唯一ID
+	id := fmt.Sprintf("manual_%d", time.Now().UnixNano())
+
+	// 创建新条目
+	newItem := ManualIPOptItem{
+		ID:      id,
+		Remark:  remark,
+		IP:      ip,
+		Enabled: true,
+	}
+
+	ips = append(ips, newItem)
+
+	// 保存到数据库
+	newJSON, _ := json.Marshal(ips)
+	setCFIPOptConfig("cf_ipopt_manual_ips", string(newJSON))
+
+	logger.Log.Info("添加手动优选IP", "id", id, "remark", remark, "ip", ip)
+	return &newItem, nil
+}
+
+// UpdateManualIPOpt 更新手动优选IP
+func UpdateManualIPOpt(id, remark, ip string) error {
+	if id == "" {
+		return fmt.Errorf("ID不能为空")
+	}
+	if ip == "" {
+		return fmt.Errorf("IP地址不能为空")
+	}
+
+	// 读取现有列表
+	ipsJSON := getCFIPOptConfig("cf_ipopt_manual_ips")
+	var ips []ManualIPOptItem
+	if ipsJSON != "" && ipsJSON != "[]" {
+		json.Unmarshal([]byte(ipsJSON), &ips)
+	}
+
+	// 查找并更新
+	found := false
+	for i, item := range ips {
+		if item.ID == id {
+			ips[i].Remark = remark
+			ips[i].IP = ip
+			found = true
+			break
+		}
+	}
+
+	if !found {
+		return fmt.Errorf("未找到指定的手动优选IP")
+	}
+
+	// 保存到数据库
+	newJSON, _ := json.Marshal(ips)
+	setCFIPOptConfig("cf_ipopt_manual_ips", string(newJSON))
+
+	logger.Log.Info("更新手动优选IP", "id", id, "remark", remark, "ip", ip)
+	return nil
+}
+
+// DeleteManualIPOpt 删除手动优选IP
+func DeleteManualIPOpt(id string) error {
+	if id == "" {
+		return fmt.Errorf("ID不能为空")
+	}
+
+	// 读取现有列表
+	ipsJSON := getCFIPOptConfig("cf_ipopt_manual_ips")
+	var ips []ManualIPOptItem
+	if ipsJSON != "" && ipsJSON != "[]" {
+		json.Unmarshal([]byte(ipsJSON), &ips)
+	}
+
+	// 查找并删除
+	found := false
+	newIps := make([]ManualIPOptItem, 0, len(ips))
+	for _, item := range ips {
+		if item.ID == id {
+			found = true
+			continue
+		}
+		newIps = append(newIps, item)
+	}
+
+	if !found {
+		return fmt.Errorf("未找到指定的手动优选IP")
+	}
+
+	// 保存到数据库
+	newJSON, _ := json.Marshal(newIps)
+	setCFIPOptConfig("cf_ipopt_manual_ips", string(newJSON))
+
+	logger.Log.Info("删除手动优选IP", "id", id)
+	return nil
+}
+
+// ToggleManualIPOpt 切换手动优选IP启用状态
+// 【重要】实现互斥逻辑：同时只能有一个IP是启用状态
+// 当 enabled=true 时，会自动将其它所有IP设置为 enabled=false
+func ToggleManualIPOpt(id string, enabled bool) error {
+	if id == "" {
+		return fmt.Errorf("ID不能为空")
+	}
+
+	// 读取现有列表
+	ipsJSON := getCFIPOptConfig("cf_ipopt_manual_ips")
+	var ips []ManualIPOptItem
+	if ipsJSON != "" && ipsJSON != "[]" {
+		json.Unmarshal([]byte(ipsJSON), &ips)
+	}
+
+	// 查找并更新
+	found := false
+	for i, item := range ips {
+		if item.ID == id {
+			ips[i].Enabled = enabled
+			found = true
+		} else if enabled {
+			// 【互斥逻辑】如果是开启操作，将其它所有IP都设置为关闭
+			ips[i].Enabled = false
+		}
+	}
+
+	if !found {
+		return fmt.Errorf("未找到指定的手动优选IP")
+	}
+
+	// 保存到数据库
+	newJSON, _ := json.Marshal(ips)
+	setCFIPOptConfig("cf_ipopt_manual_ips", string(newJSON))
+
+	logger.Log.Info("切换手动优选IP启用状态", "id", id, "enabled", enabled)
+	return nil
+}
+
+// GetEffectiveOptIP 获取实际生效的优选IP（供订阅生成使用）
+// 优先级逻辑：
+// 1. 手动优选优先级为 "preferred" 且有启用的IP时，返回第一个启用的手动IP
+// 2. 否则返回定时优选的 Top1 IP
+// 【防报错】即使存在多个启用的IP（异常情况），也只使用第一个
+func GetEffectiveOptIP() (string, error) {
+	// 检查手动优选优先级
+	priority := GetManualIPOptPriority()
+	if priority == "preferred" {
+		// 查找所有启用的手动优选IP
+		ips := GetManualIPOptList()
+		var enabledIPs []ManualIPOptItem
+		for _, ip := range ips {
+			if ip.Enabled && ip.IP != "" {
+				enabledIPs = append(enabledIPs, ip)
+			}
+		}
+
+		// 【防报错】如果存在多个启用的IP，记录警告日志，但只使用第一个
+		if len(enabledIPs) > 1 {
+			logger.Log.Warn("检测到多个启用的手动优选IP，仅使用第一个",
+				"enabled_count", len(enabledIPs),
+				"using_ip", enabledIPs[0].IP,
+				"using_id", enabledIPs[0].ID)
+		}
+
+		if len(enabledIPs) > 0 {
+			return enabledIPs[0].IP, nil
+		}
+	}
+
+	// 使用定时优选的 Top1 IP
+	return GetTop1IPOptIP()
+}

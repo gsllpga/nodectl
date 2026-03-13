@@ -1303,7 +1303,7 @@
                     onclick="selectCftCategory('ipopt', this)"
                 >
                     <div>
-                        <div class="cft-nav-name">⚡ 自动优选IP</div>
+                        <div class="cft-nav-name">⚡ 优选IP</div>
                     </div>
                     <div class="cft-expand-indicator">
                         <svg
@@ -2142,12 +2142,32 @@
                     <div class="cft-message" id="cft-security-msg"></div>
                 </div>
 
-                <!-- ==================== 自动优选IP ==================== -->
+                <!-- ==================== 优选IP ==================== -->
                 <div
                     class="cft-form-section"
                     id="cft-form-ipopt"
                     style="display: none"
                 >
+                    <!-- CDN 代理风险警告横幅 -->
+                    <div
+                        style="
+                            margin-bottom: 16px;
+                            padding: 12px 14px;
+                            border-radius: 8px;
+                            background: #fff8e1;
+                            color: #b45309;
+                            border: 1px solid #fde68a;
+                            font-size: 12px;
+                            line-height: 1.6;
+                            display: flex;
+                            align-items: flex-start;
+                            gap: 8px;
+                        "
+                    >
+                        <span style="font-size: 16px; flex-shrink: 0;">⚠️</span>
+                        <span>Cloudflare CDN 已明文禁止代理方式使用，对于代理套 CDN 的自行承担风险</span>
+                    </div>
+
                     <!-- 二进制状态区 -->
                     <div class="cft-field">
                         <label class="cft-label">CloudflareST 组件状态</label>
@@ -2207,6 +2227,79 @@
                             <span class="cft-toggle-slider"></span>
                             <span class="cft-toggle-knob"></span>
                         </label>
+                    </div>
+
+                    <!-- 手动优选列表（可折叠） -->
+                    <div class="cft-field" style="margin-top: 16px;">
+                        <div
+                            id="cft-manual-ipopt-header"
+                            style="
+                                display: flex;
+                                justify-content: space-between;
+                                align-items: center;
+                                cursor: pointer;
+                                padding: 10px 12px;
+                                background: #f5f5f7;
+                                border: 1px solid #e5e5ea;
+                                border-radius: 8px;
+                                transition: all 0.2s;
+                            "
+                            onclick="cftToggleManualIPOptSettings()"
+                            onmouseover="this.style.background='#eef0f5'; this.style.borderColor='#d1d1d6';"
+                            onmouseout="this.style.background='#f5f5f7'; this.style.borderColor='#e5e5ea';"
+                        >
+                            <div style="display: flex; align-items: center; gap: 8px;">
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#666" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                    <rect x="3" y="3" width="7" height="7"></rect>
+                                    <rect x="14" y="3" width="7" height="7"></rect>
+                                    <rect x="14" y="14" width="7" height="7"></rect>
+                                    <rect x="3" y="14" width="7" height="7"></rect>
+                                </svg>
+                                <label class="cft-label" style="margin-bottom: 0; cursor: pointer; color: #333; font-weight: 600;">
+                                    手动优选列表
+                                </label>
+                            </div>
+                            <span id="cft-manual-ipopt-arrow" style="color: #999; transition: transform 0.2s; font-size: 12px;">❯</span>
+                        </div>
+                        <div id="cft-manual-ipopt-body" style="display: none;">
+                            <!-- 手动优先IP优先级选择 -->
+                            <div class="cft-field" style="margin-top: 8px;">
+                                <label class="cft-label" style="font-size: 11px;">手动优先IP优先级
+                                    <span class="cft-info-tooltip-wrap" tabindex="0">
+                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                            <circle cx="12" cy="12" r="10"></circle>
+                                            <line x1="12" y1="16" x2="12" y2="12"></line>
+                                            <line x1="12" y1="8" x2="12.01" y2="8"></line>
+                                        </svg>
+                                        <span class="cft-tooltip-content" style="width: 320px;">
+                                            <strong>停用</strong>：优先定时优选，若定时优选未开始则不启用优选。<br><br>
+                                            <strong>首选</strong>：将勾选的IP作为唯一优选IP，忽略定时优选，当开启后定时优选功能将停用。
+                                        </span>
+                                    </span>
+                                </label>
+                                <select
+                                    id="cft-manual-ipopt-priority"
+                                    class="cft-select"
+                                    onchange="cftManualIPOptSavePriority()"
+                                    style="margin-top: 4px;"
+                                >
+                                    <option value="disabled">停用</option>
+                                    <option value="preferred">首选</option>
+                                </select>
+                            </div>
+
+                            <!-- 手动优选IP列表 -->
+                            <div class="cft-field" style="margin-top: 12px;">
+                                <label class="cft-label" style="font-size: 11px;">优选IP列表</label>
+                                <div id="cft-manual-ipopt-list" class="cft-speed-url-list">
+                                    <!-- 手动优选IP列表将由 JS 动态渲染 -->
+                                </div>
+                                <button class="cft-btn cft-btn-secondary" onclick="cftManualIPOptAddIP()"
+                                    style="margin-top: 8px; width: 100%;">
+                                    + 添加优选IP
+                                </button>
+                            </div>
+                        </div>
                     </div>
 
                     <!-- 优选设置（可折叠） -->
@@ -3193,6 +3286,349 @@
 
         // 建立 SSE 连接
         cftIPOptConnectSSE();
+    }
+
+    // 折叠/展开手动优选列表
+    function cftToggleManualIPOptSettings() {
+        const body = document.getElementById("cft-manual-ipopt-body");
+        const arrow = document.getElementById("cft-manual-ipopt-arrow");
+        if (!body || !arrow) return;
+        
+        const isHidden = body.style.display === "none";
+        body.style.display = isHidden ? "block" : "none";
+        arrow.style.transform = isHidden ? "rotate(90deg)" : "rotate(0deg)";
+        
+        // 首次展开时加载数据
+        if (isHidden) {
+            cftLoadManualIPOptList();
+        }
+    }
+
+    // ===================== 手动优选列表管理 =====================
+
+    let cftManualIPOptData = { priority: "disabled", ips: [] };
+
+    // 加载手动优选列表
+    async function cftLoadManualIPOptList() {
+        try {
+            const resp = await fetch("/api/cf/ipopt/manual/list");
+            const json = await resp.json();
+            
+            if (resp.ok && json.status === "success") {
+                cftManualIPOptData = {
+                    priority: json.priority || "disabled",
+                    ips: json.ips || []
+                };
+                
+                // 更新优先级下拉框
+                const priorityEl = document.getElementById("cft-manual-ipopt-priority");
+                if (priorityEl) {
+                    priorityEl.value = cftManualIPOptData.priority;
+                }
+                
+                // 渲染IP列表
+                cftRenderManualIPOptList();
+            }
+        } catch (e) {
+            console.error("加载手动优选列表失败:", e);
+        }
+    }
+
+    // 渲染手动优选IP列表
+    function cftRenderManualIPOptList() {
+        const container = document.getElementById("cft-manual-ipopt-list");
+        if (!container) return;
+
+        const ips = cftManualIPOptData.ips;
+        
+        if (!ips || ips.length === 0) {
+            container.innerHTML = `
+                <div style="padding: 12px; text-align: center; color: #999; border: 1px solid #e5e5ea; border-radius: 8px; background: #fafafa; font-size: 12px;">
+                    暂无手动优选IP，点击下方按钮添加
+                </div>
+            `;
+            return;
+        }
+
+        container.innerHTML = ips.map((item, index) => {
+            const isEnabled = item.enabled !== false;
+            return `
+                <div class="cft-speed-url-row" data-id="${item.id}" data-idx="${index}">
+                    <div class="cft-speed-url-main-row">
+                        <div class="cft-speed-url-fields">
+                            <input type="text" class="cft-speed-url-input cft-speed-url-input-name"
+                                data-idx="${index}" value="${cftEscapeHtml(item.remark || '')}"
+                                placeholder="备注"
+                                oninput="cftManualIPOptInputChange(${index}, 'remark', this.value)"
+                                onblur="cftManualIPOptInputBlur(${index})" />
+                            <input type="text" class="cft-speed-url-input cft-speed-url-input-url"
+                                data-idx="${index}" value="${cftEscapeHtml(item.ip || '')}"
+                                placeholder="IP地址 (如: 1.1.1.1)"
+                                oninput="cftManualIPOptInputChange(${index}, 'ip', this.value)"
+                                onblur="cftManualIPOptInputBlur(${index})" />
+                        </div>
+                        <div class="cft-speed-url-default-toggle">
+                            <label class="cft-toggle-switch" style="transform:scale(0.85);">
+                                <input type="checkbox" ${isEnabled ? 'checked' : ''}
+                                    onchange="cftManualIPOptToggleEnabled('${item.id}', this.checked)" />
+                                <span class="cft-toggle-slider"></span>
+                                <span class="cft-toggle-knob"></span>
+                            </label>
+                        </div>
+                        <div class="cft-speed-url-del" onclick="cftManualIPOptDeleteIP('${item.id}')" title="删除">
+                            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <polyline points="3 6 5 6 21 6"></polyline>
+                                <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                            </svg>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }).join('');
+    }
+
+    // 手动优选IP防抖保存定时器
+    const cftManualIPOptSaveTimers = {};
+
+    // 处理输入框内容变化
+    function cftManualIPOptInputChange(index, field, value) {
+        if (index < 0 || index >= cftManualIPOptData.ips.length) return;
+        const item = cftManualIPOptData.ips[index];
+        
+        if (field === 'remark') {
+            item.remark = value;
+        } else if (field === 'ip') {
+            item.ip = value;
+        }
+
+        // 触发防抖自动保存
+        cftTriggerManualIPOptAutoSave(index);
+    }
+
+    // 防抖自动保存
+    function cftTriggerManualIPOptAutoSave(index) {
+        const item = cftManualIPOptData.ips[index];
+        if (!item) return;
+
+        cftShowSaveIndicator("saving", "保存中...");
+
+        if (cftManualIPOptSaveTimers[index]) {
+            clearTimeout(cftManualIPOptSaveTimers[index]);
+        }
+
+        cftManualIPOptSaveTimers[index] = setTimeout(() => {
+            cftManualIPOptDoSave(index);
+        }, 600);
+    }
+
+    // 执行保存
+    async function cftManualIPOptDoSave(index) {
+        if (index < 0 || index >= cftManualIPOptData.ips.length) return;
+        const item = cftManualIPOptData.ips[index];
+        if (!item) return;
+        
+        // 如果 IP 为空，不保存
+        if (!item.ip || !item.ip.trim()) {
+            cftShowSaveIndicator("success", "已保存");
+            return;
+        }
+        
+        // 如果是新添加的（有临时ID），需要先调用 add API
+        if (item.id.startsWith('temp_')) {
+            try {
+                const resp = await fetch("/api/cf/ipopt/manual/add", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ remark: item.remark.trim(), ip: item.ip.trim() }),
+                });
+                const json = await resp.json();
+
+                if (resp.ok && json.status === "success") {
+                    cftShowSaveIndicator("success", "已添加");
+                    if (json.item && json.item.id) {
+                        item.id = json.item.id;
+                    } else {
+                        await cftLoadManualIPOptList();
+                    }
+                } else {
+                    cftShowSaveIndicator("error", json.message || "添加失败");
+                }
+            } catch (e) {
+                cftShowSaveIndicator("error", "添加失败");
+            }
+        } else {
+            // 更新现有条目
+            try {
+                const resp = await fetch("/api/cf/ipopt/manual/update", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ id: item.id, remark: item.remark.trim(), ip: item.ip.trim() }),
+                });
+                const json = await resp.json();
+
+                if (resp.ok && json.status === "success") {
+                    cftShowSaveIndicator("success", "已保存");
+                } else {
+                    cftShowSaveIndicator("error", json.message || "保存失败");
+                }
+            } catch (e) {
+                cftShowSaveIndicator("error", "保存失败");
+            }
+        }
+    }
+
+    // 输入框失焦处理
+    function cftManualIPOptInputBlur(index) {
+        setTimeout(() => {
+            cftCleanEmptyManualIPOptRows();
+        }, 100);
+    }
+
+    // 清理空白行
+    function cftCleanEmptyManualIPOptRows() {
+        const activeEl = document.activeElement;
+        const activeIdx = activeEl ? activeEl.getAttribute('data-idx') : null;
+
+        let needsRerender = false;
+        cftManualIPOptData.ips = cftManualIPOptData.ips.filter((item, index) => {
+            if (String(index) === activeIdx) return true;
+            if (item.id.startsWith('temp_') && !item.remark.trim() && !item.ip.trim()) {
+                needsRerender = true;
+                return false;
+            }
+            return true;
+        });
+
+        if (needsRerender) {
+            cftRenderManualIPOptList();
+        }
+    }
+
+    // 添加空白行
+    function cftManualIPOptAddIP() {
+        const tempItem = {
+            id: 'temp_' + Date.now(),
+            remark: '',
+            ip: '',
+            enabled: true
+        };
+        
+        cftManualIPOptData.ips.push(tempItem);
+        cftRenderManualIPOptList();
+        
+        setTimeout(() => {
+            const container = document.getElementById("cft-manual-ipopt-list");
+            if (container) {
+                const inputs = container.querySelectorAll('.cft-speed-url-input-name');
+                if (inputs.length > 0) {
+                    inputs[inputs.length - 1].focus();
+                }
+            }
+        }, 50);
+    }
+
+    // 删除IP
+    async function cftManualIPOptDeleteIP(id) {
+        if (!confirm("确定要删除这个优选IP吗？")) return;
+
+        // 如果是临时ID，直接从本地删除
+        if (id.startsWith('temp_')) {
+            cftManualIPOptData.ips = cftManualIPOptData.ips.filter(item => item.id !== id);
+            cftRenderManualIPOptList();
+            return;
+        }
+
+        try {
+            const resp = await fetch("/api/cf/ipopt/manual/delete", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ id }),
+            });
+            const json = await resp.json();
+
+            if (resp.ok && json.status === "success") {
+                cftShowMsg("cft-ipopt-msg", "success", "删除成功");
+                await cftLoadManualIPOptList();
+            } else {
+                cftShowMsg("cft-ipopt-msg", "error", json.message || "删除失败");
+            }
+        } catch (e) {
+            cftShowMsg("cft-ipopt-msg", "error", "删除失败: " + e.message);
+        }
+    }
+
+    // 切换IP启用状态（互斥逻辑：同时只能有一个IP是开的）
+    async function cftManualIPOptToggleEnabled(id, enabled) {
+        // 如果用户要开启一个IP，先在前端把其它所有IP关闭（实现互斥效果）
+        if (enabled) {
+            cftManualIPOptData.ips.forEach(item => {
+                if (item.id !== id) {
+                    item.enabled = false;
+                }
+            });
+            // 立即重新渲染 UI 以显示互斥效果
+            cftRenderManualIPOptList();
+        }
+
+        try {
+            const resp = await fetch("/api/cf/ipopt/manual/toggle", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ id, enabled }),
+            });
+            const json = await resp.json();
+
+            if (resp.ok && json.status === "success") {
+                // 更新本地数据
+                const item = cftManualIPOptData.ips.find(i => i.id === id);
+                if (item) {
+                    item.enabled = enabled;
+                }
+                cftShowSaveIndicator("success", enabled ? "已启用" : "已停用");
+                // 如果是开启操作，重新加载列表以确保与后端数据同步（后端也会执行互斥逻辑）
+                if (enabled) {
+                    await cftLoadManualIPOptList();
+                }
+            } else {
+                cftShowMsg("cft-ipopt-msg", "error", json.message || "操作失败");
+                await cftLoadManualIPOptList();
+            }
+        } catch (e) {
+            cftShowMsg("cft-ipopt-msg", "error", "操作失败: " + e.message);
+            await cftLoadManualIPOptList();
+        }
+    }
+
+    // 保存优先级设置
+    async function cftManualIPOptSavePriority() {
+        const priorityEl = document.getElementById("cft-manual-ipopt-priority");
+        if (!priorityEl) return;
+
+        const priority = priorityEl.value;
+        cftShowSaveIndicator("saving", "保存中...");
+
+        try {
+            const resp = await fetch("/api/cf/ipopt/manual/priority", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ priority }),
+            });
+            const json = await resp.json();
+
+            if (resp.ok && json.status === "success") {
+                cftManualIPOptData.priority = priority;
+                cftShowSaveIndicator("success", "已保存");
+                
+                // 如果设置为首选，给用户提示
+                if (priority === "preferred") {
+                    cftShowMsg("cft-ipopt-msg", "info", "已设置为首选模式，定时优选功能将停用");
+                }
+            } else {
+                cftShowSaveIndicator("error", json.message || "保存失败");
+            }
+        } catch (e) {
+            cftShowSaveIndicator("error", "保存失败");
+        }
     }
 
     // 折叠/展开优选设置
