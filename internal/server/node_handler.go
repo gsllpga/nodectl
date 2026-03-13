@@ -1591,9 +1591,10 @@ func apiNodeControlReinstall(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// 从数据库中已有链接提取协议列表
+	// 🆕 协议名称需要转换为 Agent 格式（连字符格式）
 	protocols := make([]string, 0, len(node.Links))
 	for proto := range node.Links {
-		protocols = append(protocols, proto)
+		protocols = append(protocols, normalizeProtoKeyForAgent(proto))
 	}
 	if len(protocols) == 0 {
 		sendJSON(w, "error", "该节点没有已知协议信息，无法重装")
@@ -1889,25 +1890,33 @@ func apiNodeControlPushConfig(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// 构造推送配置 payload
+	// 🆕 协议名称需要从面板格式（下划线）转换为 Agent 格式（连字符）
+	// 例如 "reality" → "reality", "vmess_ws" → "vmess-ws", "vless_wst" → "vless-wst"
+	normalizedProtocols := make([]string, 0, len(req.Protocols))
+	for _, proto := range req.Protocols {
+		normalizedProtocols = append(normalizedProtocols, normalizeProtoKeyForAgent(proto))
+	}
+
 	// 端口优先使用前端传入的值，其次使用节点数据库中的 link_ports
+	// 🆕 端口 key 同样需要转换为 Agent 格式
 	mergedPorts := make(map[string]int)
 	if node.LinkPorts != nil {
 		for k, v := range node.LinkPorts {
 			if v > 0 {
-				mergedPorts[k] = v
+				mergedPorts[normalizeProtoKeyForAgent(k)] = v
 			}
 		}
 	}
 	if req.Ports != nil {
 		for k, v := range req.Ports {
 			if v > 0 {
-				mergedPorts[k] = v
+				mergedPorts[normalizeProtoKeyForAgent(k)] = v
 			}
 		}
 	}
 
 	payload := map[string]interface{}{
-		"protocols": req.Protocols,
+		"protocols": normalizedProtocols,
 		"ports":     mergedPorts,
 	}
 

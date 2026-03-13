@@ -4,6 +4,7 @@
 package singbox
 
 import (
+	"bufio"
 	"context"
 	"fmt"
 	"io"
@@ -133,7 +134,16 @@ func (m *Manager) startProcess(ctx context.Context) error {
 	}
 
 	cmd.Stdout = logWriter
-	cmd.Stderr = logWriter
+
+	// 🆕 同时将 stderr 捕获到管道，便于回写 Agent 日志诊断启动失败原因
+	stderrPipe, err := cmd.StderrPipe()
+	if err != nil {
+		cancel()
+		if closer, ok := logWriter.(io.Closer); ok {
+			closer.Close()
+		}
+		return fmt.Errorf("创建 stderr 管道失败: %w", err)
+	}
 
 	// 启动子进程
 	if err := cmd.Start(); err != nil {
@@ -144,6 +154,20 @@ func (m *Manager) startProcess(ctx context.Context) error {
 		m.lastError = err.Error()
 		return fmt.Errorf("启动 sing-box 失败: %w", err)
 	}
+
+	// 🆕 启动 stderr 读取协程：将 sing-box 的错误输出回写到 Agent 日志和日志文件
+	go func() {
+		scanner := bufio.NewScanner(stderrPipe)
+		scanner.Buffer(make([]byte, 64*1024), 256*1024)
+		for scanner.Scan() {
+			line := scanner.Text()
+			log.Printf("[SingBox:stderr] %s", line)
+			// 同时写入日志文件
+			if logWriter != nil {
+				fmt.Fprintf(logWriter, "[stderr] %s\n", line)
+			}
+		}
+	}()
 
 	m.cmd = cmd
 	m.running = true

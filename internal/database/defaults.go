@@ -11,7 +11,7 @@ import (
 
 // SupportedProtocols 定义系统支持的节点协议列表 (全局变量，供前端和逻辑使用)
 var SupportedProtocols = []string{
-	"vless", "hy2", "socks5", "tuic", "ss", "trojan",
+	"reality", "hy2", "socks5", "tuic", "ss", "trojan",
 	"vmess_tcp", "vmess_ws", "vmess_http", "vmess_quic",
 	"vmess_wst", "vmess_hut",
 	"vless_wst", "vless_hut",

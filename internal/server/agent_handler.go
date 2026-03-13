@@ -96,12 +96,8 @@ func apiAgentInitConfig(w http.ResponseWriter, r *http.Request) {
 }
 
 // normalizeProtoKeyForAgent 将面板内部的协议 key 转换为 Agent 端使用的格式
-// 面板格式（下划线）→ Agent 格式（连字符），特殊映射 "vless" → "reality"
+// 面板格式（下划线）→ Agent 格式（连字符），如 vmess_tcp → vmess-tcp, vless_wst → vless-wst
 func normalizeProtoKeyForAgent(panelKey string) string {
-	// 特殊映射：面板端 "vless" 对应 Agent 端 "reality"（VLESS+Reality）
-	if panelKey == "vless" {
-		return "reality"
-	}
 	// 通用规则：下划线转连字符（vmess_tcp → vmess-tcp, vless_wst → vless-wst 等）
 	return strings.ReplaceAll(panelKey, "_", "-")
 }

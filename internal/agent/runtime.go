@@ -940,6 +940,17 @@ func (rt *Runtime) executePushConfig(cmd ServerCommand, reply func(CommandResult
 		}
 	}
 
+	// 2.5 🆕 为新启用的协议生成缺失的凭据（UUID、密码、Reality 密钥对等）
+	// push-config 只下发「启用哪些协议 + 端口」，凭据由 Agent 本地生成
+	// 如果协议之前未启用过，其凭据字段为空，需要在此补全
+	reply(CommandResult{Type: "progress", Stage: "检查并生成缺失的协议凭据..."})
+	for _, proto := range payload.Protocols {
+		port := payload.Ports[proto]
+		if err := rt.generateProtocolCredentials(cfgMgr.Protocols, proto, port); err != nil {
+			log.Printf("[Agent] push-config: 生成协议 %s 凭据失败: %v", proto, err)
+		}
+	}
+
 	// 3. 保存协议缓存
 	reply(CommandResult{Type: "progress", Stage: "保存协议配置缓存..."})
 	if err := cfgMgr.SaveToCache(); err != nil {
