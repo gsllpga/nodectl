@@ -94,6 +94,13 @@ func initBasicSettings() {
 		{Key: "cf_tunnel_origin_url", Value: "http://127.0.0.1:8080", Description: "Tunnel 回源本地地址"},
 		{Key: "cf_tunnel_bind_main_process", Value: "true", Description: "Tunnel 是否跟随 NodeCTL 主进程启停"},
 		{Key: "cf_tunnel_enabled", Value: "false", Description: "Tunnel 总开关（已配置且启用）"},
+		// Cloudflare IP 优选配置
+		{Key: "cf_ipopt_schedule_interval", Value: "0", Description: "CF 优选定时间隔（小时，0表示关闭）"},
+		{Key: "cf_ipopt_apply_tunnel_nodes", Value: "false", Description: "是否将优选IP应用到Tunnel节点订阅"},
+		{Key: "cf_ipopt_bin_version", Value: "", Description: "CloudflareST 二进制版本号"},
+		{Key: "cf_ipopt_last_run_at", Value: "", Description: "上次优选任务开始时间（RFC3339格式）"},
+		{Key: "cf_ipopt_speed_urls", Value: "[]", Description: "测速地址列表（JSON数组）"},
+		{Key: "cf_ipopt_default_speed_url_id", Value: "", Description: "定时优选默认使用的测速地址ID"},
 	}
 
 	for _, config := range defaultConfigs {

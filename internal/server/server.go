@@ -373,6 +373,22 @@ func Start(tmplFS embed.FS) {
 	mux.HandleFunc("/api/cf/tunnel/detect", withAuthAndSecure(apiCFTunnelDetect))               // 自动发现账户信息
 	mux.HandleFunc("/api/cf/tunnel/oneclick", withAuthAndSecure(apiCFTunnelOneClick))           // 一键部署 (SSE)
 
+	// ========== Cloudflare IP 优选 ==========
+	mux.HandleFunc("/api/cf/ipopt/settings", withAuthAndSecure(apiCFIPOptSettings))                         // 读取/保存优选设置
+	mux.HandleFunc("/api/cf/ipopt/binary/status", withAuthAndSecure(apiCFIPOptBinaryStatus))                // 二进制状态
+	mux.HandleFunc("/api/cf/ipopt/binary/download", withAuthAndSecure(apiCFIPOptBinaryDownload))            // 下载二进制 (SSE)
+	mux.HandleFunc("/api/cf/ipopt/start", withAuthAndSecure(apiCFIPOptStart))                               // 启动优选任务
+	mux.HandleFunc("/api/cf/ipopt/stop", withAuthAndSecure(apiCFIPOptStop))                                 // 停止优选任务
+	mux.HandleFunc("/api/cf/ipopt/progress/stream", withAuthAndSecure(apiCFIPOptProgressStream))            // SSE 进度推送
+	mux.HandleFunc("/api/cf/ipopt/result", withAuthAndSecure(apiCFIPOptResult))                             // 获取优选结果
+	mux.HandleFunc("/api/cf/ipopt/apply", withAuthAndSecure(apiCFIPOptApply))                               // 切换应用开关
+	mux.HandleFunc("/api/cf/ipopt/toggle", withAuthAndSecure(apiCFIPOptToggleApply))                        // 切换应用开关（简化版）
+	mux.HandleFunc("/api/cf/ipopt/speed-urls", withAuthAndSecure(apiCFIPOptSpeedURLs))                      // 获取测速地址列表
+	mux.HandleFunc("/api/cf/ipopt/speed-urls/add", withAuthAndSecure(apiCFIPOptSpeedURLAdd))                // 添加测速地址
+	mux.HandleFunc("/api/cf/ipopt/speed-urls/update", withAuthAndSecure(apiCFIPOptSpeedURLUpdate))          // 更新测速地址
+	mux.HandleFunc("/api/cf/ipopt/speed-urls/delete", withAuthAndSecure(apiCFIPOptSpeedURLDelete))          // 删除测速地址
+	mux.HandleFunc("/api/cf/ipopt/speed-urls/set-default", withAuthAndSecure(apiCFIPOptSpeedURLSetDefault)) // 设置默认测速地址
+
 	// 启动 Telegram Bot 后台服务 (不阻塞 Web 线程)
 	go service.StartTelegramBot()
 

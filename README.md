@@ -101,3 +101,8 @@ services:
 
 1. 代码与构建流程完全开源于 GitHub，欢迎 Review 与 PR。
 2. 请在遵守所在地法律法规的前提下使用本项目，作者不对任何滥用行为承担责任。
+3. NodeCTL无任何技术含量，功能定位是集成个人用户对节点控制所需的绝大部分功能，不会出现多用户，或者多订阅。
+4. 代码AI含量大概有70%，后期功能绝大部分是使用AI完善，仅在架构上进行了一定控制。
+5.感谢以下开源项目
+mihomo内核：https://github.com/MetaCubeX/mihomo
+CF优选工具：https://github.com/XIU2/CloudflareSpeedTest

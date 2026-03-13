@@ -92,6 +92,12 @@ func GenerateRawNodesYAML(routingType int, useFlag bool) (string, error) {
 							// 自定义优选地址：覆盖 Server 为用户指定的 IP/域名，SNI/Host 保持 tunnel 域名
 							if preferred := strings.TrimSpace(node.TunnelPreferredAddress); preferred != "" {
 								proxyNode.Server = preferred
+							} else if IsApplyToTunnelNodesEnabled() {
+								// 全局优选 IP：开启后用 Top1 IP 替换 Server，SNI 保持 Tunnel 域名
+								if top1IP, err := GetTop1IPOptIP(); err == nil && top1IP != "" {
+									proxyNode.Server = top1IP
+									// SNI 已在 applyTunnelHostToClashNode 中设置为 tunnel 域名，保持不变
+								}
 							}
 						}
 					}
@@ -251,6 +257,11 @@ func GenerateV2RaySubBase64(useFlag bool) (string, error) {
 					// 自定义优选地址：替换连接地址（Server）为用户指定的 IP/域名，SNI/Host 保持 tunnel 域名
 					if preferred := strings.TrimSpace(node.TunnelPreferredAddress); preferred != "" {
 						targetLink = ReplaceLinkIP(targetLink, preferred)
+					} else if IsApplyToTunnelNodesEnabled() {
+						// 全局优选 IP：开启后用 Top1 IP 替换 Server，SNI 保持 Tunnel 域名
+						if top1IP, err := GetTop1IPOptIP(); err == nil && top1IP != "" {
+							targetLink = ReplaceLinkIP(targetLink, top1IP)
+						}
 					}
 				}
 

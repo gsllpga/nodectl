@@ -30,6 +30,9 @@ func main() {
 	// 2.初始化数据库
 	database.InitDB()
 
+	// 2.5 初始化 CF 优选IP模块（必须在 logger 初始化之后）
+	service.InitCFIPOpt()
+
 	// 3. 注册 OS 信号处理 (SIGINT / SIGTERM)，确保退出时清理子进程 [FIX-10]
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM, os.Interrupt)
@@ -42,6 +45,9 @@ func main() {
 		// [FIX-09] 正确退出顺序：先停 Tunnel → 等待存量请求 → 再停 Web Server
 		// 步骤 1: 停止 cloudflared 子进程（断开公网入口）
 		service.StopCFTunnel()
+
+		// 停止 CF 优选任务子进程
+		service.StopCFIPOptTask()
 
 		// 步骤 2: 等待存量请求完成 (graceful drain)
 		time.Sleep(3 * time.Second)
