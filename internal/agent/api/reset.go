@@ -158,10 +158,15 @@ func (h *ResetHandler) regenerateCredentials(protocol string) error {
 		pc.Reality.ShortID = shortID
 
 	case singbox.ProtoSocks5:
+		username, err := singbox.GeneratePassword(12)
+		if err != nil {
+			return err
+		}
 		password, err := singbox.GeneratePassword(16)
 		if err != nil {
 			return err
 		}
+		pc.Socks5.Username = username
 		pc.Socks5.Password = password
 
 	case singbox.ProtoTrojan:

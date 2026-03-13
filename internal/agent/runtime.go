@@ -474,7 +474,11 @@ func (rt *Runtime) generateProtocolCredentials(pc *singbox.ProtocolConfig, proto
 			pc.Socks5.Port = port
 		}
 		if pc.Socks5.Username == "" {
-			pc.Socks5.Username = "nodectl"
+			usr, err := singbox.GeneratePassword(12)
+			if err != nil {
+				return err
+			}
+			pc.Socks5.Username = usr
 		}
 		if pc.Socks5.Password == "" {
 			pwd, err := singbox.GeneratePassword(16)
