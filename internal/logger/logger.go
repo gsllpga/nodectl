@@ -14,8 +14,11 @@ import (
 	gormlogger "gorm.io/gorm/logger"
 )
 
-// Log 全局导出的日志实例
+// Log 全局导出的日志实例（仅输出到日志文件）
 var Log *slog.Logger
+
+// ConsoleAndLog 同时输出到控制台和日志文件的 Logger 实例（仅用于关键启动信息）
+var ConsoleAndLog *slog.Logger
 
 // levelVar 支持运行时热切换日志等级
 var levelVar = new(slog.LevelVar)
@@ -95,6 +98,38 @@ func LoadPersistedLogLevel() string {
 	return cfg.Value
 }
 
+// newReplaceAttr 创建统一的 slog ReplaceAttr 函数（文件日志和控制台共用格式）
+func newReplaceAttr() func(groups []string, a slog.Attr) slog.Attr {
+	return func(groups []string, a slog.Attr) slog.Attr {
+		if a.Key == slog.TimeKey {
+			return slog.String(slog.TimeKey, a.Value.Time().Format("2006-01-02 15:04:05"))
+		}
+
+		if a.Key == slog.SourceKey {
+			source, ok := a.Value.Any().(*slog.Source)
+			if ok {
+				file := filepath.ToSlash(source.File)
+
+				if idx := strings.Index(file, "/internal/"); idx != -1 {
+					file = file[idx+1:]
+				} else if strings.HasSuffix(file, "main.go") {
+					file = "main.go"
+				} else {
+					parts := strings.Split(file, "/")
+					if len(parts) > 2 {
+						file = strings.Join(parts[len(parts)-2:], "/")
+					}
+				}
+
+				formattedSource := fmt.Sprintf("%s:%d", file, source.Line)
+				return slog.String(slog.SourceKey, formattedSource)
+			}
+		}
+
+		return a
+	}
+}
+
 // Init 初始化日志配置
 func Init(initialLevel string) {
 	parsedLevel, ok := parseLevel(initialLevel)
@@ -112,46 +147,28 @@ func Init(initialLevel string) {
 		Compress:   true,                                         // 是否对切割后的旧日志文件进行 gzip 压缩
 	}
 
-	multiWriter := io.MultiWriter(os.Stdout, logFile)
+	replaceAttr := newReplaceAttr()
 
-	// 2. 配置 slog 拦截器
-	opts := &slog.HandlerOptions{
-		Level:     levelVar,
-		AddSource: true,
-		ReplaceAttr: func(groups []string, a slog.Attr) slog.Attr {
-			if a.Key == slog.TimeKey {
-				return slog.String(slog.TimeKey, a.Value.Time().Format("2006-01-02 15:04:05"))
-			}
-
-			if a.Key == slog.SourceKey {
-				source, ok := a.Value.Any().(*slog.Source)
-				if ok {
-					file := filepath.ToSlash(source.File)
-
-					if idx := strings.Index(file, "/internal/"); idx != -1 {
-						file = file[idx+1:]
-					} else if strings.HasSuffix(file, "main.go") {
-						file = "main.go"
-					} else {
-						parts := strings.Split(file, "/")
-						if len(parts) > 2 {
-							file = strings.Join(parts[len(parts)-2:], "/")
-						}
-					}
-
-					formattedSource := fmt.Sprintf("%s:%d", file, source.Line)
-					return slog.String(slog.SourceKey, formattedSource)
-				}
-			}
-
-			return a
-		},
+	// 2. 配置 slog Handler — 仅输出到日志文件（不再输出到 stdout）
+	fileOpts := &slog.HandlerOptions{
+		Level:       levelVar,
+		AddSource:   true,
+		ReplaceAttr: replaceAttr,
 	}
-
-	// 3. 实例化 Logger
-	handler := slog.NewTextHandler(multiWriter, opts)
-	Log = slog.New(handler)
+	fileHandler := slog.NewTextHandler(logFile, fileOpts)
+	Log = slog.New(fileHandler)
 	slog.SetDefault(Log)
+
+	// 3. 配置 ConsoleAndLog — 同时输出到控制台和日志文件（仅用于关键启动信息）
+	consoleAndFileWriter := io.MultiWriter(os.Stdout, logFile)
+	consoleOpts := &slog.HandlerOptions{
+		Level:       levelVar,
+		AddSource:   true,
+		ReplaceAttr: replaceAttr,
+	}
+	consoleHandler := slog.NewTextHandler(consoleAndFileWriter, consoleOpts)
+	ConsoleAndLog = slog.New(consoleHandler)
+
 	if !ok && strings.TrimSpace(initialLevel) != "" {
 		Log.Warn("启动时读取到非法日志等级配置，已回退为 info", "value", initialLevel)
 	}

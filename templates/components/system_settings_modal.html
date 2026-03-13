@@ -3648,16 +3648,65 @@
         triggerSysAutoSave();
     }
 
+    // ─── 协议分组定义（自包含，不再依赖 install_script_modal.html） ───
+    const SYS_INSTALL_PROTO_GROUPS = [
+        {
+            id: "vless",
+            name: "VLESS",
+            variants: [
+                { key: "vless", arg: "vless", label: "Reality" },
+                { key: "vless_wst", arg: "vless-wst", label: "WS-TLS" },
+                { key: "vless_hut", arg: "vless-hut", label: "HU-TLS" },
+            ],
+        },
+        {
+            id: "vmess",
+            name: "VMess",
+            variants: [
+                { key: "vmess_tcp", arg: "vmess-tcp", label: "TCP" },
+                { key: "vmess_ws", arg: "vmess-ws", label: "WS" },
+                { key: "vmess_http", arg: "vmess-http", label: "HTTP" },
+                { key: "vmess_quic", arg: "vmess-quic", label: "QUIC" },
+                { key: "vmess_wst", arg: "vmess-wst", label: "WS-TLS" },
+                { key: "vmess_hut", arg: "vmess-hut", label: "HU-TLS" },
+            ],
+        },
+        {
+            id: "ss",
+            name: "Shadowsocks",
+            variants: [{ key: "ss", arg: "shadowsocks", label: "Shadowsocks" }],
+        },
+        {
+            id: "hy2",
+            name: "Hysteria2",
+            variants: [{ key: "hy2", arg: "hysteria2", label: "Hysteria2" }],
+        },
+        {
+            id: "tuic",
+            name: "TUIC",
+            variants: [{ key: "tuic", arg: "tuic", label: "TUIC" }],
+        },
+        {
+            id: "socks5",
+            name: "Socks5",
+            variants: [{ key: "socks5", arg: "socks5", label: "Socks5" }],
+        },
+        {
+            id: "trojan",
+            name: "Trojan",
+            variants: [
+                { key: "trojan", arg: "trojan", label: "Trojan" },
+                { key: "trojan_wst", arg: "trojan-wst", label: "WS-TLS" },
+                { key: "trojan_hut", arg: "trojan-hut", label: "HU-TLS" },
+            ],
+        },
+    ];
+
     function renderSysDefaultInstallProtocolGroups() {
         const wrap = document.getElementById("sysDefaultInstallProtocolGroups");
         if (!wrap) return;
 
-        const protoGroups = window.NODECTL_INSTALL_PROTO_GROUPS || [];
-        if (!Array.isArray(protoGroups) || protoGroups.length === 0) {
-            wrap.innerHTML =
-                '<div style="font-size:12px;color:#999;">协议定义尚未加载，请先刷新页面。</div>';
-            return;
-        }
+        const protoGroups = SYS_INSTALL_PROTO_GROUPS;
 
         const multiGroups = protoGroups.filter(
             (g) => (g.variants || []).length > 1,

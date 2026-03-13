@@ -247,7 +247,7 @@ func fetchLatestAlphaRelease(client *http.Client, result *UpdateCheckResult, cur
 func StartUpdateCheckBackground() {
 	// dev 版本不启动更新检查
 	if version.IsDev() {
-		logger.Log.Info("开发版本，跳过更新检查后台任务")
+		logger.Log.Debug("开发版本，跳过更新检查后台任务")
 		return
 	}
 

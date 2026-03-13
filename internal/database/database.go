@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -109,6 +110,7 @@ type NodePool struct {
 	IsBlocked               bool              `gorm:"column:is_blocked;default:false" json:"is_blocked"` // 是否屏蔽
 	Links                   map[string]string `gorm:"column:links;serializer:json" json:"links"`
 	LinkIPModes             map[string]int    `gorm:"column:link_ip_modes;serializer:json" json:"link_ip_modes"` //协议级别的IP生成模式
+	LinkPorts               map[string]int    `gorm:"column:link_ports;serializer:json" json:"link_ports"`       // 协议级别的个性化端口设置（创建时从SysConfig导入默认值）
 	DisabledLinks           []string          `gorm:"column:disabled_links;serializer:json" json:"disabled_links"`
 	IPV4                    string            `gorm:"column:ipv4;type:varchar(15)" json:"ipv4"`
 	IPV6                    string            `gorm:"column:ipv6;type:varchar(45)" json:"ipv6"`
@@ -165,7 +167,67 @@ func (n *NodePool) BeforeCreate(tx *gorm.DB) (err error) {
 	if n.InstallID == "" {
 		n.InstallID = generateSecureRandomID(12)
 	}
+
+	// 从 SysConfig 读取所有协议的默认端口，写入 LinkPorts 作为该节点的初始端口配置
+	if n.LinkPorts == nil || len(n.LinkPorts) == 0 {
+		n.LinkPorts = loadDefaultPortsFromSysConfig(tx)
+	}
+
 	return
+}
+
+// loadDefaultPortsFromSysConfig 从 SysConfig 中读取所有 proxy_port_* 配置，
+// 将协议名映射为端口号返回。用于节点创建时填充默认端口。
+func loadDefaultPortsFromSysConfig(tx *gorm.DB) map[string]int {
+	// 协议名 -> SysConfig Key 的映射
+	protoToKey := map[string]string{
+		"ss":         "proxy_port_ss",
+		"hy2":        "proxy_port_hy2",
+		"tuic":       "proxy_port_tuic",
+		"vless":      "proxy_port_reality",
+		"socks5":     "proxy_port_socks5",
+		"trojan":     "proxy_port_trojan",
+		"vmess_tcp":  "proxy_port_vmess_tcp",
+		"vmess_ws":   "proxy_port_vmess_ws",
+		"vmess_http": "proxy_port_vmess_http",
+		"vmess_quic": "proxy_port_vmess_quic",
+		"vmess_wst":  "proxy_port_vmess_wst",
+		"vmess_hut":  "proxy_port_vmess_hut",
+		"vless_wst":  "proxy_port_vless_wst",
+		"vless_hut":  "proxy_port_vless_hut",
+		"trojan_wst": "proxy_port_trojan_wst",
+		"trojan_hut": "proxy_port_trojan_hut",
+	}
+
+	// 收集所有需要查询的 Key
+	keys := make([]string, 0, len(protoToKey))
+	for _, key := range protoToKey {
+		keys = append(keys, key)
+	}
+
+	// 使用干净的会话查询 SysConfig，避免 BeforeCreate 事务上下文中
+	// 携带的 Model/Where 等子句污染查询，导致结果不全。
+	cleanDB := tx.Session(&gorm.Session{NewDB: true})
+	var cfgs []SysConfig
+	cleanDB.Where("key IN ?", keys).Find(&cfgs)
+
+	// 构建 Key -> Value 映射
+	valueByKey := make(map[string]string, len(cfgs))
+	for _, c := range cfgs {
+		valueByKey[c.Key] = strings.TrimSpace(c.Value)
+	}
+
+	// 构建结果 map
+	ports := make(map[string]int, len(protoToKey))
+	for proto, key := range protoToKey {
+		if valStr, ok := valueByKey[key]; ok && valStr != "" {
+			if port, err := strconv.Atoi(valStr); err == nil && port > 0 {
+				ports[proto] = port
+			}
+		}
+	}
+
+	return ports
 }
 
 func generateSecureRandomID(length int) string {
@@ -398,7 +460,7 @@ func InitDB() {
 			_ = SaveDBConfig(cfg)
 			logger.Log.Warn("已自动回退到 SQLite 数据库")
 		} else {
-			logger.Log.Info("数据库引擎已启动", "type", "PostgreSQL", "host", cfg.Host, "dbname", cfg.DBName)
+			logger.ConsoleAndLog.Info("数据库引擎已启动", "type", "PostgreSQL", "host", cfg.Host, "dbname", cfg.DBName)
 		}
 	default:
 		db, err = openSQLite()
@@ -406,7 +468,7 @@ func InitDB() {
 			logger.Log.Error("连接 SQLite 失败", "err", err.Error())
 			panic("数据库连接失败")
 		}
-		logger.Log.Info("数据库引擎已启动", "type", "SQLite")
+		logger.ConsoleAndLog.Info("数据库引擎已启动", "type", "SQLite")
 	}
 
 	// 自动迁移所有的表

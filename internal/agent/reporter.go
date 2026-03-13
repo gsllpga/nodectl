@@ -11,6 +11,8 @@ import (
 	"sync"
 	"time"
 
+	"nodectl/internal/agent/reporter"
+
 	"nhooyr.io/websocket"
 )
 
@@ -263,12 +265,42 @@ func (r *Reporter) SendLiveMessage(ctx context.Context, rxRate, txRate, counterR
 		BootID:         bootID,
 		AgentVersion:   AgentVersion,
 	}
-	return r.sendJSON(ctx, msg)
+	return r.sendTrafficJSON(ctx, msg)
 }
 
-// sendJSON 内部方法：序列化并发送 JSON 消息
+// SendMessage 🆕 发送通用消息（用于新增的消息类型：node_online / links_update 等）
+// 通过统一的 WebSocket 连接复用传输
+func (r *Reporter) SendMessage(ctx context.Context, msg *reporter.Message) error {
+	r.mu.Lock()
+	conn := r.conn
+	connected := r.connected
+	r.mu.Unlock()
+
+	if !connected || conn == nil {
+		return fmt.Errorf("WebSocket 未连接")
+	}
+
+	data, err := json.Marshal(msg)
+	if err != nil {
+		return fmt.Errorf("序列化消息失败: %w", err)
+	}
+
+	writeCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
+	if err := conn.Write(writeCtx, websocket.MessageText, data); err != nil {
+		r.mu.Lock()
+		r.connected = false
+		r.mu.Unlock()
+		return fmt.Errorf("WebSocket 写入失败: %w", err)
+	}
+
+	return nil
+}
+
+// sendTrafficJSON 内部方法：序列化并发送流量 JSON 消息（保持原有 flat 结构兼容）
 // 优化：使用 sync.Pool 复用 bytes.Buffer，降低 allocs/s
-func (r *Reporter) sendJSON(ctx context.Context, msg TrafficMessage) error {
+func (r *Reporter) sendTrafficJSON(ctx context.Context, msg TrafficMessage) error {
 	r.mu.Lock()
 	conn := r.conn
 	connected := r.connected

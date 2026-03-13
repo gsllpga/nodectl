@@ -52,6 +52,10 @@ func apiUpdateNode(w http.ResponseWriter, r *http.Request) {
 	for k, v := range targetNode.LinkIPModes {
 		oldNode.LinkIPModes[k] = v
 	}
+	oldNode.LinkPorts = make(map[string]int, len(targetNode.LinkPorts))
+	for k, v := range targetNode.LinkPorts {
+		oldNode.LinkPorts[k] = v
+	}
 	oldNode.DisabledLinks = append([]string(nil), targetNode.DisabledLinks...)
 
 	demoPath := filepath.Join("data", "debug", "demo")
@@ -118,6 +122,7 @@ func apiUpdateNode(w http.ResponseWriter, r *http.Request) {
 	if !isSecure {
 		safeLinks := make(map[string]string)
 		safeLinkIPModes := make(map[string]int)
+		safeLinkPorts := make(map[string]int)
 
 		for k, v := range req.Links {
 			if v == "__KEEP_EXISTING__" {
@@ -126,6 +131,10 @@ func apiUpdateNode(w http.ResponseWriter, r *http.Request) {
 					// also keep existing ip mode
 					if oldMode, mok := targetNode.LinkIPModes[k]; mok {
 						safeLinkIPModes[k] = oldMode
+					}
+					// keep existing port
+					if oldPort, pok := targetNode.LinkPorts[k]; pok {
+						safeLinkPorts[k] = oldPort
 					}
 				}
 			} else {
@@ -138,13 +147,35 @@ func apiUpdateNode(w http.ResponseWriter, r *http.Request) {
 				if newMode, ok := req.LinkIPModes[k]; ok {
 					safeLinkIPModes[k] = newMode
 				}
+				// allow updating link port
+				if newPort, ok := req.LinkPorts[k]; ok {
+					safeLinkPorts[k] = newPort
+				} else if oldPort, pok := targetNode.LinkPorts[k]; pok {
+					safeLinkPorts[k] = oldPort
+				}
 			}
 		}
+
+		// 保留不在 req.Links 中但存在于 req.LinkPorts 或数据库 LinkPorts 中的端口配置。
+		// link_ports 中的端口信息永远不会被前端删除，只会被修改。
+		for proto, port := range req.LinkPorts {
+			if _, exists := safeLinkPorts[proto]; !exists && port > 0 {
+				safeLinkPorts[proto] = port
+			}
+		}
+		for proto, port := range targetNode.LinkPorts {
+			if _, exists := safeLinkPorts[proto]; !exists && port > 0 {
+				safeLinkPorts[proto] = port
+			}
+		}
+
 		targetNode.Links = safeLinks
 		targetNode.LinkIPModes = safeLinkIPModes
+		targetNode.LinkPorts = safeLinkPorts
 	} else {
 		safeLinks := make(map[string]string)
 		safeLinkIPModes := make(map[string]int)
+		safeLinkPorts := make(map[string]int)
 
 		for k, v := range req.Links {
 			if v == "__KEEP_EXISTING__" {
@@ -153,16 +184,37 @@ func apiUpdateNode(w http.ResponseWriter, r *http.Request) {
 					if oldMode, mok := targetNode.LinkIPModes[k]; mok {
 						safeLinkIPModes[k] = oldMode
 					}
+					if oldPort, pok := targetNode.LinkPorts[k]; pok {
+						safeLinkPorts[k] = oldPort
+					}
 				}
 			} else {
 				safeLinks[k] = v
 				if newMode, ok := req.LinkIPModes[k]; ok {
 					safeLinkIPModes[k] = newMode
 				}
+				if newPort, ok := req.LinkPorts[k]; ok {
+					safeLinkPorts[k] = newPort
+				}
 			}
 		}
+
+		// 保留不在 req.Links 中但存在于 req.LinkPorts 或数据库 LinkPorts 中的端口配置。
+		// link_ports 中的端口信息永远不会被前端删除，只会被修改。
+		for proto, port := range req.LinkPorts {
+			if _, exists := safeLinkPorts[proto]; !exists && port > 0 {
+				safeLinkPorts[proto] = port
+			}
+		}
+		for proto, port := range targetNode.LinkPorts {
+			if _, exists := safeLinkPorts[proto]; !exists && port > 0 {
+				safeLinkPorts[proto] = port
+			}
+		}
+
 		targetNode.Links = safeLinks
 		targetNode.LinkIPModes = safeLinkIPModes
+		targetNode.LinkPorts = safeLinkPorts
 	}
 
 	// 6. 保存更新
@@ -281,6 +333,32 @@ func apiUpdateNode(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// 追踪 link_ports 变更
+	portProtoSet := make(map[string]struct{})
+	for p := range oldNode.LinkPorts {
+		portProtoSet[p] = struct{}{}
+	}
+	for p := range targetNode.LinkPorts {
+		portProtoSet[p] = struct{}{}
+	}
+	portProtos := make([]string, 0, len(portProtoSet))
+	for p := range portProtoSet {
+		portProtos = append(portProtos, p)
+	}
+	sort.Strings(portProtos)
+	for _, p := range portProtos {
+		oldPort, oldOK := oldNode.LinkPorts[p]
+		newPort, newOK := targetNode.LinkPorts[p]
+		switch {
+		case !oldOK && newOK:
+			changedDetails = append(changedDetails, fmt.Sprintf("link_ports[%s]: add %d", p, newPort))
+		case oldOK && !newOK:
+			changedDetails = append(changedDetails, fmt.Sprintf("link_ports[%s]: removed", p))
+		case oldOK && newOK && oldPort != newPort:
+			changedDetails = append(changedDetails, fmt.Sprintf("link_ports[%s]: %d -> %d", p, oldPort, newPort))
+		}
+	}
+
 	if len(changedDetails) == 0 {
 		// 前端存在自动保存场景，无字段变化时不写日志，避免产生重复噪声
 	} else {
@@ -340,6 +418,32 @@ func apiAddNode(w http.ResponseWriter, r *http.Request) {
 		updates["traffic_limit"] = trafficLimit
 	}
 	updates["traffic_limit_type"] = service.NormalizeTrafficLimitType(req.TrafficLimitType)
+
+	// 读取系统默认安装协议，自动为新节点添加空白协议（与编辑弹窗中手动添加空白协议效果一致）
+	var defaultProtoConfig database.SysConfig
+	if err := database.DB.Where("key = ?", "pref_default_install_protocols").First(&defaultProtoConfig).Error; err == nil {
+		rawVal := strings.TrimSpace(defaultProtoConfig.Value)
+		if rawVal != "" {
+			var defaultProtos []string
+			if jsonErr := json.Unmarshal([]byte(rawVal), &defaultProtos); jsonErr == nil && len(defaultProtos) > 0 {
+				if node.Links == nil {
+					node.Links = make(map[string]string)
+				}
+				for _, proto := range defaultProtos {
+					proto = strings.TrimSpace(proto)
+					if proto != "" {
+						node.Links[proto] = "" // 空内容，等待 Agent 部署后自动上报填充
+					}
+				}
+				if err := database.DB.Save(node).Error; err != nil {
+					logger.Log.Error("写入默认协议失败", "uuid", node.UUID, "error", err)
+				} else {
+					logger.Log.Info("已为新节点添加默认协议", "uuid", node.UUID, "protocols", defaultProtos)
+				}
+			}
+		}
+	}
+
 	if len(updates) > 0 {
 		if err := database.DB.Model(&database.NodePool{}).Where("uuid = ?", node.UUID).Updates(updates).Error; err != nil {
 			logger.Log.Error("补充更新节点属性失败", "uuid", node.UUID, "error", err)
@@ -1456,38 +1560,6 @@ func apiDeleteNode(w http.ResponseWriter, r *http.Request) {
 
 // ------------------- [公开接口与回调] -------------------
 
-func apiPublicScript(w http.ResponseWriter, r *http.Request) {
-	clientIP := r.RemoteAddr
-	reqPath := r.URL.Path
-
-	// 1. 获取 URL 中的 id 参数
-	installID := r.URL.Query().Get("id")
-	if installID == "" {
-		logger.Log.Warn("安装脚本请求被拦截", "reason", "缺少安装ID", "ip", clientIP)
-		http.Error(w, "Missing InstallID", http.StatusBadRequest)
-		return
-	}
-
-	// 2. 验证 ID 是否有效节点
-	var node database.NodePool
-	if err := database.DB.Where("install_id = ?", installID).First(&node).Error; err != nil {
-		logger.Log.Warn("安装脚本请求被拦截", "reason", "无效的安装ID", "id", installID, "ip", clientIP)
-		http.Error(w, "Invalid InstallID", http.StatusForbidden)
-		return
-	}
-
-	// 传递查出来的 node 对象给模板渲染函数
-	scriptContent, err := service.RenderInstallScript(node)
-	if err != nil {
-		logger.Log.Error("安装脚本模板渲染失败", "error", err, "ip", clientIP, "path", reqPath)
-		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
-		return
-	}
-
-	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-	w.Write([]byte(scriptContent))
-}
-
 func apiCallbackReport(w http.ResponseWriter, r *http.Request) {
 	clientIP := r.RemoteAddr
 	reqPath := r.URL.Path
@@ -1933,4 +2005,94 @@ func apiNodeControlStream(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
+}
+
+// apiNodeControlPushConfig 推送协议配置到 Agent
+// 路由: POST /api/node/control/push-config
+// 请求体: { "uuid": "节点UUID", "protocols": ["ss", "hy2"], "ports": {"ss": 8388, "hy2": 8443} }
+// 功能：将前端编辑的启用协议列表和端口配置推送给在线的 Agent，
+// Agent 收到后更新本地协议配置、重新生成 sing-box 配置并重启。
+func apiNodeControlPushConfig(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		sendJSON(w, "error", "仅支持 POST 请求")
+		return
+	}
+
+	var req struct {
+		UUID      string         `json:"uuid"`
+		Protocols []string       `json:"protocols"` // 启用的协议列表
+		Ports     map[string]int `json:"ports"`     // 协议端口映射
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || strings.TrimSpace(req.UUID) == "" {
+		sendJSON(w, "error", "参数错误: uuid 不能为空")
+		return
+	}
+
+	if len(req.Protocols) == 0 {
+		sendJSON(w, "error", "启用的协议列表不能为空")
+		return
+	}
+
+	// 查找节点
+	var node database.NodePool
+	if err := database.DB.Where("uuid = ?", strings.TrimSpace(req.UUID)).First(&node).Error; err != nil {
+		sendJSON(w, "error", "节点不存在")
+		return
+	}
+
+	// 检查节点是否在线
+	if !service.IsNodeOnline(node.InstallID) {
+		sendJSON(w, "error", "节点不在线，无法推送配置")
+		return
+	}
+
+	// 构造推送配置 payload
+	// 端口优先使用前端传入的值，其次使用节点数据库中的 link_ports
+	mergedPorts := make(map[string]int)
+	if node.LinkPorts != nil {
+		for k, v := range node.LinkPorts {
+			if v > 0 {
+				mergedPorts[k] = v
+			}
+		}
+	}
+	if req.Ports != nil {
+		for k, v := range req.Ports {
+			if v > 0 {
+				mergedPorts[k] = v
+			}
+		}
+	}
+
+	payload := map[string]interface{}{
+		"protocols": req.Protocols,
+		"ports":     mergedPorts,
+	}
+
+	// 如果节点启用了 Tunnel，附带 Tunnel 配置
+	if node.TunnelEnabled {
+		if tunnelPayload, e := buildNodeTunnelCommandPayload(node); e == nil {
+			payload["tunnel"] = tunnelPayload
+		} else {
+			logger.Log.Warn("推送配置时跳过 Tunnel 刷新", "uuid", req.UUID, "error", e)
+		}
+	}
+
+	commandID, err := service.FireCommandToNode(node.InstallID, "push-config", payload)
+	if err != nil {
+		logger.Log.Error("推送配置命令下发失败", "uuid", req.UUID, "error", err)
+		sendJSON(w, "error", fmt.Sprintf("命令下发失败: %v", err))
+		return
+	}
+
+	logger.Log.Info("推送配置命令已下发",
+		"uuid", req.UUID,
+		"name", node.Name,
+		"command_id", commandID,
+		"protocols", req.Protocols,
+	)
+	sendJSON(w, "success", map[string]interface{}{
+		"command_id": commandID,
+		"message":    "推送配置命令已下发，Agent 正在应用配置...",
+	})
 }

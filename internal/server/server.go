@@ -312,9 +312,12 @@ func Start(tmplFS embed.FS) {
 	mux.HandleFunc("/api/db/migrate", withAuthAndSecure(apiMigrateDatabase))
 
 	// ========== C. 公开/工具 路由 ==========
-	mux.HandleFunc("/api/public/install-script", withSecure(apiPublicScript)) // 安装脚本
-	mux.HandleFunc("/api/callback/report", withSecure(apiCallbackReport))     // 节点上报
-	mux.HandleFunc("/api/callback/traffic/ws", apiCallbackTrafficWS)          // Agent WS 统一上报通道
+	mux.HandleFunc("/api/public/new-install-script", withSecure(apiNewInstallScript)) // 🆕 新版极简安装脚本
+	mux.HandleFunc("/api/public/download/agent", apiDownloadAgent)                    // 🆕 Agent 二进制下载
+	mux.HandleFunc("/api/agent/init-config", withSecure(apiAgentInitConfig))          // 🆕 Agent 初始化配置
+	mux.HandleFunc("/api/callback/report", withSecure(apiCallbackReport))             // 节点上报
+	mux.HandleFunc("/api/callback/reset-protocol", withSecure(apiResetProtocol))      // 🆕 协议重置接口
+	mux.HandleFunc("/api/callback/traffic/ws", apiCallbackTrafficWS)                  // Agent WS 统一上报通道
 	// 实时流量订阅 (前端 WebSocket)
 	mux.HandleFunc("/api/traffic/live", withAuthAndSecure(apiTrafficLive)) // 前端实时流量订阅
 
@@ -322,6 +325,7 @@ func Start(tmplFS embed.FS) {
 	mux.HandleFunc("/api/node/control/reset-links", withAuthAndSecure(apiNodeControlResetLinks))              // 远程重置链接
 	mux.HandleFunc("/api/node/control/reinstall-singbox", withAuthAndSecure(apiNodeControlReinstall))         // 远程重装 sing-box
 	mux.HandleFunc("/api/node/control/check-agent-update", withAuthAndSecure(apiNodeControlCheckAgentUpdate)) // 远程检查 Agent 更新
+	mux.HandleFunc("/api/node/control/push-config", withAuthAndSecure(apiNodeControlPushConfig))              // 推送协议配置到 Agent
 	mux.HandleFunc("/api/node/control/tunnel-start", withAuthAndSecure(apiNodeControlTunnelStart))            // 远程启动 tunnel
 	mux.HandleFunc("/api/node/control/tunnel-stop", withAuthAndSecure(apiNodeControlTunnelStop))              // 远程停止 tunnel
 	mux.HandleFunc("/api/node/control/stream", withAuthAndSecure(apiNodeControlStream))                       // 命令执行 SSE 流
@@ -441,7 +445,7 @@ func Start(tmplFS embed.FS) {
 		// [主线程] 启动服务并阻塞
 		var serveErr error
 		if certLoaded {
-			logger.Log.Info("网络服务已启动", "mode", "HTTPS", "addr", "https://localhost:8080", "domain", service.GetCurrentCertInfo().Domain)
+			logger.ConsoleAndLog.Info("网络服务已启动", "mode", "HTTPS", "addr", "https://localhost:8080", "domain", service.GetCurrentCertInfo().Domain)
 			// 首次启动时，在 Web 服务准备就绪后自动拉起 Tunnel
 			if firstBoot {
 				go service.AutoStartCFTunnel()
@@ -449,7 +453,7 @@ func Start(tmplFS embed.FS) {
 			}
 			serveErr = activeServer.ListenAndServeTLS("", "")
 		} else {
-			logger.Log.Info("网络服务已启动", "mode", "HTTP", "addr", "http://localhost:8080", "msg", "如需使用 HTTPS，请在面板上传证书")
+			logger.ConsoleAndLog.Info("网络服务已启动", "mode", "HTTP", "addr", "http://localhost:8080", "msg", "如需使用 HTTPS，请在面板上传证书")
 			// 首次启动时，在 Web 服务准备就绪后自动拉起 Tunnel
 			if firstBoot {
 				go service.AutoStartCFTunnel()

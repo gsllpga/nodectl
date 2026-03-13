@@ -64,90 +64,7 @@
         max-height: calc(85vh - 140px);
     }
 
-    /* 协议选择区样式 */
-    .protocol-selector {
-        display: flex;
-        gap: 10px;
-        margin-bottom: 20px;
-        flex-wrap: wrap;
-    }
-
-    .protocol-selector label {
-        display: inline-block;
-        cursor: pointer;
-        user-select: none;
-    }
-
-    .protocol-selector input[type="checkbox"] {
-        display: none;
-    }
-
-    .protocol-label-btn {
-        background: #f4f5f7;
-        color: #555;
-        padding: 6px 14px;
-        border-radius: 6px;
-        font-size: 13px;
-        font-weight: 500;
-        border: 1px solid #e1e4e8;
-        transition: all 0.2s ease;
-    }
-
-    .protocol-selector input[type="checkbox"]:checked+.protocol-label-btn {
-        background: #f0f7ff;
-        color: #007aff;
-        border-color: #007aff;
-    }
-
-    .protocol-selector input[type="checkbox"]:hover+.protocol-label-btn {
-        border-color: #c6cbd1;
-    }
-
-    .protocol-selector input[type="checkbox"]:checked:hover+.protocol-label-btn {
-        border-color: #0062cc;
-        color: #0062cc;
-    }
-
-    /* ====== 协议分组行内展开 ====== */
-    .proto-groups-wrap {
-        margin-bottom: 16px;
-    }
-
-    .proto-row {
-        display: flex;
-        align-items: flex-start;
-        gap: 8px;
-        margin-bottom: 7px;
-    }
-
-    .proto-row-label {
-        font-size: 11px;
-        font-weight: 700;
-        color: #666;
-        min-width: 46px;
-        flex-shrink: 0;
-        padding-top: 5px;
-        text-align: right;
-        letter-spacing: 0.2px;
-    }
-
-    .proto-row-chips {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 6px;
-        flex: 1;
-    }
-
-    /* 单变种协议合并行 */
-    .proto-singles-row {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 6px;
-        padding-top: 8px;
-        margin-top: 2px;
-        border-top: 1px dashed #e1e4e8;
-    }
-
+    /* 回调地址选择标签样式 */
     .variant-check-item {
         display: inline-flex;
         align-items: center;
@@ -168,20 +85,6 @@
         background: #eef4ff;
         border-color: #b3d1ff;
         color: #0062cc;
-    }
-
-    .variant-check-item input[type="checkbox"] {
-        width: 13px;
-        height: 13px;
-        margin: 0;
-        cursor: pointer;
-        accent-color: #007aff;
-    }
-
-    .variant-check-item:has(input:checked) {
-        background: #e8f2ff;
-        border-color: #007aff;
-        color: #007aff;
     }
 
     /* 代码框样式 */
@@ -346,11 +249,6 @@
             /* 手机端适当缩减代码框的内边距，让出更多显示空间 */
         }
 
-        .protocol-selector {
-            gap: 8px;
-            /* 手机端协议按钮间距微调 */
-        }
-
         .script-tooltip-content {
             left: -20px;
             width: 240px;
@@ -495,9 +393,6 @@
                 完成 Tunnel 配置。
             </div>
 
-            <!-- 协议分组折叠面板，由 JS 动态渲染 -->
-            <div class="proto-groups-wrap" id="protocolCheckboxes"></div>
-
             <div class="cmd-box">
                 <div class="cmd-text" id="installCmdDisplay"></div>
             </div>
@@ -521,157 +416,9 @@
 <script>
     const scriptModal = document.getElementById("installScriptModal");
     const cmdDisplay = document.getElementById("installCmdDisplay");
-    const groupsWrap = document.getElementById("protocolCheckboxes");
     let currentScriptNode = null;
 
-    // ─── 协议分组定义 ───
-    const installProtoGroups = [
-        {
-            id: "vless",
-            name: "VLESS",
-            variants: [
-                { key: "vless", arg: "vless", label: "Reality" },
-                { key: "vless_wst", arg: "vless-wst", label: "WS-TLS" },
-                { key: "vless_hut", arg: "vless-hut", label: "HU-TLS" },
-            ],
-        },
-        {
-            id: "vmess",
-            name: "VMess",
-            variants: [
-                { key: "vmess_tcp", arg: "vmess-tcp", label: "TCP" },
-                { key: "vmess_ws", arg: "vmess-ws", label: "WS" },
-                { key: "vmess_http", arg: "vmess-http", label: "HTTP" },
-                { key: "vmess_quic", arg: "vmess-quic", label: "QUIC" },
-                { key: "vmess_wst", arg: "vmess-wst", label: "WS-TLS" },
-                { key: "vmess_hut", arg: "vmess-hut", label: "HU-TLS" },
-            ],
-        },
-        {
-            id: "ss",
-            name: "Shadowsocks",
-            variants: [{ key: "ss", arg: "shadowsocks", label: "Shadowsocks" }],
-        },
-        {
-            id: "hy2",
-            name: "Hysteria2",
-            variants: [{ key: "hy2", arg: "hysteria2", label: "Hysteria2" }],
-        },
-        {
-            id: "tuic",
-            name: "TUIC",
-            variants: [{ key: "tuic", arg: "tuic", label: "TUIC" }],
-        },
-        {
-            id: "socks5",
-            name: "Socks5",
-            variants: [{ key: "socks5", arg: "socks5", label: "Socks5" }],
-        },
-        {
-            id: "trojan",
-            name: "Trojan",
-            variants: [
-                { key: "trojan", arg: "trojan", label: "Trojan" },
-                { key: "trojan_wst", arg: "trojan-wst", label: "WS-TLS" },
-                { key: "trojan_hut", arg: "trojan-hut", label: "HU-TLS" },
-            ],
-        },
-    ];
-
-    // 全局单一数据源：供安装脚本弹窗与系统偏好设置共用
-    window.NODECTL_INSTALL_PROTO_GROUPS = installProtoGroups;
-
-    // ─── 渲染协议面板（行内展开，无折叠）───
-    function renderGroups(activeSet) {
-        groupsWrap.innerHTML = "";
-
-        const multiGroups = installProtoGroups.filter(
-            (g) => g.variants.length > 1,
-        );
-        const singleGroups = installProtoGroups.filter(
-            (g) => g.variants.length === 1,
-        );
-
-        // 多变种协议：每组独占一行，左侧显示协议名标签
-        for (const group of multiGroups) {
-            const rowEl = document.createElement("div");
-            rowEl.className = "proto-row";
-            rowEl.innerHTML = `
-                <span class="proto-row-label">${group.name}</span>
-                <div class="proto-row-chips">
-                    ${group.variants
-                    .map(
-                        (v) => `
-                        <label class="variant-check-item">
-                            <input type="checkbox" value="${v.arg}"
-                                ${activeSet.has(v.key) ? "checked" : ""}
-                                onchange="updateScriptCmd()">
-                            <span>${v.label}</span>
-                        </label>
-                    `,
-                    )
-                    .join("")}
-                </div>
-            `;
-            groupsWrap.appendChild(rowEl);
-        }
-
-        // 单变种协议：全部合并到最后一行
-        if (singleGroups.length > 0) {
-            const singlesEl = document.createElement("div");
-            singlesEl.className = "proto-singles-row";
-            singlesEl.innerHTML = singleGroups
-                .map((g) => {
-                    const v = g.variants[0];
-                    return `
-                    <label class="variant-check-item">
-                        <input type="checkbox" value="${v.arg}"
-                            ${activeSet.has(v.key) ? "checked" : ""}
-                            onchange="updateScriptCmd()">
-                        <span>${g.name}</span>
-                    </label>
-                `;
-                })
-                .join("");
-            groupsWrap.appendChild(singlesEl);
-        }
-    }
-
-    // ─── 打开弹窗 ───
-    async function loadDefaultInstallProtoKeys() {
-        try {
-            const res = await fetch(`/api/get-settings?_t=${Date.now()}`, {
-                cache: "no-store",
-                headers: {
-                    "Cache-Control": "no-cache",
-                    Pragma: "no-cache",
-                },
-            });
-            const result = await res.json();
-            if (result?.status !== "success") return new Set();
-            const rawValue =
-                result?.data?.pref_default_install_protocols || "[]";
-
-            let keys = [];
-            try {
-                const parsed = JSON.parse(rawValue);
-                if (Array.isArray(parsed)) keys = parsed;
-            } catch (_) {
-                keys = String(rawValue)
-                    .split(",")
-                    .map((v) => v.trim())
-                    .filter(Boolean);
-            }
-
-            const allKeys = new Set(
-                installProtoGroups.flatMap((g) => g.variants.map((v) => v.key)),
-            );
-            return new Set(keys.filter((k) => allKeys.has(k)));
-        } catch (_) {
-            return new Set();
-        }
-    }
-
+    // ─── 加载 Tunnel 子域名 ───
     async function loadTunnelSubdomainFromBackend() {
         try {
             const resp = await fetch(
@@ -699,6 +446,7 @@
         }
     }
 
+    // ─── 打开弹窗 ───
     async function openScriptModal(uuid) {
         currentScriptNode = window.allNodesData[uuid];
         if (!currentScriptNode) return;
@@ -756,25 +504,11 @@
                     : "none";
         }
 
-        // 选择优先级：偏好设置 > 节点当前已启用协议
-        const activeSet = new Set();
-        const defaultSet = await loadDefaultInstallProtoKeys();
-
-        if (defaultSet.size > 0) {
-            defaultSet.forEach((k) => activeSet.add(k));
-        } else if (currentScriptNode.links) {
-            const disabledSet = new Set(currentScriptNode.disabled_links || []);
-            Object.keys(currentScriptNode.links).forEach((k) => {
-                if (!disabledSet.has(k)) activeSet.add(k);
-            });
-        }
-
-        renderGroups(activeSet);
         updateScriptCmd();
         scriptModal.classList.add("active");
     }
 
-    // ─── 生成命令 ───
+    // ─── 生成命令（新版极简模式：无需指定协议） ───
     function updateScriptCmd() {
         if (!currentScriptNode) return;
 
@@ -809,27 +543,21 @@
         let host = useTunnel ? tunnelBase : panelBase || fallbackHost;
         host = host.replace(/\/+$/, "");
 
-        const checkedBoxes = groupsWrap.querySelectorAll(
-            'input[type="checkbox"]:checked',
-        );
-        const selectedArgs = Array.from(checkedBoxes).map((cb) => cb.value);
+        // 新版使用 /api/public/new-install-script 端点
+        const installScriptUrl = `${host}/api/public/new-install-script?id=${currentScriptNode.install_id}`;
 
-        const protosHtml = selectedArgs
-            .map((p) => `<span class="hl-proto">${p}</span>`)
-            .join(" ");
-        const protosRaw = selectedArgs.join(" ");
+        // 构造命令：新版极简命令不需要协议参数
+        let cmdHtml, rawCmd;
 
-        const scriptUrl = `${host}/api/public/install-script?id=${currentScriptNode.install_id}`;
-
-        let extraHtml = "";
-        let extraRaw = "";
         if (useTunnel) {
-            extraHtml = ` <span class="hl-param">--report-url</span> <span class="hl-string">${host}</span>`;
-            extraRaw = ` --report-url ${host}`;
+            // 使用 Tunnel 回调地址时，追加 --report-url 参数
+            cmdHtml = `<span class="hl-cmd">bash</span> <span class="hl-param">-c</span> <span class="hl-string">"$(curl -fsSL ${installScriptUrl})"</span> <span class="hl-param">--</span> <span class="hl-param">--report-url</span> <span class="hl-string">${host}</span>`;
+            rawCmd = `bash -c "$(curl -fsSL ${installScriptUrl})" -- --report-url ${host}`;
+        } else {
+            // 基础用法：极简，无需任何额外参数
+            cmdHtml = `<span class="hl-cmd">bash</span> <span class="hl-param">-c</span> <span class="hl-string">"$(curl -fsSL ${installScriptUrl})"</span>`;
+            rawCmd = `bash -c "$(curl -fsSL ${installScriptUrl})"`;
         }
-
-        const cmdHtml = `<span class="hl-cmd">bash</span> <span class="hl-param">-c</span> <span class="hl-string">"$(curl -fsSL ${scriptUrl})"</span> <span class="hl-param">--</span> ${protosHtml}${extraHtml}`;
-        const rawCmd = `bash -c "$(curl -fsSL ${scriptUrl})" -- ${protosRaw}${extraRaw}`;
 
         cmdDisplay.innerHTML = cmdHtml;
         cmdDisplay.setAttribute("data-clipboard-text", rawCmd);

@@ -35,7 +35,7 @@ var (
 func StartAgentStartupSilentUpdateCheck() {
 	agentStartupUpdateOnce.Do(func() {
 		go func() {
-			logger.Log.Info("启动静默 Agent 更新检查任务已创建", "delay", agentStartupCheckDelay.String())
+			logger.Log.Debug("启动静默 Agent 更新检查任务已创建", "delay", agentStartupCheckDelay.String())
 
 			timer := time.NewTimer(agentStartupCheckDelay)
 			defer timer.Stop()
@@ -52,7 +52,7 @@ func StartAgentStartupSilentUpdateCheck() {
 				return
 			}
 			if !enabled {
-				logger.Log.Info("启动静默 Agent 更新检查已关闭，跳过执行", "config_key", "agent_startup_silent_update_enabled")
+				logger.Log.Debug("启动静默 Agent 更新检查已关闭，跳过执行", "config_key", "agent_startup_silent_update_enabled")
 				return
 			}
 

@@ -44,7 +44,7 @@ func InitTrafficThresholdCache() {
 	trafficThresholdCache = next
 	trafficThresholdMu.Unlock()
 
-	logger.Log.Info("阈值停机配置已加载到内存", "count", len(next))
+	logger.Log.Debug("阈值停机配置已加载到内存", "count", len(next))
 }
 
 func UpdateNodeTrafficThresholdConfigFromNode(node database.NodePool) {

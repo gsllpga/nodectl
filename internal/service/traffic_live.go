@@ -491,7 +491,13 @@ func HandleAgentWS(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 
-		// 否则按流量上报处理
+		// 🆕 处理新增的消息类型（node_online / links_update）
+		if peek.Type == "node_online" || peek.Type == "links_update" || peek.Type == "protocol_change" {
+			hub.handleNewMessageType(data, peek.Type, clientIP, &agentInstallID, conn)
+			continue
+		}
+
+		// 否则按流量上报处理（原有 flat 结构，保持兼容）
 		var msg AgentTrafficMsg
 		if err := json.Unmarshal(data, &msg); err != nil {
 			logger.Log.Warn("Agent WS 流量消息解析失败", "error", err, "ip", clientIP)
@@ -1078,4 +1084,216 @@ func SubscribeCommandLog(commandID string) ([]CommandLogEntry, chan CommandLogEn
 	}
 
 	return history, ch, done, unsub
+}
+
+// ============================================================
+//  🆕 新增消息类型处理（WebSocket 通道复用）
+// ============================================================
+
+// wsMessage 🆕 统一消息结构（用于解析 node_online / links_update 等新消息）
+type wsMessage struct {
+	Type      string          `json:"type"`
+	InstallID string          `json:"install_id"`
+	Timestamp int64           `json:"timestamp"`
+	Payload   json.RawMessage `json:"payload"`
+}
+
+// wsNodeOnlinePayload 节点上线载荷
+type wsNodeOnlinePayload struct {
+	Hostname  string            `json:"hostname"`
+	IPv4      string            `json:"ipv4,omitempty"`
+	IPv6      string            `json:"ipv6,omitempty"`
+	Protocols []string          `json:"protocols"`
+	Links     map[string]string `json:"links"`
+	AgentVer  string            `json:"agent_version"`
+	SBVersion string            `json:"singbox_version,omitempty"`
+}
+
+// wsLinksUpdatePayload 链接更新载荷
+type wsLinksUpdatePayload struct {
+	Action    string            `json:"action"` // reset / add / remove / reinstall
+	Protocols []string          `json:"protocols"`
+	Links     map[string]string `json:"links"`
+}
+
+// handleNewMessageType 🆕 处理新增的 WebSocket 消息类型
+func (h *TrafficHub) handleNewMessageType(data []byte, msgType string, clientIP string, agentInstallID *string, conn *websocket.Conn) {
+	var msg wsMessage
+	if err := json.Unmarshal(data, &msg); err != nil {
+		logger.Log.Warn("WS 新消息解析失败", "error", err, "type", msgType, "ip", clientIP)
+		return
+	}
+
+	installID := strings.TrimSpace(msg.InstallID)
+	if installID == "" {
+		logger.Log.Warn("WS 新消息缺少 install_id", "type", msgType, "ip", clientIP)
+		return
+	}
+
+	// 安全检查：验证 install_id 是否有效
+	if !IsValidInstallID(installID) {
+		logger.Log.Warn("WS 新消息 install_id 无效", "type", msgType, "install_id", installID, "ip", clientIP)
+		return
+	}
+
+	// 首次识别到 install_id 时注册连接
+	if *agentInstallID == "" {
+		*agentInstallID = installID
+		h.agentMu.Lock()
+		h.agentConns[installID] = conn
+		h.agentMu.Unlock()
+		OnNodeConnectionStatusChanged(installID, true)
+
+		nodeName := h.resolveNodeNameByInstallID(installID)
+		if nodeName == "" {
+			nodeName = h.resolveNodeNameByIP(clientIP)
+		}
+		logger.Log.Info("Agent WS 已连接（通过新消息类型识别）",
+			"ip", clientIP,
+			"install_id", installID,
+			"node_name", nodeName,
+		)
+	}
+
+	// 根据消息类型分发处理
+	switch msgType {
+	case "node_online":
+		h.handleNodeOnline(msg, clientIP)
+	case "links_update":
+		h.handleLinksUpdate(msg, clientIP)
+	case "protocol_change":
+		logger.Log.Info("收到协议状态变更消息", "install_id", installID, "ip", clientIP)
+		// TODO: 后续实现协议变更处理
+	default:
+		logger.Log.Warn("未知的 WS 消息类型", "type", msgType, "install_id", installID, "ip", clientIP)
+	}
+}
+
+// handleNodeOnline 🆕 处理节点上线消息
+// 更新数据库中的节点 IP、协议列表、链接、版本等信息
+func (h *TrafficHub) handleNodeOnline(msg wsMessage, clientIP string) {
+	var payload wsNodeOnlinePayload
+	if err := json.Unmarshal(msg.Payload, &payload); err != nil {
+		logger.Log.Warn("解析 node_online 载荷失败", "error", err, "install_id", msg.InstallID)
+		return
+	}
+
+	installID := msg.InstallID
+
+	// 获取节点记录
+	var node database.NodePool
+	if err := database.DB.Where("install_id = ?", installID).First(&node).Error; err != nil {
+		logger.Log.Warn("node_online: 节点不存在", "install_id", installID)
+		return
+	}
+
+	// 更新节点信息
+	updates := map[string]interface{}{}
+
+	if payload.IPv4 != "" && payload.IPv4 != node.IPV4 {
+		updates["ipv4"] = payload.IPv4
+	}
+	if payload.IPv6 != "" && payload.IPv6 != node.IPV6 {
+		updates["ipv6"] = payload.IPv6
+	}
+
+	// 更新地区信息
+	newRegion := ""
+	checkIP := payload.IPv4
+	if checkIP == "" {
+		checkIP = payload.IPv6
+	}
+	if checkIP != "" {
+		newRegion = GlobalGeoIP.GetCountryIsoCode(checkIP)
+	}
+	if newRegion != "" && newRegion != node.Region {
+		updates["region"] = newRegion
+	}
+
+	// 更新 Agent 版本
+	if payload.AgentVer != "" && payload.AgentVer != node.AgentVersion {
+		updates["agent_version"] = payload.AgentVer
+	}
+
+	// 更新链接
+	if len(payload.Links) > 0 {
+		if node.Links == nil {
+			node.Links = make(map[string]string)
+		}
+		changed := false
+		for proto, link := range payload.Links {
+			if node.Links[proto] != link {
+				node.Links[proto] = link
+				changed = true
+			}
+		}
+		if changed {
+			updates["links"] = node.Links
+		}
+	}
+
+	// 批量更新
+	if len(updates) > 0 {
+		if err := database.DB.Model(&database.NodePool{}).Where("install_id = ?", installID).Updates(updates).Error; err != nil {
+			logger.Log.Error("node_online: 更新节点信息失败", "error", err, "install_id", installID)
+		} else {
+			nodeName := strings.TrimSpace(node.Name)
+			if nodeName == "" {
+				nodeName = installID
+			}
+			logger.Log.Info("节点上线信息已更新",
+				"install_id", installID,
+				"node_name", nodeName,
+				"ipv4", payload.IPv4,
+				"protocols", payload.Protocols,
+				"agent_version", payload.AgentVer,
+				"singbox_version", payload.SBVersion,
+			)
+		}
+	}
+}
+
+// handleLinksUpdate 🆕 处理链接更新消息
+// 更新数据库中的节点链接
+func (h *TrafficHub) handleLinksUpdate(msg wsMessage, clientIP string) {
+	var payload wsLinksUpdatePayload
+	if err := json.Unmarshal(msg.Payload, &payload); err != nil {
+		logger.Log.Warn("解析 links_update 载荷失败", "error", err, "install_id", msg.InstallID)
+		return
+	}
+
+	installID := msg.InstallID
+
+	// 获取节点记录
+	var node database.NodePool
+	if err := database.DB.Where("install_id = ?", installID).First(&node).Error; err != nil {
+		logger.Log.Warn("links_update: 节点不存在", "install_id", installID)
+		return
+	}
+
+	// 更新链接
+	if len(payload.Links) > 0 {
+		if node.Links == nil {
+			node.Links = make(map[string]string)
+		}
+		for proto, link := range payload.Links {
+			node.Links[proto] = link
+		}
+
+		if err := database.DB.Model(&database.NodePool{}).Where("install_id = ?", installID).Update("links", node.Links).Error; err != nil {
+			logger.Log.Error("links_update: 更新链接失败", "error", err, "install_id", installID)
+		} else {
+			nodeName := strings.TrimSpace(node.Name)
+			if nodeName == "" {
+				nodeName = installID
+			}
+			logger.Log.Info("节点链接已更新",
+				"install_id", installID,
+				"node_name", nodeName,
+				"action", payload.Action,
+				"protocols", payload.Protocols,
+				"link_count", len(payload.Links),
+			)
+		}
+	}
 }

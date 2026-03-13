@@ -153,7 +153,7 @@ func InitCFIPOpt() {
 	// 清理过期日志文件
 	cleanOldLogs()
 
-	logger.Log.Info("CF 优选IP模块初始化完成")
+	logger.Log.Debug("CF 优选IP模块初始化完成")
 }
 
 // cleanOldLogs 清理超过 7 天的日志文件

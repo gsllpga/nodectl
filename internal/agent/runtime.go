@@ -18,6 +18,11 @@ import (
 	"sync"
 	"syscall"
 	"time"
+
+	"nodectl/internal/agent/api"
+	"nodectl/internal/agent/links"
+	"nodectl/internal/agent/reporter"
+	"nodectl/internal/agent/singbox"
 )
 
 // Runtime Agent 运行时：调度采集与上报，管理信号与生命周期
@@ -30,6 +35,11 @@ type Runtime struct {
 	cancel         context.CancelFunc
 	bootID         string
 	intervalChange chan int // 动态推送间隔变更通知通道
+
+	// 🆕 sing-box 管理模块
+	singboxMgr *singbox.Manager
+	linkGen    *links.Generator
+	apiReport  *api.Reporter
 }
 
 // NewRuntime 创建运行时实例
@@ -46,6 +56,16 @@ func NewRuntime(cfg *Config, updater *Updater) *Runtime {
 
 // Run 启动 Agent 主循环（阻塞直到收到退出信号）
 func (rt *Runtime) Run() error {
+	// 🆕 首先执行旧版迁移检测
+	migResult := RunMigration()
+	if migResult.Migrated {
+		log.Printf("[Agent] 旧版安装已迁移: binary=%v, config=%v, cert=%v",
+			migResult.BinaryMigrated, migResult.ConfigMigrated, migResult.CertMigrated)
+	}
+
+	// 🆕 初始化 sing-box 管理器（使用配置中的路径）
+	rt.singboxMgr = rt.createSingboxManager()
+
 	// 初始化采集器
 	if err := rt.collector.Init(); err != nil {
 		return err
@@ -66,6 +86,9 @@ func (rt *Runtime) Run() error {
 	if postUpdatePending {
 		postUpdateTimeout = rt.updater.HealthTimeout()
 	}
+
+	// 🆕 尝试加载协议缓存并启动 sing-box（如果缓存存在）
+	rt.initSingBox(ctx)
 
 	// 首次连接 (无限重试直到成功或被中断)
 	for {
@@ -108,6 +131,9 @@ func (rt *Runtime) Run() error {
 	if rt.updater != nil {
 		rt.updater.MarkHealthy()
 	}
+
+	// 🆕 WS 连接成功后，上报节点上线信息
+	rt.reportNodeOnline(ctx)
 
 	// 启动自动更新检查循环（后台 goroutine）
 	if rt.updater != nil {
@@ -167,6 +193,178 @@ func (rt *Runtime) Run() error {
 	}
 }
 
+// createSingboxManager 🆕 根据 Config.Singbox 配置创建 sing-box 管理器
+func (rt *Runtime) createSingboxManager() *singbox.Manager {
+	sbCfg := rt.cfg.Singbox
+
+	// 使用配置中的路径创建 ConfigManager 和 Installer
+	var configPath, protocolsPath, certDir string
+	if sbCfg != nil {
+		configPath = sbCfg.ConfigPath
+	}
+	// protocolsPath 和 certDir 使用默认值
+	cfgMgr := singbox.NewConfigManagerWithPaths(configPath, protocolsPath, certDir)
+
+	var binaryPath string
+	if sbCfg != nil {
+		binaryPath = sbCfg.BinaryPath
+	}
+	installer := singbox.NewInstaller(binaryPath)
+
+	return singbox.NewManagerWithConfig(cfgMgr, installer)
+}
+
+// initSingBox 🆕 初始化 sing-box 管理器并尝试启动
+// 配置加载优先级：
+//  1. Config.Protocols（主配置文件中的协议配置）
+//  2. protocols.json 缓存文件
+//  3. 首次启动无配置 → 等待后端下发
+func (rt *Runtime) initSingBox(ctx context.Context) {
+	cfgMgr := rt.singboxMgr.GetConfigManager()
+
+	// 优先级 1：检查主配置文件中是否已有协议配置
+	if rt.cfg.Protocols != nil && len(rt.cfg.Protocols.EnabledProtocolList()) > 0 {
+		cfgMgr.Protocols = rt.cfg.Protocols
+		log.Printf("[Agent] 从主配置加载协议配置，启用的协议: %v", cfgMgr.Protocols.EnabledProtocolList())
+		// 同步到缓存
+		if err := cfgMgr.SaveToCache(); err != nil {
+			log.Printf("[Agent] 同步协议缓存失败: %v", err)
+		}
+	} else {
+		// 优先级 2：尝试从缓存加载协议配置
+		if err := cfgMgr.LoadFromCache(); err != nil {
+			log.Printf("[Agent] 协议缓存不存在或加载失败: %v（等待后端下发配置）", err)
+			return
+		}
+		log.Printf("[Agent] 已加载协议缓存，启用的协议: %v", cfgMgr.Protocols.EnabledProtocolList())
+
+		// 将缓存中的协议配置同步到主配置（运行时引用）
+		rt.cfg.Protocols = cfgMgr.Protocols
+	}
+
+	// 确保自签证书存在
+	if err := cfgMgr.EnsureCerts("nodectl-agent"); err != nil {
+		log.Printf("[Agent] 生成自签证书失败: %v", err)
+	}
+
+	// 确保 sing-box 已安装
+	installer := rt.singboxMgr.GetInstaller()
+	if !installer.IsInstalled() {
+		log.Printf("[Agent] sing-box 未安装，尝试自动安装...")
+		if err := installer.EnsureInstalled(ctx); err != nil {
+			log.Printf("[Agent] sing-box 安装失败: %v", err)
+			return
+		}
+	}
+
+	// 生成 sing-box 配置
+	if err := cfgMgr.GenerateAndSave(); err != nil {
+		log.Printf("[Agent] 生成 sing-box 配置失败: %v", err)
+		return
+	}
+
+	// 启动 sing-box
+	if err := rt.singboxMgr.Start(ctx); err != nil {
+		log.Printf("[Agent] 启动 sing-box 失败: %v", err)
+		return
+	}
+
+	log.Printf("[Agent] sing-box 已启动")
+}
+
+// reportNodeOnline 🆕 通过 WS 上报节点上线信息
+func (rt *Runtime) reportNodeOnline(ctx context.Context) {
+	if rt.singboxMgr == nil {
+		return
+	}
+
+	cfgMgr := rt.singboxMgr.GetConfigManager()
+	pc := cfgMgr.Protocols
+
+	// 获取公网 IP
+	publicIP := api.GetPublicIP()
+
+	// 获取 hostname
+	hostname, _ := os.Hostname()
+
+	// 生成链接
+	suffix := pc.HostSuffix
+	if suffix == "" {
+		suffix = hostname
+	}
+	gen := links.NewGenerator(publicIP, suffix, pc)
+	linksMap := gen.GenerateAllMap()
+
+	// 获取 sing-box 版本
+	sbVersion := ""
+	installer := rt.singboxMgr.GetInstaller()
+	if v, err := installer.GetVersion(); err == nil {
+		sbVersion = v
+	}
+
+	// 构造节点上线消息
+	payload := &reporter.NodeOnlinePayload{
+		Hostname:  hostname,
+		IPv4:      publicIP, // 当前仅获取 IPv4
+		Protocols: pc.EnabledProtocolList(),
+		Links:     linksMap,
+		AgentVer:  AgentVersion,
+		SBVersion: sbVersion,
+	}
+
+	msg := &reporter.Message{
+		Type:      reporter.MessageTypeNodeOnline,
+		InstallID: rt.cfg.InstallID,
+		Timestamp: time.Now().Unix(),
+		Payload:   payload,
+	}
+
+	if err := rt.reporter.SendMessage(ctx, msg); err != nil {
+		log.Printf("[Agent] 上报节点上线失败: %v", err)
+	} else {
+		log.Printf("[Agent] 节点上线已上报，协议: %v", payload.Protocols)
+	}
+}
+
+// reportLinksUpdate 🆕 通过 WS 上报链接更新
+func (rt *Runtime) reportLinksUpdate(ctx context.Context, action string, protocols []string) {
+	if rt.singboxMgr == nil {
+		return
+	}
+
+	cfgMgr := rt.singboxMgr.GetConfigManager()
+	pc := cfgMgr.Protocols
+
+	// 获取公网 IP
+	publicIP := api.GetPublicIP()
+	hostname, _ := os.Hostname()
+	suffix := pc.HostSuffix
+	if suffix == "" {
+		suffix = hostname
+	}
+
+	// 生成链接
+	gen := links.NewGenerator(publicIP, suffix, pc)
+	linksMap := gen.GenerateAllMap()
+
+	msg := &reporter.Message{
+		Type:      reporter.MessageTypeLinksUpdate,
+		InstallID: rt.cfg.InstallID,
+		Timestamp: time.Now().Unix(),
+		Payload: &reporter.LinksUpdatePayload{
+			Action:    action,
+			Protocols: protocols,
+			Links:     linksMap,
+		},
+	}
+
+	if err := rt.reporter.SendMessage(ctx, msg); err != nil {
+		log.Printf("[Agent] 上报链接更新失败: %v", err)
+	} else {
+		log.Printf("[Agent] 链接更新已上报: action=%s, protocols=%v", action, protocols)
+	}
+}
+
 // handleDisconnect 处理断线重连
 func (rt *Runtime) handleDisconnect(ctx context.Context) {
 	if ctx.Err() != nil {
@@ -212,20 +410,24 @@ func (rt *Runtime) reloadConfig() {
 }
 
 // shutdown 优雅退出
-// 顺序：collector（释放 FD）→ reporter（关闭 WS）
+// 顺序：sing-box → collector（释放 FD）→ reporter（关闭 WS）
 func (rt *Runtime) shutdown() {
 	log.Printf("[Agent] 正在优雅退出...")
 
 	// 0. 输出日志去重器的累计信息
 	rt.logDedup.Flush()
 
-	// 1. 释放采集器常驻 FD
+	// 1. 🆕 停止 sing-box 子进程
+	if rt.singboxMgr != nil {
+		rt.singboxMgr.Shutdown()
+	}
+
+	// 2. 释放采集器常驻 FD
 	if err := rt.collector.Close(); err != nil {
 		log.Printf("[Agent] 关闭采集器失败: %v", err)
 	}
 
-	// 2. 持久化状态
-	// 2. 关闭 WebSocket 连接
+	// 3. 关闭 WebSocket 连接
 	rt.reporter.Close()
 
 	log.Printf("[Agent] 已退出")
@@ -247,6 +449,8 @@ func (rt *Runtime) handleCommand(cmd ServerCommand, reply func(CommandResult)) {
 		rt.executeReinstallSingbox(cmd, reply)
 	case "check-agent-update":
 		rt.executeCheckAgentUpdate(reply)
+	case "push-config":
+		rt.executePushConfig(cmd, reply)
 	case "tunnel-start":
 		rt.executeTunnelStart(cmd, reply)
 	case "tunnel-prepare":
@@ -333,6 +537,149 @@ func (rt *Runtime) executeCheckAgentUpdate(reply func(CommandResult)) {
 	}()
 }
 
+// executePushConfig 处理后端下发的推送配置命令
+// payload: {"protocols": ["ss", "hy2", ...], "ports": {"ss": 8388, "hy2": 8443, ...}, "tunnel": {...}}
+// 功能：根据前端编辑的启用协议列表和端口配置，更新本地协议配置、重新生成 sing-box 配置并重启
+func (rt *Runtime) executePushConfig(cmd ServerCommand, reply func(CommandResult)) {
+	var payload struct {
+		Protocols []string          `json:"protocols"`
+		Ports     map[string]int    `json:"ports"`
+		Tunnel    *tunnelCmdPayload `json:"tunnel,omitempty"`
+	}
+	if len(cmd.Payload) > 0 {
+		json.Unmarshal(cmd.Payload, &payload)
+	}
+	if len(payload.Protocols) == 0 {
+		reply(CommandResult{Type: "result", Status: "error", Message: "未收到协议列表，无法应用配置"})
+		return
+	}
+
+	if rt.singboxMgr == nil {
+		reply(CommandResult{Type: "result", Status: "error", Message: "sing-box 管理器未初始化，请先完成部署"})
+		return
+	}
+
+	reply(CommandResult{Type: "progress", Stage: fmt.Sprintf("收到推送配置：协议 %v", payload.Protocols)})
+
+	cfgMgr := rt.singboxMgr.GetConfigManager()
+	ctx := context.Background()
+
+	// 1. 更新协议启用状态：先全部禁用，再启用前端传来的协议
+	reply(CommandResult{Type: "progress", Stage: "更新协议启用状态..."})
+	for _, proto := range singbox.AllProtocols {
+		cfgMgr.Protocols.SetEnabled(proto, false)
+	}
+	for _, proto := range payload.Protocols {
+		cfgMgr.Protocols.SetEnabled(proto, true)
+	}
+
+	// 2. 更新端口配置（仅更新有值的端口，保留已有密钥/密码等不变）
+	if len(payload.Ports) > 0 {
+		reply(CommandResult{Type: "progress", Stage: "更新端口配置..."})
+		for proto, port := range payload.Ports {
+			if port <= 0 || port > 65535 {
+				continue
+			}
+			switch proto {
+			case singbox.ProtoSS:
+				cfgMgr.Protocols.SS.Port = port
+			case singbox.ProtoHY2:
+				cfgMgr.Protocols.HY2.Port = port
+			case singbox.ProtoTUIC:
+				cfgMgr.Protocols.TUIC.Port = port
+			case singbox.ProtoReality:
+				cfgMgr.Protocols.Reality.Port = port
+			case singbox.ProtoSocks5:
+				cfgMgr.Protocols.Socks5.Port = port
+			case singbox.ProtoTrojan:
+				cfgMgr.Protocols.Trojan.Port = port
+			// VMess 族端口
+			case "vmess-tcp", "vmess_tcp":
+				cfgMgr.Protocols.VMess.TCPPort = port
+			case "vmess-ws", "vmess_ws":
+				cfgMgr.Protocols.VMess.WSPort = port
+			case "vmess-http", "vmess_http":
+				cfgMgr.Protocols.VMess.HTTPPort = port
+			case "vmess-quic", "vmess_quic":
+				cfgMgr.Protocols.VMess.QUICPort = port
+			case "vmess-wst", "vmess_wst":
+				cfgMgr.Protocols.VMess.WSTPort = port
+			case "vmess-hut", "vmess_hut":
+				cfgMgr.Protocols.VMess.HUTPort = port
+			// VLESS-TLS 族端口
+			case "vless-wst", "vless_wst":
+				cfgMgr.Protocols.VlessTLS.WSTPort = port
+			case "vless-hut", "vless_hut":
+				cfgMgr.Protocols.VlessTLS.HUTPort = port
+			// Trojan-TLS 族端口
+			case "trojan-wst", "trojan_wst":
+				cfgMgr.Protocols.TrojanTLS.WSTPort = port
+			case "trojan-hut", "trojan_hut":
+				cfgMgr.Protocols.TrojanTLS.HUTPort = port
+			}
+		}
+	}
+
+	// 3. 保存协议缓存
+	reply(CommandResult{Type: "progress", Stage: "保存协议配置缓存..."})
+	if err := cfgMgr.SaveToCache(); err != nil {
+		log.Printf("[Agent] push-config: 保存协议缓存失败: %v", err)
+		reply(CommandResult{Type: "result", Status: "error", Message: fmt.Sprintf("保存协议缓存失败: %v", err)})
+		return
+	}
+
+	// 4. 确保自签证书存在（部分协议需要）
+	if cfgMgr.Protocols.NeedSelfSignedCert() {
+		reply(CommandResult{Type: "progress", Stage: "检查自签证书..."})
+		if err := cfgMgr.EnsureCerts("nodectl-agent"); err != nil {
+			log.Printf("[Agent] push-config: 证书生成失败: %v", err)
+		}
+	}
+
+	// 5. 确保 sing-box 已安装
+	installer := rt.singboxMgr.GetInstaller()
+	if !installer.IsInstalled() {
+		reply(CommandResult{Type: "progress", Stage: "sing-box 未安装，正在下载..."})
+		if err := installer.EnsureInstalled(ctx); err != nil {
+			reply(CommandResult{Type: "result", Status: "error", Message: fmt.Sprintf("sing-box 安装失败: %v", err)})
+			return
+		}
+	}
+
+	// 6. 停止旧的 sing-box 实例（如果在运行）
+	if rt.singboxMgr.IsRunning() {
+		reply(CommandResult{Type: "progress", Stage: "停止旧的 sing-box 实例..."})
+		rt.singboxMgr.Stop()
+	}
+
+	// 7. 重新生成 sing-box 配置
+	reply(CommandResult{Type: "progress", Stage: "生成 sing-box 配置..."})
+	if err := cfgMgr.GenerateAndSave(); err != nil {
+		reply(CommandResult{Type: "result", Status: "error", Message: fmt.Sprintf("生成配置失败: %v", err)})
+		return
+	}
+
+	// 8. 启动 sing-box
+	reply(CommandResult{Type: "progress", Stage: "启动 sing-box..."})
+	if err := rt.singboxMgr.Start(ctx); err != nil {
+		reply(CommandResult{Type: "result", Status: "error", Message: fmt.Sprintf("启动 sing-box 失败: %v", err)})
+		return
+	}
+
+	// 9. 上报链接更新
+	reply(CommandResult{Type: "progress", Stage: "上报链接更新..."})
+	rt.reportLinksUpdate(ctx, "push-config", payload.Protocols)
+
+	// 10. 如果有 Tunnel 配置，刷新 Tunnel
+	if err := rt.refreshTunnelAfterCoreChange(payload.Tunnel, reply); err != nil {
+		reply(CommandResult{Type: "result", Status: "error", Message: err.Error()})
+		return
+	}
+
+	log.Printf("[Agent] push-config: 配置推送完成，启用协议: %v", payload.Protocols)
+	reply(CommandResult{Type: "result", Status: "ok", Message: fmt.Sprintf("配置推送完成，已启用 %d 个协议", len(payload.Protocols))})
+}
+
 // deriveScriptURL 从 ws_url 推导安装脚本 URL
 func (rt *Runtime) deriveScriptURL() string {
 	// ws_url 形如 wss://domain:port/api/callback/traffic/ws
@@ -346,7 +693,8 @@ func (rt *Runtime) deriveScriptURL() string {
 }
 
 // executeResetLinks 重置节点链接
-// 后端下发 payload 中包含 {"protocols": ["ss", "hy2", ...]}，作为安装脚本的 CLI 参数
+// 🆕 改造：使用内置 Go 代码（api.ResetHandler）替代外部安装脚本执行
+// 后端下发 payload 中包含 {"protocols": ["ss", "hy2", ...]}
 func (rt *Runtime) executeResetLinks(cmd ServerCommand, reply func(CommandResult)) {
 	var payload struct {
 		Protocols []string          `json:"protocols"`
@@ -360,6 +708,35 @@ func (rt *Runtime) executeResetLinks(cmd ServerCommand, reply func(CommandResult
 		return
 	}
 
+	// 🆕 优先使用内置 sing-box 管理器重置链接（无需外部 shell 脚本）
+	if rt.singboxMgr != nil {
+		reply(CommandResult{Type: "progress", Stage: "使用内置管理器重置链接..."})
+
+		cfgMgr := rt.singboxMgr.GetConfigManager()
+
+		// 创建重置处理器
+		publicIP := api.GetPublicIP()
+		apiReporter := api.NewReporter(api.DeriveReportURL(rt.cfg.WSURL), rt.cfg.InstallID)
+		resetHandler := api.NewResetHandler(cfgMgr, rt.singboxMgr, apiReporter, publicIP)
+
+		// 执行批量重置
+		if err := resetHandler.ResetMultiple(context.Background(), payload.Protocols); err != nil {
+			reply(CommandResult{Type: "result", Status: "error", Message: fmt.Sprintf("重置链接失败: %v", err)})
+			return
+		}
+
+		// 🆕 通过 WS 上报链接更新
+		rt.reportLinksUpdate(context.Background(), "reset", payload.Protocols)
+
+		if err := rt.refreshTunnelAfterCoreChange(payload.Tunnel, reply); err != nil {
+			reply(CommandResult{Type: "result", Status: "error", Message: err.Error()})
+			return
+		}
+		reply(CommandResult{Type: "result", Status: "ok", Message: "重置链接完成（内置管理器）"})
+		return
+	}
+
+	// 回退：使用旧版 shell 脚本方式（兼容过渡期）
 	scriptURL := rt.deriveScriptURL()
 	protoArgs := strings.Join(payload.Protocols, " ")
 	shellCmd := fmt.Sprintf(`export SKIP_AGENT_INSTALL=1; curl -fsSL "%s" | bash -s -- %s`, scriptURL, protoArgs)
@@ -375,7 +752,8 @@ func (rt *Runtime) executeResetLinks(cmd ServerCommand, reply func(CommandResult
 	reply(CommandResult{Type: "result", Status: "ok", Message: "重置链接完成"})
 }
 
-// executeReinstallSingbox 重新安装 sing-box（复用安装脚本，同样从 payload 读取协议）
+// executeReinstallSingbox 重新安装 sing-box
+// 🆕 改造：使用内置安装器替代外部安装脚本
 func (rt *Runtime) executeReinstallSingbox(cmd ServerCommand, reply func(CommandResult)) {
 	var payload struct {
 		Protocols []string          `json:"protocols"`
@@ -389,6 +767,58 @@ func (rt *Runtime) executeReinstallSingbox(cmd ServerCommand, reply func(Command
 		return
 	}
 
+	// 🆕 优先使用内置管理器重新安装
+	if rt.singboxMgr != nil {
+		reply(CommandResult{Type: "progress", Stage: "使用内置管理器重新安装..."})
+
+		ctx := context.Background()
+
+		// 1. 停止 sing-box
+		reply(CommandResult{Type: "progress", Stage: "停止 sing-box..."})
+		rt.singboxMgr.Stop()
+
+		// 2. 重新下载 sing-box
+		reply(CommandResult{Type: "progress", Stage: "下载 sing-box..."})
+		installer := rt.singboxMgr.GetInstaller()
+		if err := installer.EnsureInstalled(ctx); err != nil {
+			reply(CommandResult{Type: "result", Status: "error", Message: fmt.Sprintf("下载 sing-box 失败: %v", err)})
+			return
+		}
+
+		// 3. 确保证书
+		reply(CommandResult{Type: "progress", Stage: "检查证书..."})
+		cfgMgr := rt.singboxMgr.GetConfigManager()
+		cfgMgr.EnsureCerts("nodectl-agent")
+
+		// 4. 更新协议配置
+		for _, proto := range payload.Protocols {
+			cfgMgr.Protocols.SetEnabled(proto, true)
+		}
+		cfgMgr.SaveToCache()
+
+		// 5. 生成配置并启动
+		reply(CommandResult{Type: "progress", Stage: "生成配置并启动..."})
+		if err := cfgMgr.GenerateAndSave(); err != nil {
+			reply(CommandResult{Type: "result", Status: "error", Message: fmt.Sprintf("生成配置失败: %v", err)})
+			return
+		}
+		if err := rt.singboxMgr.Start(ctx); err != nil {
+			reply(CommandResult{Type: "result", Status: "error", Message: fmt.Sprintf("启动 sing-box 失败: %v", err)})
+			return
+		}
+
+		// 6. 上报链接更新
+		rt.reportLinksUpdate(ctx, "reinstall", payload.Protocols)
+
+		if err := rt.refreshTunnelAfterCoreChange(payload.Tunnel, reply); err != nil {
+			reply(CommandResult{Type: "result", Status: "error", Message: err.Error()})
+			return
+		}
+		reply(CommandResult{Type: "result", Status: "ok", Message: "重新安装完成（内置管理器）"})
+		return
+	}
+
+	// 回退：使用旧版 shell 脚本方式
 	scriptURL := rt.deriveScriptURL()
 	protoArgs := strings.Join(payload.Protocols, " ")
 	shellCmd := fmt.Sprintf(`export SKIP_AGENT_INSTALL=1; curl -fsSL "%s" | bash -s -- %s`, scriptURL, protoArgs)
