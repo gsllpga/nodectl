@@ -313,16 +313,14 @@ func Start(tmplFS embed.FS) {
 
 	// ========== C. 公开/工具 路由 ==========
 	mux.HandleFunc("/api/public/new-install-script", withSecure(apiNewInstallScript)) // 🆕 新版极简安装脚本
-	mux.HandleFunc("/api/public/download/agent", apiDownloadAgent)                    // 🆕 Agent 二进制下载
+	mux.HandleFunc("/api/public/download/agent", apiDownloadAgent)                    // 🆕 Agent 二进制下载302中转层，强制匹配面板和agent版本
 	mux.HandleFunc("/api/agent/init-config", withSecure(apiAgentInitConfig))          // 🆕 Agent 初始化配置
-	mux.HandleFunc("/api/callback/report", withSecure(apiCallbackReport))             // 节点上报
-	mux.HandleFunc("/api/callback/reset-protocol", withSecure(apiResetProtocol))      // 🆕 协议重置接口
 	mux.HandleFunc("/api/callback/traffic/ws", apiCallbackTrafficWS)                  // Agent WS 统一上报通道
 	// 实时流量订阅 (前端 WebSocket)
 	mux.HandleFunc("/api/traffic/live", withAuthAndSecure(apiTrafficLive)) // 前端实时流量订阅
 
 	// ========== 节点控制 (Agent 命令下发) ==========
-	mux.HandleFunc("/api/node/control/reset-links", withAuthAndSecure(apiNodeControlResetLinks))              // 远程重置链接
+	mux.HandleFunc("/api/callback/reset-protocol", withAuthAndSecure(apiResetProtocol))                       // 🆕 协议重置接口（管理员操作，需登录鉴权）
 	mux.HandleFunc("/api/node/control/reinstall-singbox", withAuthAndSecure(apiNodeControlReinstall))         // 远程重装 sing-box
 	mux.HandleFunc("/api/node/control/check-agent-update", withAuthAndSecure(apiNodeControlCheckAgentUpdate)) // 远程检查 Agent 更新
 	mux.HandleFunc("/api/node/control/push-config", withAuthAndSecure(apiNodeControlPushConfig))              // 推送协议配置到 Agent

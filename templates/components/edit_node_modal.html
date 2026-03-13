@@ -1464,32 +1464,51 @@
         };
     }
 
-    // 远程重置节点链接（流式输出 - 内嵌右栏）
+    // 远程重置节点协议（流式输出 - 内嵌右栏，调用新版 reset-protocol 接口）
     function confirmResetNodeLinks() {
         const uuid = document.getElementById('editNodeUUID').value;
         const name = document.getElementById('editNodeName').value || uuid;
         if (!uuid) return;
 
-        if (!confirm('确定要远程重置「' + name + '」的链接？\n此操作将重写节点 sing-box 配置并重启服务。')) {
+        // 从内存数据中获取 install_id 和协议列表
+        const node = window.allNodesData && window.allNodesData[uuid];
+        if (!node || !node.install_id) {
+            alert('无法获取节点安装信息，请刷新页面后重试。');
+            return;
+        }
+
+        const protocols = node.links ? Object.keys(node.links) : [];
+        if (protocols.length === 0) {
+            alert('该节点没有已知协议信息，无法重置。');
+            return;
+        }
+
+        if (!confirm('确定要远程重置「' + name + '」的协议链接？\n此操作将重写节点 sing-box 配置并重启服务。')) {
             return;
         }
 
         const btn = document.getElementById('btnResetNodeLinks');
         if (btn) { btn.disabled = true; btn.style.opacity = '0.5'; }
 
-        showCmdLogPanel('重置链接');
+        showCmdLogPanel('重置协议');
 
-        fetch('/api/node/control/reset-links', {
+        fetch('/api/callback/reset-protocol', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ uuid: uuid })
+            body: JSON.stringify({
+                install_id: node.install_id,
+                protocols: protocols,
+                action: 'reset'
+            })
         })
         .then(res => res.json())
         .then(data => {
             if (data.status === 'success' && data.command_id) {
                 streamCommandLog(data.command_id);
+            } else if (data.status === 'success' && data.data && data.data.command_id) {
+                streamCommandLog(data.data.command_id);
             } else {
-                appendCmdLog({ type: 'error', message: data.message || '命令下发失败' });
+                appendCmdLog({ type: 'error', message: data.message || (data.data && typeof data.data === 'string' ? data.data : '命令下发失败') });
             }
         })
         .catch(err => {

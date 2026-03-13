@@ -138,14 +138,6 @@ func apiDownloadAgent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	logger.Log.Info("Agent 下载重定向",
-		"arch", arch,
-		"channel", channel,
-		"releaseTag", releaseTag,
-		"url", downloadURL,
-		"ip", getClientIP(r),
-	)
-
 	// 重定向到 GitHub Release
 	http.Redirect(w, r, downloadURL, http.StatusFound)
 }
