@@ -4716,28 +4716,6 @@
                             <span style="display:inline-block;width:78px;color:#888;">支持协议:</span>
                             <span style="color:#333;">${cftEscapeHtml(supportedText)}</span>
                         </div>
-                        <div style="margin-bottom:4px; display: flex; align-items: center; gap: 8px;">
-                            <span style="display:inline-block;width:78px;color:#888;flex-shrink:0;">优选地址:</span>
-                            <div style="display:flex;flex:1;gap:6px;align-items:center;">
-                                <input type="text"
-                                    class="cft-input"
-                                    id="cft-preferred-addr-${uuid}"
-                                    value="${cftEscapeHtml(n.tunnel_preferred_address || '')}"
-                                    placeholder="留空使用默认 Tunnel 域名"
-                                    style="flex:1;padding:5px 8px;font-size:12px;min-width:0;"
-                                    onclick="event.stopPropagation()"
-                                    onkeydown="if(event.key==='Enter'){event.preventDefault();cftSavePreferredAddress('${uuid}')}"
-                                />
-                                <button type="button" class="cft-btn cft-btn-primary"
-                                    style="padding:5px 10px;font-size:11px;flex-shrink:0;"
-                                    onclick="event.stopPropagation(); cftSavePreferredAddress('${uuid}')">
-                                    保存
-                                </button>
-                            </div>
-                        </div>
-                        <div style="margin-left:86px;margin-bottom:6px;">
-                            <span style="font-size:10px;color:#999;line-height:1.4;"></span>
-                        </div>
                         <div style="margin-top:10px;display:flex;justify-content:flex-end;">
                             <button type="button"
                                 style="height:28px;padding:0 10px;border:1px solid #ffd0d0;border-radius:6px;background:#fff5f5;color:#c0392b;font-size:12px;cursor:pointer;"
@@ -4825,35 +4803,6 @@
         } catch (e) {
             cftShowSaveIndicator("error", e.message || "删除失败");
             cftLoadTunnelNodeSettings();
-        }
-    }
-
-    async function cftSavePreferredAddress(uuid) {
-        if (!uuid) return;
-        const inputEl = document.getElementById("cft-preferred-addr-" + uuid);
-        if (!inputEl) return;
-        const addr = inputEl.value.trim();
-
-        cftShowSaveIndicator("saving", "正在保存优选地址...");
-        try {
-            const resp = await fetch("/api/tunnel-node/update", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                    uuid: uuid,
-                    tunnel_preferred_address: addr,
-                }),
-            });
-            const json = await resp.json();
-            if (json.status !== "success") {
-                throw new Error(json.message || "保存失败");
-            }
-            cftShowSaveIndicator(
-                "success",
-                addr ? "优选地址已保存" : "已清除优选地址",
-            );
-        } catch (e) {
-            cftShowSaveIndicator("error", e.message || "保存失败");
         }
     }
 
