@@ -131,14 +131,14 @@ detect_arch() {
     esac
 }
 
-# 注册 na 快捷命令
+# 注册 na 快捷命令（仅卸载功能）
 install_na_command() {
     info "注册 na 快捷命令..."
 
     cat > /usr/local/bin/na <<'NAEOF'
 #!/usr/bin/env bash
 # NodeCTL Agent 快捷管理命令 (na)
-# 用法: na [命令]  或直接运行 na 进入交互式菜单
+# 用法: na uninstall  或直接运行 na 进入交互式菜单
 
 set -euo pipefail
 
@@ -172,93 +172,12 @@ detect_init() {
 
 INIT_SYS=$(detect_init)
 
-# ========== 各功能实现 ==========
-
-do_start() {
-    info "启动 nodectl-agent..."
-    if [ "$INIT_SYS" = "openrc" ]; then
-        rc-service nodectl-agent start
-    else
-        systemctl start nodectl-agent
-    fi
-    ok "nodectl-agent 已启动"
-}
-
-do_stop() {
-    info "停止 nodectl-agent..."
-    if [ "$INIT_SYS" = "openrc" ]; then
-        rc-service nodectl-agent stop
-    else
-        systemctl stop nodectl-agent
-    fi
-    ok "nodectl-agent 已停止"
-}
-
-do_restart() {
-    info "重启 nodectl-agent..."
-    if [ "$INIT_SYS" = "openrc" ]; then
-        rc-service nodectl-agent restart
-    else
-        systemctl restart nodectl-agent
-    fi
-    ok "nodectl-agent 已重启"
-}
-
-do_status() {
-    echo ""
-    echo -e "${CYAN}========== NodeCTL Agent 状态 ==========${NC}"
-    if [ "$INIT_SYS" = "openrc" ]; then
-        rc-service nodectl-agent status 2>/dev/null || warn "服务未运行"
-    else
-        systemctl status nodectl-agent --no-pager 2>/dev/null || warn "服务未运行"
-    fi
-    echo ""
-    # 检查 sing-box 进程
-    if pidof sing-box >/dev/null 2>&1; then
-        ok "sing-box 运行中 (PID: $(pidof sing-box | awk '{print $1}'))"
-    else
-        warn "sing-box 未运行"
-    fi
-    echo -e "${CYAN}========================================${NC}"
-}
-
-do_log() {
-    info "显示最近 50 行日志 (Ctrl+C 退出实时跟踪)..."
-    echo ""
-    if [ -f /var/log/nodectl-agent.log ]; then
-        tail -50f /var/log/nodectl-agent.log
-    else
-        warn "日志文件不存在: /var/log/nodectl-agent.log"
-        if [ "$INIT_SYS" = "systemd" ]; then
-            info "尝试使用 journalctl..."
-            journalctl -u nodectl-agent -n 50 -f
-        fi
-    fi
-}
-
-do_singbox_log() {
-    info "显示 sing-box 最近 50 行日志 (Ctrl+C 退出实时跟踪)..."
-    echo ""
-    if [ -f /var/log/nodectl-agent/singbox.log ]; then
-        tail -50f /var/log/nodectl-agent/singbox.log
-    else
-        warn "sing-box 日志文件不存在: /var/log/nodectl-agent/singbox.log"
-    fi
-}
+# ========== 卸载功能 ==========
 
 do_uninstall() {
     echo ""
-    echo -e "${RED}╔══════════════════════════════════════════════╗${NC}"
-    echo -e "${RED}║    ⚠️  警告：即将完整卸载 NodeCTL Agent      ║${NC}"
-    echo -e "${RED}║                                              ║${NC}"
-    echo -e "${RED}║  将删除以下内容：                            ║${NC}"
-    echo -e "${RED}║    • nodectl-agent 服务和二进制               ║${NC}"
-    echo -e "${RED}║    • sing-box 二进制和配置                    ║${NC}"
-    echo -e "${RED}║    • 所有配置文件                             ║${NC}"
-    echo -e "${RED}║    • 所有日志文件                             ║${NC}"
-    echo -e "${RED}║    • 证书文件                                 ║${NC}"
-    echo -e "${RED}║    • na 快捷命令                              ║${NC}"
-    echo -e "${RED}╚══════════════════════════════════════════════╝${NC}"
+    warn "⚠️  即将完整卸载 NodeCTL Agent"
+    warn "将删除: 服务、二进制、sing-box、配置、证书、日志、na 命令"
     echo ""
     read -r -p "确认卸载？输入 yes 继续: " confirm
     if [ "$confirm" != "yes" ]; then
@@ -325,74 +244,17 @@ do_uninstall() {
     echo ""
 }
 
-do_update() {
-    info "重新下载并更新 nodectl-agent..."
-    # 读取当前配置中的 panel_url
-    if [ -f /etc/nodectl-agent/config.json ]; then
-        PANEL_URL=$(grep -o '"panel_url"[[:space:]]*:[[:space:]]*"[^"]*"' /etc/nodectl-agent/config.json | head -1 | sed 's/.*"panel_url"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/')
-    else
-        err "配置文件不存在，无法获取面板地址"
-        return 1
-    fi
-
-    if [ -z "$PANEL_URL" ]; then
-        err "无法从配置中读取 panel_url"
-        return 1
-    fi
-
-    # 检测架构
-    local arch=$(uname -m)
-    case "$arch" in
-        x86_64|amd64) arch="amd64" ;;
-        aarch64|arm64) arch="arm64" ;;
-        *) err "不支持的架构: $arch"; return 1 ;;
-    esac
-
-    local DOWNLOAD_URL="${PANEL_URL}/api/public/download/agent?arch=${arch}"
-    local AGENT_BIN="/usr/local/bin/nodectl-agent"
-
-    # 停止服务
-    do_stop 2>/dev/null || true
-
-    info "下载新版本..."
-    curl -fsSL "$DOWNLOAD_URL" -o "$AGENT_BIN"
-    chmod +x "$AGENT_BIN"
-
-    # 启动服务
-    do_start
-    ok "nodectl-agent 更新完成"
-}
-
 # ========== 交互式菜单 ==========
 
 show_menu() {
     echo ""
-    echo -e "${CYAN}╔══════════════════════════════════════════════╗${NC}"
-    echo -e "${CYAN}║        NodeCTL Agent 管理面板 (na)           ║${NC}"
-    echo -e "${CYAN}╠══════════════════════════════════════════════╣${NC}"
-    echo -e "${CYAN}║                                              ║${NC}"
-    echo -e "${CYAN}║${NC}  ${GREEN}1)${NC} 启动 Agent                               ${CYAN}║${NC}"
-    echo -e "${CYAN}║${NC}  ${GREEN}2)${NC} 停止 Agent                               ${CYAN}║${NC}"
-    echo -e "${CYAN}║${NC}  ${GREEN}3)${NC} 重启 Agent                               ${CYAN}║${NC}"
-    echo -e "${CYAN}║${NC}  ${GREEN}4)${NC} 查看状态                                 ${CYAN}║${NC}"
-    echo -e "${CYAN}║${NC}  ${GREEN}5)${NC} 查看 Agent 日志                          ${CYAN}║${NC}"
-    echo -e "${CYAN}║${NC}  ${GREEN}6)${NC} 查看 sing-box 日志                       ${CYAN}║${NC}"
-    echo -e "${CYAN}║${NC}  ${GREEN}7)${NC} 更新 Agent                               ${CYAN}║${NC}"
-    echo -e "${CYAN}║${NC}  ${RED}8)${NC} 完整卸载 (清除所有数据)                  ${CYAN}║${NC}"
-    echo -e "${CYAN}║${NC}  ${YELLOW}0)${NC} 退出                                     ${CYAN}║${NC}"
-    echo -e "${CYAN}║                                              ║${NC}"
-    echo -e "${CYAN}╚══════════════════════════════════════════════╝${NC}"
+    echo -e "${CYAN}NodeCTL Agent 管理 (na)${NC}"
+    echo -e "  ${RED}1)${NC} 完整卸载"
+    echo -e "  ${YELLOW}0)${NC} 退出"
     echo ""
-    read -r -p "请选择 [0-8]: " choice
+    read -r -p "请选择: " choice
     case "$choice" in
-        1) do_start ;;
-        2) do_stop ;;
-        3) do_restart ;;
-        4) do_status ;;
-        5) do_log ;;
-        6) do_singbox_log ;;
-        7) do_update ;;
-        8) do_uninstall ;;
+        1) do_uninstall ;;
         0) echo "退出"; exit 0 ;;
         *) warn "无效选择，请重试" ;;
     esac
@@ -407,13 +269,6 @@ show_help() {
     echo "用法: na [命令]"
     echo ""
     echo "可用命令:"
-    echo "  start       启动 Agent"
-    echo "  stop        停止 Agent"
-    echo "  restart     重启 Agent"
-    echo "  status      查看运行状态"
-    echo "  log         查看 Agent 日志"
-    echo "  sblog       查看 sing-box 日志"
-    echo "  update      更新 Agent"
     echo "  uninstall   完整卸载 (清除所有数据)"
     echo "  help        显示此帮助"
     echo ""
@@ -433,13 +288,6 @@ if [ $# -eq 0 ]; then
 else
     # 有参数，直接执行对应命令
     case "$1" in
-        start)      do_start ;;
-        stop)       do_stop ;;
-        restart)    do_restart ;;
-        status)     do_status ;;
-        log|logs)   do_log ;;
-        sblog)      do_singbox_log ;;
-        update)     do_update ;;
         uninstall)  do_uninstall ;;
         help|--help|-h) show_help ;;
         *)
@@ -579,13 +427,9 @@ SVCEOF
 
     info ""
     info "快捷管理命令:"
-    info "  na          进入交互式管理菜单"
-    info "  na start    启动 Agent"
-    info "  na stop     停止 Agent"
-    info "  na restart  重启 Agent"
-    info "  na status   查看状态"
-    info "  na log      查看日志"
-    info "  na help     查看所有命令"
+    info "  na            进入交互式管理菜单"
+    info "  na uninstall  完整卸载 Agent"
+    info "  na help       查看帮助"
 }
 
 main
