@@ -6,8 +6,11 @@ package server
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"strings"
+	"sync"
+	"time"
 
 	"nodectl/internal/database"
 	"nodectl/internal/logger"
@@ -84,6 +87,10 @@ func apiAgentInitConfig(w http.ResponseWriter, r *http.Request) {
 // apiDownloadAgent 代理 Agent 二进制下载
 // GET /api/public/download/agent?arch={amd64|arm64}&channel={stable|alpha}
 // 安装脚本通过此接口下载与面板版本匹配的 Agent 二进制
+//
+// 核心逻辑：通过 GitHub API 查询面板版本对应的 Release，从 assets 列表中
+// 动态匹配 agent 文件名（前缀 nodectl-agent-linux-{arch}-），避免面板版本号
+// 与 agent 版本号不一致导致 404 错误。
 func apiDownloadAgent(w http.ResponseWriter, r *http.Request) {
 	arch := strings.TrimSpace(r.URL.Query().Get("arch"))
 	if arch == "" {
@@ -109,39 +116,32 @@ func apiDownloadAgent(w http.ResponseWriter, r *http.Request) {
 	// 获取 GitHub 仓库信息
 	githubRepo := loadSysConfigValue("github_repo")
 	if githubRepo == "" {
-		githubRepo = "NodeCTL/nodectl" // 默认仓库
+		githubRepo = "hobin66/nodectl" // 默认仓库
 	}
-
-	// 获取最新 Agent 版本号
-	agentVersion := getLatestAgentVersion(channel)
-	if agentVersion == "" {
-		http.Error(w, "unable to determine agent version", http.StatusInternalServerError)
-		return
-	}
-
-	// 构造文件名（与 GitHub Actions 工作流保持一致）
-	// 工作流中 Agent 文件名格式：nodectl-agent-{goos}-{goarch}-{AGENT_VERSION}
-	//   - release-main.yml:   AGENT_VERSION="v0.2.0"       → nodectl-agent-linux-amd64-v0.2.0
-	//   - release-alpha.yml:  AGENT_VERSION="v0.2.0-alpha"  → nodectl-agent-linux-amd64-v0.2.0-alpha
-	// 注意：alpha 后缀是版本号的一部分，不是额外追加到文件名末尾的
-	filename := fmt.Sprintf("nodectl-agent-linux-%s-%s", arch, agentVersion)
 
 	// 构造 Release Tag（使用面板版本号，因为 Agent 二进制附在面板的 Release 中）
-	// 工作流中 Release Tag：
-	//   - release-main.yml:  tag_name = "v0.4.0"        （面板版本号，无后缀）
-	//   - release-alpha.yml: tag_name = "v0.4.0-alpha"   （面板版本号 + -alpha 后缀）
 	releaseTag := getPanelReleaseTag(channel)
 
-	// GitHub Release 下载 URL
-	downloadURL := fmt.Sprintf(
-		"https://github.com/%s/releases/download/%s/%s",
-		githubRepo, releaseTag, filename,
-	)
+	// 通过 GitHub API 动态查找 agent 文件的真实下载 URL
+	// 这样即使 agent 版本号与面板版本号不同也能正确匹配
+	agentPrefix := fmt.Sprintf("nodectl-agent-linux-%s-", arch)
+	downloadURL, err := findAgentAssetURL(githubRepo, releaseTag, agentPrefix)
+	if err != nil {
+		logger.Log.Error("查找 Agent 下载地址失败",
+			"repo", githubRepo,
+			"tag", releaseTag,
+			"prefix", agentPrefix,
+			"error", err,
+			"ip", getClientIP(r),
+		)
+		http.Error(w, fmt.Sprintf("unable to find agent binary: %v", err), http.StatusInternalServerError)
+		return
+	}
 
 	logger.Log.Info("Agent 下载重定向",
 		"arch", arch,
 		"channel", channel,
-		"version", agentVersion,
+		"releaseTag", releaseTag,
 		"url", downloadURL,
 		"ip", getClientIP(r),
 	)
@@ -307,23 +307,94 @@ func loadSysConfigValue(key string) string {
 	return strings.TrimSpace(cfg.Value)
 }
 
-// getLatestAgentVersion 获取最新 Agent 版本号
-// 优先从数据库配置读取，否则使用面板版本号推导
-func getLatestAgentVersion(channel string) string {
-	// 方案 1：从数据库配置读取
-	versionKey := "agent_version_" + channel
-	if v := loadSysConfigValue(versionKey); v != "" {
-		return v
+// ============================================================
+//  GitHub Release Asset 动态查找（带缓存）
+// ============================================================
+
+// agentAssetCache 缓存 GitHub Release 中 agent 文件的下载 URL
+// key = "{repo}|{tag}|{prefix}"，value = browser_download_url
+var agentAssetCache = struct {
+	sync.RWMutex
+	data   map[string]string
+	expiry map[string]time.Time
+	ttl    time.Duration
+}{
+	data:   make(map[string]string),
+	expiry: make(map[string]time.Time),
+	ttl:    5 * time.Minute, // 缓存 5 分钟
+}
+
+// findAgentAssetURL 通过 GitHub API 查找指定 Release 中匹配前缀的 agent 二进制下载 URL
+// 参数：
+//   - repo: GitHub 仓库（如 "hobin66/nodectl"）
+//   - tag:  Release tag（如 "v0.4.32-alpha"）
+//   - prefix: 文件名前缀（如 "nodectl-agent-linux-amd64-"）
+//
+// 返回匹配的第一个（非 .sha256）asset 的 browser_download_url
+func findAgentAssetURL(repo, tag, prefix string) (string, error) {
+	cacheKey := repo + "|" + tag + "|" + prefix
+
+	// 1. 检查缓存
+	agentAssetCache.RLock()
+	if url, ok := agentAssetCache.data[cacheKey]; ok {
+		if time.Now().Before(agentAssetCache.expiry[cacheKey]) {
+			agentAssetCache.RUnlock()
+			return url, nil
+		}
+	}
+	agentAssetCache.RUnlock()
+
+	// 2. 调用 GitHub API 查询 Release
+	apiURL := fmt.Sprintf("https://api.github.com/repos/%s/releases/tags/%s", repo, tag)
+	client := &http.Client{Timeout: 15 * time.Second}
+	req, err := http.NewRequest("GET", apiURL, nil)
+	if err != nil {
+		return "", fmt.Errorf("构造请求失败: %w", err)
+	}
+	req.Header.Set("Accept", "application/vnd.github.v3+json")
+	req.Header.Set("User-Agent", "nodectl-panel/"+version.Version)
+
+	// 如果配置了 GitHub Token 则使用（提高 API 限额）
+	if token := loadSysConfigValue("github_token"); token != "" {
+		req.Header.Set("Authorization", "token "+token)
 	}
 
-	// 方案 2：使用面板当前版本推导（面板和 Agent 可能版本不同步，使用固定值）
-	// 读取 GitHub Action 中注入的 agent_version
-	if v := loadSysConfigValue("agent_version"); v != "" {
-		return v
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("GitHub API 请求失败: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
+		return "", fmt.Errorf("GitHub API 返回 %d: %s", resp.StatusCode, string(body))
 	}
 
-	// 方案 3：使用面板版本作为回退
-	return version.Version
+	// 3. 解析 Release JSON
+	var release struct {
+		Assets []struct {
+			Name               string `json:"name"`
+			BrowserDownloadURL string `json:"browser_download_url"`
+		} `json:"assets"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&release); err != nil {
+		return "", fmt.Errorf("解析 Release JSON 失败: %w", err)
+	}
+
+	// 4. 在 assets 中查找匹配前缀且非 .sha256 的文件
+	for _, asset := range release.Assets {
+		if strings.HasPrefix(asset.Name, prefix) && !strings.HasSuffix(asset.Name, ".sha256") {
+			// 写入缓存
+			agentAssetCache.Lock()
+			agentAssetCache.data[cacheKey] = asset.BrowserDownloadURL
+			agentAssetCache.expiry[cacheKey] = time.Now().Add(agentAssetCache.ttl)
+			agentAssetCache.Unlock()
+
+			return asset.BrowserDownloadURL, nil
+		}
+	}
+
+	return "", fmt.Errorf("Release %s 中未找到匹配 %s* 的 agent 文件", tag, prefix)
 }
 
 // getPanelReleaseTag 根据渠道使用面板版本号生成 GitHub Release Tag

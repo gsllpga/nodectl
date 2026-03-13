@@ -59,6 +59,45 @@ detect_os() {
 }
 
 # -----------------------
+# 安装基础依赖（curl）
+install_deps() {
+    if command -v curl >/dev/null 2>&1; then
+        info "curl 已存在，跳过安装"
+        return
+    fi
+
+    info "未检测到 curl，正在自动安装..."
+    case "$OS" in
+        debian)
+            apt-get update -qq >/dev/null 2>&1
+            apt-get install -y -qq curl >/dev/null 2>&1
+            ;;
+        redhat)
+            if command -v dnf >/dev/null 2>&1; then
+                dnf install -y -q curl >/dev/null 2>&1
+            else
+                yum install -y -q curl >/dev/null 2>&1
+            fi
+            ;;
+        alpine)
+            apk update >/dev/null 2>&1
+            apk add --no-cache curl >/dev/null 2>&1
+            ;;
+        *)
+            err "未知系统类型，无法自动安装 curl，请手动安装后重试"
+            exit 1
+            ;;
+    esac
+
+    if command -v curl >/dev/null 2>&1; then
+        info "curl 安装成功 ✓"
+    else
+        err "curl 安装失败，请手动安装后重试"
+        exit 1
+    fi
+}
+
+# -----------------------
 # 检查 root 权限
 check_root() {
     if [ "$(id -u)" != "0" ]; then
@@ -430,6 +469,9 @@ main() {
     local ARCH=$(detect_arch)
 
     info "检测到架构: $ARCH"
+
+    # 0.5 安装基础依赖（确保 curl 可用）
+    install_deps
 
     # 1. 清理旧 agent（如果存在）
     if [ "$OS" = "alpine" ]; then
