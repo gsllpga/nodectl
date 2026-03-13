@@ -1,0 +1,130 @@
+name: Sync upstream releases
+
+on:
+  workflow_dispatch:
+  # schedule:
+  #   - cron: "17 * * * *"   # 每小时同步一次；不需要定时的话删掉这段
+
+permissions:
+  contents: write
+
+env:
+  UPSTREAM_REPO: hobin66/nodectl   # 改成上游仓库，如 octocat/Hello-World
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Sync releases from upstream
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          python <<'PY'
+          import json
+          import os
+          import shutil
+          import subprocess
+          import tempfile
+
+          upstream = os.environ["UPSTREAM_REPO"]
+          target = os.environ["GITHUB_REPOSITORY"]
+          env = os.environ.copy()
+
+          def run(cmd, check=True, capture_output=True):
+              return subprocess.run(
+                  cmd,
+                  env=env,
+                  check=check,
+                  text=True,
+                  capture_output=capture_output,
+              )
+
+          def list_releases(repo):
+              releases = []
+              page = 1
+              while True:
+                  r = run(
+                      ["gh", "api", f"repos/{repo}/releases?per_page=100&page={page}"]
+                  )
+                  batch = json.loads(r.stdout)
+                  if not batch:
+                      break
+                  releases.extend(batch)
+                  page += 1
+              return releases
+
+          for rel in list_releases(upstream):
+              tag = rel["tag_name"]
+              title = rel.get("name") or tag
+              body = rel.get("body") or ""
+              target_commitish = rel.get("target_commitish") or ""
+              prerelease = rel.get("prerelease", False)
+
+              print(f"==> syncing {tag}")
+
+              with tempfile.NamedTemporaryFile("w", delete=False, encoding="utf-8") as nf:
+                  nf.write(body)
+                  notes_file = nf.name
+
+              exists = subprocess.run(
+                  ["gh", "release", "view", tag, "-R", target],
+                  env=env,
+                  stdout=subprocess.DEVNULL,
+                  stderr=subprocess.DEVNULL,
+                  text=True,
+              ).returncode == 0
+
+              try:
+                  if exists:
+                      cmd = [
+                          "gh", "release", "edit", tag,
+                          "-R", target,
+                          "--title", title,
+                          "--notes-file", notes_file,
+                      ]
+                      if target_commitish:
+                          cmd += ["--target", target_commitish]
+                      subprocess.run(cmd, env=env, check=True)
+                  else:
+                      cmd = [
+                          "gh", "release", "create", tag,
+                          "-R", target,
+                          "--title", title,
+                          "--notes-file", notes_file,
+                      ]
+                      if target_commitish:
+                          cmd += ["--target", target_commitish]
+                      if prerelease:
+                          cmd.append("--prerelease")
+                      subprocess.run(cmd, env=env, check=True)
+
+                  tmpdir = tempfile.mkdtemp(prefix="release-sync-")
+                  try:
+                      dl = subprocess.run(
+                          ["gh", "release", "download", tag, "-R", upstream, "-D", tmpdir, "--clobber"],
+                          env=env,
+                          text=True,
+                          capture_output=True,
+                      )
+                      msg = (dl.stdout or "") + "\n" + (dl.stderr or "")
+                      if dl.returncode != 0 and "no assets" not in msg.lower():
+                          raise subprocess.CalledProcessError(dl.returncode, dl.args, dl.stdout, dl.stderr)
+
+                      files = [os.path.join(tmpdir, name) for name in os.listdir(tmpdir)]
+                      if files:
+                          subprocess.run(
+                              ["gh", "release", "upload", tag, *files, "-R", target, "--clobber"],
+                              env=env,
+                              check=True,
+                          )
+                  finally:
+                      shutil.rmtree(tmpdir, ignore_errors=True)
+
+              finally:
+                  try:
+                      os.unlink(notes_file)
+                  except FileNotFoundError:
+                      pass
+          PY
