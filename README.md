@@ -1,63 +1,135 @@
-﻿# NodeCtl
+﻿# 🎯 NodeCtl：你的个人节点管理神器
 
-> 轻量、高效的个人节点与订阅管理面板。如果你有托管到cf的域名和一台无论有没有公网的服务器，你都可以体验完整的nodectl。
-
-欢迎加入nodectl 的tg频道 https://t.me/nodectl
-
-## 📖 简介
-
-NodeCtl 提供简洁直观的 Web 界面与稳定的 Golang 后台，采用非内嵌调用二进制形式支持多种开源工具帮助你集中管理**自建节点**和**机场订阅**以及**CF相关功能**。同时兼顾易用性与高度可定制的分流组网能力。
-
-## ✨ 核心功能
-
-### 🚀 自建节点管理
-- **一键安装**：在 VPS 执行一行命令即可完成部署并自动回传链接至面板
-- **远程控制**：支持面板端远程重置链接、重装 Sing-box、命令执行实时流式输出
-- **流量监控**：自动采集上传/下载流量、限额与重置日，实时掌握节点用量
-- **在线状态**：节点离线自动推送 Telegram 告警通知
-- **协议支持**：内置 Sing-box 运行环境，下发模板高度可自定义
-
-### 🛩️ 机场订阅聚合
-- **多格式导入**：支持 Clash YAML、Base64 等格式一键导入并自动解析
-- **无效节点过滤**：智能识别并过滤"到期提醒"、"剩余流量"等占位节点
-- **批量测速**：内置 Mihomo (Clash Meta) 核心，支持并发真连接测速，SSE 实时推流结果
-- **高级路由调度**：可将机场节点分配为"直连"、"落地"或"禁用"加入自建订阅
-
-
-### ☁️ Cloudflare 集成
-- **内置tunnel隧道**：通过CF token，实现傻瓜式一键启用tunnel隧道，不再需要你做任何配置。
-- **节点使用tunnel隧道**：节点启用tunnel隧道，无需任何操作，你只需要知道开关在哪。
-- **自动签发 SSL**：通过 Cloudflare API 自动签发与续签 SSL 证书，支持热重载无重启切换 HTTP/HTTPS
-
-还未完成，但计划更新 argox warp worker等
-
-
-### 🛡️ 订阅配置分发
-- **多端订阅**：一键生成 Clash (Meta)、V2Ray/Sing-box (Base64) 等格式订阅链接
-- **自定义分流**：可视化编辑直连/代理规则组，集成 GeoIP / Geosite 数据，智能国内外分流
-
-### ⚙️ 系统与架构
-- **零依赖**：纯 Golang 后端，嵌入式 SQLite (GORM)，无需额外安装任何依赖
-- **数据库管理**：对喜欢统计的朋友，增加了psql数据库的支持，可以支持记录任意市场的任意数量节点的流量使用记录。
-- **安全认证**：JWT 令牌鉴权 + 登录 IP 限流策略
-- **系统看板**：实时监控 CPU、内存、Go 协程数及子进程长期运行状态
+> 一个轻量、高效、功能强大的个人节点与订阅管理面板
 
 ---
 
-## 🗺️ 更新计划
+## 🤔 为什么选择 NodeCtl？
 
-- [ ] CF Worker 节点一键部署
-- [ ] CF ArgoX 隧道一键
-- [ ] 自动优选 IP
+如果你：
+- 有自建节点但管理起来很麻烦？
+- 订阅了多个机场但切换配置很繁琐？
+- 想要一个简洁直观的面板来统一管理所有代理服务？
+- 拥有托管在 Cloudflare 的域名，想充分利用 CF 的能力？
+- 没有公网，不会配置tunnel隧道，没有双栈服务器？
+- 想用机场节点做中转，又不会配置？
 
-## 🚀 快速部署
+那么 **NodeCtl** 就是为你量身打造的解决方案！
 
-默认账号admin
-默认密码admin
+![功能概览](https://nodectl-ipopt.hobin.net/Image/功能概述1.webp)
 
-推荐使用 Docker 部署：
+---
 
-### Docker Run
+## ✨ 核心亮点
+
+### 体验完整功能需求
+
+- **一台服务器**：只要能安装，无需公网
+- **一个域名**：托管于CF的域名
+
+### 🚀 自建节点？一行命令搞定！
+
+NodeCtl 让自建节点管理变得前所未有的简单：
+
+- **一键部署**：VPS 上执行一行命令，自动完成安装并回传链接和IP到面板，覆盖所有常用协议。
+- **手动添加**：手动添加协议覆盖主流代理协议
+- **无需公网**：内置CF tunnel隧道管理，仅需配置token即可一键部署
+- **远程控制**：无需SSH登录，面板端直接重置链接、重装 Sing-box
+- **实时监控**：流量使用、在线状态一目了然
+- **离线告警**：节点掉线？可选 Telegram 推送离线通知
+- **流量告警**：服务器流量达到阈值，自动剔除订阅并重置singbox
+
+![节点管理1](https://nodectl-ipopt.hobin.net/Image/节点管理.webp)
+![节点管理2](https://nodectl-ipopt.hobin.net/Image/节点管理2.webp)
+![节点管理3](https://nodectl-ipopt.hobin.net/Image/节点管理3.webp)
+![节点管理4](https://nodectl-ipopt.hobin.net/Image/节点管理4.webp)
+
+### 🛩️ 机场订阅聚合，告别多端配置
+
+- **多格式支持**：Clash YAML、Base64 等格式一键导入
+- **智能过滤**：自动识别并剔除"到期提醒"等无效占位节点
+- **批量测速**：内置 Mihomo 核心，真连接并发测速，SSE 实时推送结果
+- **测速通知**：机场节点太多，测试太久，可选TG通知，完成即通知将无需等待。
+- **灵活调度**：机场节点可分配为直连、落地或禁用，按需组合
+
+![机场订阅](https://nodectl-ipopt.hobin.net/Image/机场管理.webp)
+
+### ☁️ Cloudflare 深度集成
+
+这是 NodeCtl 的一大特色功能：
+⚠️Cloudflare CDN 已明文禁止代理方式使用，对于代理套 CDN 的自行承担风险
+
+
+- **傻瓜式 Tunnel 隧道**：填入 CF Token，一键开启隧道，零配置
+- **节点隧道支持**：节点启用 Tunnel？只需找到开关，点一下
+- **自动 SSL 证书**：通过 CF API 自动签发续签，HTTP/HTTPS 热重载切换
+
+![Cloudflare集成](https://nodectl-ipopt.hobin.net/Image/Cloudflare集成.webp)
+
+### 🛡️ 强大的订阅分发能力
+
+- **多端兼容**：一键生成 Clash (Meta)、V2Ray/Sing-box 等格式订阅链接
+- **可视化分流**：直连/代理规则可视化编辑
+- **智能分流**：集成 GeoIP/Geosite 数据，国内外流量自动分流
+
+![订阅管理](https://nodectl-ipopt.hobin.net/Image/订阅管理.webp)
+
+---
+
+### 🎛️ Clash 高级分流配置
+
+NodeCtl 内置了强大的 Clash Meta 分流配置系统：
+
+- **预置分流模块**：内置 AI（ChatGPT/Claude）、Apple、Microsoft、Telegram、YouTube、Netflix、Steam 等常用分流规则
+- **自定义分流组**：支持创建自定义代理组，自由配置域名、IP、进程规则
+- **可视化规则编辑**：无需手写 YAML，可视化界面轻松添加直连/代理规则
+- **GeoIP/Geosite 集成**：自动加载 MetaCubeX 维护的 mrs 规则集，国内外智能分流
+- **DNS 策略联动**：分流规则自动同步到 DNS 策略，确保解析与路由一致
+- **更新间隔可配置**：订阅、规则集更新频率均可自定义
+
+![Clash分流配置](https://nodectl-ipopt.hobin.net/Image/clash分流1.webp)
+![Clash分流配置](https://nodectl-ipopt.hobin.net/Image/clash分流2.webp)
+
+### 🤖 详细的系统设置
+
+NodeCTL 在为小白用户提供合理的默认参数的同时，为进阶用户留下了可自定义的空间
+
+![系统设置](https://nodectl-ipopt.hobin.net/Image/系统设置.webp)
+
+### 🤖 Agent 远程管控
+
+NodeCtl 采用 **Agent + 中心面板** 架构，为你的节点提供强大的远程管控能力：
+
+#### 📡 实时流量监控
+- **零分配采集**：Agent 采用常驻 FD + 固定栈缓冲设计，每秒采集流量数据零堆分配
+- **WebSocket 实时推送**：毫秒级流量速率上报，面板实时展示上传/下载速度
+- **精准计量**：自动处理计数器回绕、机器重启等边缘场景，流量统计精准可靠
+
+#### 🎮 远程命令执行
+通过 WebSocket 双向通道，面板可向 Agent 下发多种命令：
+- **重置链接**：一键重新生成节点订阅链接
+- **重装 Sing-box**：远程重新安装/更新代理内核
+- **Tunnel 管理**：远程启动/停止 Cloudflare Tunnel 隧道
+- **命令流式输出**：执行结果实时推送，SSE 流式展示进度
+
+---
+
+## 🔥 技术特点
+
+| 特性 | 说明 |
+|------|------|
+| **零依赖** | 纯 Golang 后端 + 嵌入式 SQLite，无需安装额外依赖 |
+| **安全认证** | JWT 令牌鉴权 + 登录 IP 限流策略 |
+| **系统监控** | 实时 CPU、内存、Go 协程数及子进程状态看板 |
+| **数据库扩展** | 支持 PostgreSQL，可记录任意时长的流量使用记录 |
+
+---
+
+## 🚀 三分钟快速部署
+
+写在前面：tunnel隧道原生支持IPV4和IPV6，如果你需要安装agnet，建议使用tunnel域名。（agnet会和安装singbox同步安装，并默认自动更新）
+
+### 方式一：Docker Run（推荐）
 
 ```bash
 docker run -d \
@@ -68,9 +140,7 @@ docker run -d \
   ghcr.io/hobin66/nodectl:latest
 ```
 
-部署成功后访问 `http://你的IP:7878` 即可进入控制台。
-
-### Docker Compose
+### 方式二：Docker Compose
 
 ```yaml
 version: '3'
@@ -85,24 +155,76 @@ services:
       - ./data:/app/data
 ```
 
-运行 `docker-compose up -d` 启动。
+运行 `docker-compose up -d` 即可启动！
+
+部署成功后访问 `http://你的IP:7878`，使用默认账号 `admin` / `admin` 登录。
 
 ---
 
-## 💡 高级设置
+## 🗺️ 未来规划
 
-### 模板与脚本覆盖
+NodeCtl 还在持续进化中，以下是已完成和计划中的功能：
 
-内置安装脚本位于源码 `internal/service/singbox.tpl` 等处。如需自定义，在宿主机 `./data/debug/` 目录下放置同名文件，程序启动时会优先加载该目录下的文件覆盖内置模板。
+### ✅ 已完成功能
+
+**节点管理**
+- ✅ 一键部署 Agent，自动回传节点信息
+- ✅ 支持主流代理协议（VMess、VLESS、Trojan、Shadowsocks、Hysteria2、Tuic 等）
+- ✅ 节点实时状态监控与流量统计
+- ✅ 远程重置链接 / 重装 Sing-box
+- ✅ 节点离线 Telegram 告警通知
+- ✅ 流量阈值告警与自动剔除
+
+**机场订阅**
+- ✅ 多格式机场订阅导入（Clash YAML、Base64）
+- ✅ 智能过滤无效占位节点
+- ✅ 内置 Mihomo 核心批量测速
+- ✅ 测速完成 Telegram 通知
+- ✅ 机场节点分配（直连/落地/禁用）
+
+**Cloudflare 集成**
+- ✅ CF Tunnel 隧道一键部署
+- ✅ 节点 Argo 一键开启
+- ✅ CF API 自动签发/续签 SSL 证书
+- ✅ HTTP/HTTPS 热重载切换
+- ✅ CF 优选 IP 集成
+
+**订阅分发**
+- ✅ 多格式订阅链接生成（Clash Meta、V2Ray、Sing-box）
+- ✅ 可视化分流规则编辑
+- ✅ 预置分流模块（AI、Apple、Microsoft、Telegram、YouTube 等）
+- ✅ 自定义代理组与规则
+
+### 🚧 计划中功能
+
+- [ ] CF Worker 节点加入
+- [ ] CF Warp 落地
 
 ---
 
-## 🤝 声明
+## 🌟 写在最后
 
-1. 代码与构建流程完全开源于 GitHub，欢迎 Review 与 PR。
-2. 请在遵守所在地法律法规的前提下使用本项目，作者不对任何滥用行为承担责任。
-3. NodeCTL无任何技术含量，功能定位是集成个人用户对节点控制所需的绝大部分功能，不会出现多用户，或者多订阅。
-4. 代码AI含量大概有70%，后期功能绝大部分是使用AI完善，仅在架构上进行了一定控制。
-5.感谢以下开源项目
-mihomo内核：https://github.com/MetaCubeX/mihomo
-CF优选工具：https://github.com/XIU2/CloudflareSpeedTest
+NodeCtl 的定位很明确——**为个人用户提供一站式节点管理体验**。它不会做多用户、多订阅这些复杂功能，而是专注于让你用最简单的方式管理自己的代理服务。
+
+代码完全开源，欢迎 Star ⭐ 和 PR！
+
+📢 **TG 频道**：https://t.me/nodectl
+
+![效果展示](https://nodectl-ipopt.hobin.net/Image/主页1.webp)
+![效果展示](https://nodectl-ipopt.hobin.net/Image/主页2.webp)
+
+---
+
+## 🙏 致谢
+
+感谢以下优秀的开源项目：
+
+- [Mihomo 内核](https://github.com/MetaCubeX/mihomo)
+- [CloudflareSpeedTest](https://github.com/XIU2/CloudflareSpeedTest)
+- [MetaCubeX/meta-rules-dat](https://github.com/MetaCubeX/meta-rules-dat) - GeoIP/Geosite 规则集
+
+以及其他未一一列举的开源项目，正是开源社区的无私贡献，让 NodeCtl 得以实现更多功能。
+
+---
+
+> ⚠️ 请在遵守所在地法律法规的前提下使用本项目，作者不对任何滥用行为承担责任。
