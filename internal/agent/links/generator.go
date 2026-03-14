@@ -142,10 +142,11 @@ func (g *Generator) rawHost() string {
 	return g.hostIP
 }
 
-// nodeName 返回带后缀的节点名称
+// nodeName 返回节点名称
+// 优先使用服务器名称（suffix / hostname），无则回退到协议标识
 func (g *Generator) nodeName(proto string) string {
 	if g.suffix != "" {
-		return proto + g.suffix
+		return g.suffix
 	}
 	return proto
 }

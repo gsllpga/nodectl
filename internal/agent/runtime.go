@@ -954,9 +954,8 @@ func (rt *Runtime) executePushConfig(cmd ServerCommand, reply func(CommandResult
 	cfgMgr := rt.singboxMgr.GetConfigManager()
 	ctx := context.Background()
 
-	// 0. 记录旧协议列表和端口（用于差异显示和端口冲突排除）
+	// 0. 记录旧协议列表（用于差异显示）
 	oldProtocols := cfgMgr.Protocols.EnabledProtocolList()
-	oldPorts := singbox.CollectCurrentPorts(cfgMgr.Protocols)
 
 	// 计算协议变更差异：新增、删除、保留
 	oldSet := make(map[string]bool)
@@ -1068,23 +1067,6 @@ func (rt *Runtime) executePushConfig(cmd ServerCommand, reply func(CommandResult
 		}
 	}
 
-	// 2.6 🆕 端口冲突预检测：检查协议之间端口重复 + 系统端口占用
-	// 排除当前 sing-box 自身已占用的端口（如 anytls:20021 正在运行，添加 reality 时不应报告 20021 冲突）
-	reply(CommandResult{Type: "progress", Stage: "检查端口冲突..."})
-	portConflicts := singbox.CheckPortConflicts(cfgMgr.Protocols, oldPorts)
-	if len(portConflicts) > 0 {
-		conflictMsg := singbox.FormatPortConflictsMessage(portConflicts)
-		log.Printf("[Agent] push-config: 检测到端口冲突:\n%s", conflictMsg)
-		// 逐条回传端口冲突详情，让前端日志面板能逐行显示
-		for _, c := range portConflicts {
-			reply(CommandResult{Type: "progress", Stage: fmt.Sprintf("⚠️ 端口冲突: %s", c.Reason)})
-		}
-		// 端口冲突是致命错误，不继续启动 sing-box（否则 sing-box 必定启动失败）
-		reply(CommandResult{Type: "result", Status: "error", Message: fmt.Sprintf("配置推送失败: 检测到 %d 个端口冲突，请修改端口后重试", len(portConflicts))})
-		return
-	}
-	reply(CommandResult{Type: "progress", Stage: "端口检查通过，无冲突"})
-
 	// 3. 保存协议缓存
 	reply(CommandResult{Type: "progress", Stage: "保存协议配置缓存..."})
 	if err := cfgMgr.SaveToCache(); err != nil {
@@ -1112,10 +1094,34 @@ func (rt *Runtime) executePushConfig(cmd ServerCommand, reply func(CommandResult
 	}
 
 	// 6. 停止旧的 sing-box 实例（如果在运行）
+	// 🔑 关键修改：先停止 sing-box 再检测端口冲突
+	// 用户已经二次确认推送，所以先停止 sing-box 是安全的。
+	// 这样可以避免 sing-box 自身占用的端口被误报为"被系统其他进程占用"，
+	// 尤其是在添加新协议且端口与当前运行的 sing-box 端口一致的场景下。
 	if rt.singboxMgr.IsRunning() {
 		reply(CommandResult{Type: "progress", Stage: "停止旧的 sing-box 实例..."})
 		rt.singboxMgr.Stop()
+		// 等待端口完全释放
+		time.Sleep(500 * time.Millisecond)
 	}
+
+	// 6.5 端口冲突预检测：sing-box 已停止，直接检测端口占用（无需排除端口）
+	reply(CommandResult{Type: "progress", Stage: "检查端口冲突..."})
+	portConflicts := singbox.CheckPortConflicts(cfgMgr.Protocols, nil)
+	if len(portConflicts) > 0 {
+		conflictMsg := singbox.FormatPortConflictsMessage(portConflicts)
+		log.Printf("[Agent] push-config: 检测到端口冲突:\n%s", conflictMsg)
+		// 逐条回传端口冲突详情，让前端日志面板能逐行显示
+		for _, c := range portConflicts {
+			reply(CommandResult{Type: "progress", Stage: fmt.Sprintf("⚠️ 端口冲突: %s", c.Reason)})
+		}
+		// 端口冲突是致命错误，不继续启动 sing-box（否则 sing-box 必定启动失败）
+		// 注意：此时 sing-box 已停止，如果有旧配置缓存，下次 Agent 重启时会自动恢复
+		reply(CommandResult{Type: "progress", Stage: "提示: sing-box 已停止，请修改端口后重新推送配置以恢复服务"})
+		reply(CommandResult{Type: "result", Status: "error", Message: fmt.Sprintf("配置推送失败: 检测到 %d 个端口冲突，请修改端口后重试", len(portConflicts))})
+		return
+	}
+	reply(CommandResult{Type: "progress", Stage: "端口检查通过，无冲突"})
 
 	// 7. 重新生成 sing-box 配置
 	reply(CommandResult{Type: "progress", Stage: "生成 sing-box 配置..."})
