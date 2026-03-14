@@ -54,6 +54,7 @@ func initBasicSettings() {
 		{Key: "clash_custom_modules", Value: "[]", Description: "用户自定义的 Clash 分流模块"},
 		{Key: "clash_custom_proxy_rules", Value: "[]", Description: "自定义分流策略组配置"},
 		{Key: "clash_custom_direct_raw", Value: "", Description: "自定义直连规则原始文本"},
+		{Key: "clash_custom_direct_icon", Value: "", Description: "自定义直连规则图标"},
 		{Key: "clash_proxies_update_interval", Value: "3600", Description: "Clash节点自动更新间隔(秒)"},
 		{Key: "clash_rules_update_interval", Value: "300", Description: "Clash私有规则自动更新间隔(秒)"},
 		{Key: "clash_public_rules_update_interval", Value: "86400", Description: "Clash公共规则自动更新间隔(秒)"},

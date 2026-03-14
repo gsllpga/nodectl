@@ -91,7 +91,7 @@ func SaveCustomClashModules(modules []ClashModuleDef) error {
 
 func GetActiveClashModules() []string {
 	var conf database.SysConfig
-	database.DB.Where("key = ?", "clash_active_modules").First(&conf)
+	database.DB.Where("key = ?", "clash_active_modules").Limit(1).Find(&conf)
 	if conf.Value == "" {
 		return []string{}
 	}
@@ -316,7 +316,7 @@ func getEmojiURL(icon string) string {
 
 func GetCustomProxyRules() []CustomProxyRule {
 	var conf database.SysConfig
-	database.DB.Where("key = ?", "clash_custom_proxy_rules").First(&conf)
+	database.DB.Where("key = ?", "clash_custom_proxy_rules").Limit(1).Find(&conf)
 	var rules []CustomProxyRule
 	if conf.Value != "" {
 		json.Unmarshal([]byte(conf.Value), &rules)
@@ -343,7 +343,7 @@ func SaveCustomProxyRules(rules []CustomProxyRule) error {
 
 func GetCustomDirectRules() string {
 	var conf database.SysConfig
-	database.DB.Where("key = ?", "clash_custom_direct_raw").First(&conf)
+	database.DB.Where("key = ?", "clash_custom_direct_raw").Limit(1).Find(&conf)
 	return conf.Value
 }
 
@@ -356,7 +356,7 @@ func SaveCustomDirectRules(content string) error {
 
 func GetCustomDirectIcon() string {
 	var conf database.SysConfig
-	database.DB.Where("key = ?", "clash_custom_direct_icon").First(&conf)
+	database.DB.Where("key = ?", "clash_custom_direct_icon").Limit(1).Find(&conf)
 	if conf.Value == "" {
 		return "🌐"
 	}
