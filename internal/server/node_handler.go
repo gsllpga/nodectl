@@ -10,11 +10,16 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 
 	"nodectl/internal/database"
 	"nodectl/internal/logger"
 	"nodectl/internal/service"
 )
+
+// nodeDeleteMu 节点删除操作的互斥锁，防止对同一节点的并发删除请求
+// 导致数据库行锁争抢、死锁或连接池耗尽。
+var nodeDeleteMu sync.Map // key: node UUID (string) → value: *sync.Mutex
 
 // ------------------- [节点管理 API] -------------------
 
@@ -1472,6 +1477,14 @@ func apiReorderNodes(w http.ResponseWriter, r *http.Request) {
 	sendJSON(w, "success", "排序已更新")
 }
 
+// getNodeDeleteLock 获取指定节点 UUID 的删除互斥锁（懒初始化）。
+// 保证同一节点在同一时刻只有一个删除操作能执行，
+// 避免用户多次点击导致并发 DELETE 争抢行锁、死锁或连接池耗尽。
+func getNodeDeleteLock(uuid string) *sync.Mutex {
+	val, _ := nodeDeleteMu.LoadOrStore(uuid, &sync.Mutex{})
+	return val.(*sync.Mutex)
+}
+
 // apiDeleteNode 处理节点删除请求
 // 功能：验证请求参数并从数据库中删除指定 UUID 的节点，支持演示模式下对内置节点的保护与专业拦截提示
 func apiDeleteNode(w http.ResponseWriter, r *http.Request) {
@@ -1499,6 +1512,20 @@ func apiDeleteNode(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// ── 防并发：同一节点同时只允许一个删除操作 ──
+	mu := getNodeDeleteLock(req.UUID)
+	if !mu.TryLock() {
+		// 已有一个删除请求正在处理，直接返回，避免行锁争抢
+		logger.Log.Warn("删除请求被防重复拦截（已有进行中的删除操作）", "uuid", req.UUID, "ip", clientIP)
+		sendJSON(w, "error", "该节点正在删除中，请勿重复操作")
+		return
+	}
+	defer func() {
+		mu.Unlock()
+		// 删除完成后清理 map 条目，避免长期内存泄漏
+		nodeDeleteMu.Delete(req.UUID)
+	}()
+
 	// 先查询目标节点，便于后续日志记录 name
 	var targetNode database.NodePool
 	if err := database.DB.Where("uuid = ?", req.UUID).First(&targetNode).Error; err != nil {
@@ -1524,10 +1551,14 @@ func apiDeleteNode(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 1. 显式删除关联的流量统计数据（不依赖外键级联）
-	if err := database.DB.Where("node_uuid = ?", req.UUID).Delete(&database.NodeTrafficStat{}).Error; err != nil {
-		logger.Log.Error("删除节点流量数据失败", "error", err, "uuid", req.UUID)
+	// 1. 分批删除关联的流量统计数据，避免一次性删除大量行导致长事务锁表
+	//    每批删除 1000 条，每批独立事务，大幅降低锁持有时间和 WAL 压力。
+	deleted, batchErr := database.DeleteNodeTrafficStatsBatched(req.UUID, 1000)
+	if batchErr != nil {
+		logger.Log.Error("分批删除节点流量数据失败", "error", batchErr, "uuid", req.UUID, "deleted_so_far", deleted)
 		// 不阻断，继续删除节点本身
+	} else if deleted > 0 {
+		logger.Log.Info("已分批删除节点流量历史数据", "uuid", req.UUID, "total_deleted", deleted)
 	}
 
 	// 2. 删除节点记录

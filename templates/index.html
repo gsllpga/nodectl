@@ -1639,9 +1639,23 @@
                 if (modal) modal.style.display = "none";
             }
 
-            // 确认删除
+            // 确认删除（含防重复点击保护）
+            let _deleteInProgress = false;
             async function confirmDeleteNode() {
                 if (!currentDeleteUUID) return;
+                if (_deleteInProgress) return; // 防止重复点击
+                _deleteInProgress = true;
+
+                // 禁用按钮并显示加载状态
+                const btn = document.querySelector('.btn-confirm-delete');
+                if (btn) {
+                    btn.disabled = true;
+                    btn._origText = btn.textContent;
+                    btn.textContent = '删除中...';
+                    btn.style.opacity = '0.6';
+                    btn.style.cursor = 'not-allowed';
+                }
+
                 try {
                     const response = await fetch("/api/delete-node", {
                         method: "POST",
@@ -1660,6 +1674,15 @@
                     }
                 } catch (error) {
                     alert("网络错误，请稍后重试");
+                } finally {
+                    _deleteInProgress = false;
+                    // 恢复按钮状态
+                    if (btn) {
+                        btn.disabled = false;
+                        btn.textContent = btn._origText || '确认删除';
+                        btn.style.opacity = '';
+                        btn.style.cursor = '';
+                    }
                 }
             }
 

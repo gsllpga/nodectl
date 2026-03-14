@@ -310,6 +310,7 @@ func Start(tmplFS embed.FS) {
 	mux.HandleFunc("/api/db/test-connection", withAuthAndSecure(apiTestDBConnection))
 	mux.HandleFunc("/api/db/switch", withAuthAndSecure(apiSwitchDatabase))
 	mux.HandleFunc("/api/db/migrate", withAuthAndSecure(apiMigrateDatabase))
+	mux.HandleFunc("/api/db/vacuum", withAuthAndSecure(apiVacuumDatabase))
 
 	// ========== C. 公开/工具 路由 ==========
 	mux.HandleFunc("/api/public/new-install-script", withSecure(apiNewInstallScript)) // 🆕 新版极简安装脚本

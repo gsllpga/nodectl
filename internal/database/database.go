@@ -817,6 +817,86 @@ func migrateTableBatched[T any](src, dst *gorm.DB, tableName string, batchSize i
 	return nil
 }
 
+// ------------------- 节点流量数据批量删除 -------------------
+
+// DeleteNodeTrafficStatsBatched 分批删除指定节点的流量统计数据。
+// 每批删除 batchSize 条记录，每批使用独立事务，大幅降低长事务锁持有时间，
+// 避免在流量数据量巨大时一次性 DELETE 导致数据库锁表、WAL 膨胀或连接池耗尽。
+// 返回总删除条数和首次遇到的错误（如果有）。
+func DeleteNodeTrafficStatsBatched(nodeUUID string, batchSize int) (int64, error) {
+	if batchSize <= 0 {
+		batchSize = 1000
+	}
+
+	var totalDeleted int64
+	for {
+		result := DB.Where("node_uuid = ?", nodeUUID).Limit(batchSize).Delete(&NodeTrafficStat{})
+		if result.Error != nil {
+			return totalDeleted, result.Error
+		}
+		totalDeleted += result.RowsAffected
+		if result.RowsAffected < int64(batchSize) {
+			// 本批删除的行数少于 batchSize，说明已全部删完
+			break
+		}
+	}
+	return totalDeleted, nil
+}
+
+// ------------------- PostgreSQL VACUUM -------------------
+
+// VacuumDatabase 对 PostgreSQL 执行 VACUUM（回收已删除行占用的磁盘空间）。
+// PostgreSQL 使用 MVCC 机制，DELETE 只是标记行为"死元组"，磁盘空间不会立即释放，
+// 必须通过 VACUUM 回收。普通 VACUUM 回收空间供表复用，VACUUM FULL 会彻底压缩表文件
+// 但需要排他锁。此函数执行普通 VACUUM（非阻塞），适合在线运行。
+func VacuumDatabase() error {
+	cfg := LoadDBConfig()
+	if cfg.Type != "postgres" {
+		return fmt.Errorf("VACUUM 仅适用于 PostgreSQL 数据库")
+	}
+	sqlDB, err := DB.DB()
+	if err != nil {
+		return fmt.Errorf("获取底层连接失败: %w", err)
+	}
+	// VACUUM 不能在事务中执行，直接使用底层 sql.DB
+	_, err = sqlDB.Exec("VACUUM")
+	if err != nil {
+		return fmt.Errorf("执行 VACUUM 失败: %w", err)
+	}
+	return nil
+}
+
+// VacuumTable 对 PostgreSQL 指定表执行 VACUUM。
+func VacuumTable(tableName string) error {
+	cfg := LoadDBConfig()
+	if cfg.Type != "postgres" {
+		return fmt.Errorf("VACUUM 仅适用于 PostgreSQL 数据库")
+	}
+	// 表名白名单，防止 SQL 注入
+	allowed := map[string]bool{
+		"node_pool":                    true,
+		"node_traffic_stats":           true,
+		"sys_config":                   true,
+		"airport_subs":                 true,
+		"airport_nodes":                true,
+		"airport_speed_test_histories": true,
+		"airport_speed_test_results":   true,
+		"custom_nodes":                 true,
+	}
+	if !allowed[tableName] {
+		return fmt.Errorf("不允许对表 %s 执行 VACUUM", tableName)
+	}
+	sqlDB, err := DB.DB()
+	if err != nil {
+		return fmt.Errorf("获取底层连接失败: %w", err)
+	}
+	_, err = sqlDB.Exec("VACUUM " + tableName)
+	if err != nil {
+		return fmt.Errorf("执行 VACUUM %s 失败: %w", tableName, err)
+	}
+	return nil
+}
+
 // ------------------- 辅助函数 -------------------
 
 // formatBytesHuman 格式化字节数为人类可读形式

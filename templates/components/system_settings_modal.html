@@ -3508,6 +3508,37 @@
                             ↩️ 切换回 SQLite
                         </button>
                     </div>
+
+                    <!-- ====== PostgreSQL 空间回收 (仅当前引擎为 postgres 时显示) ====== -->
+                    <div id="dbVacuumSection" style="display: none; margin-bottom: 20px">
+                        <div class="sys-field">
+                            <label class="sys-label" style="display: flex; align-items: center; gap: 4px">
+                                🧹 数据库空间回收
+                                <div class="sys-info-tooltip-wrap" tabindex="0">
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                        stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                        <circle cx="12" cy="12" r="10"></circle>
+                                        <line x1="12" y1="8" x2="12" y2="12"></line>
+                                        <line x1="12" y1="16" x2="12.01" y2="16"></line>
+                                    </svg>
+                                    <div class="sys-tooltip-content">
+                                        <p style="margin: 0; padding-bottom: 4px; font-weight: 600; color: #fff;">为什么删除数据后空间不释放？</p>
+                                        <p style="margin: 0; padding-bottom: 4px">
+                                            PostgreSQL 使用 MVCC 机制，删除数据只是标记为"死元组"，磁盘空间不会自动释放。
+                                        </p>
+                                        <p style="margin: 0;">
+                                            点击此按钮执行 VACUUM 操作，回收已删除数据占用的磁盘空间。此操作不会影响正常使用。
+                                        </p>
+                                    </div>
+                                </div>
+                            </label>
+                            <button type="button" id="btnDBVacuum" class="btn-sys-geo-action btn-sys-geo-update"
+                                onclick="vacuumDatabaseAction()" style="font-size: 13px">
+                                🧹 执行空间回收 (VACUUM)
+                            </button>
+                            <div id="dbVacuumResult" style="margin-top: 8px; font-size: 12px; color: #666;"></div>
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>
@@ -5539,11 +5570,17 @@
         const switchBackWrap = document.getElementById("dbSwitchBackWrap");
         const postTestActions = document.getElementById("dbPostTestActions");
         const migrateSection = document.getElementById("dbMigrateSection");
+        const vacuumSection = document.getElementById("dbVacuumSection");
 
         // 切换引擎选项时，重置测试状态
         dbTestPassed = false;
         postTestActions.style.display = "none";
         resetDBTestBtn();
+
+        // VACUUM 按钮仅在当前引擎为 PostgreSQL 时显示
+        if (vacuumSection) {
+            vacuumSection.style.display = (dbCurrentType === "postgres") ? "block" : "none";
+        }
 
         if (selectedType === "postgres") {
             pgSection.style.display = "block";
@@ -5698,6 +5735,48 @@
         }
         btn.disabled = false;
         btn.innerHTML = "🔄 直接切换到 PostgreSQL";
+    }
+
+    async function vacuumDatabaseAction() {
+        const btn = document.getElementById("btnDBVacuum");
+        const resultEl = document.getElementById("dbVacuumResult");
+        if (!btn) return;
+
+        btn.disabled = true;
+        btn.innerHTML = "⏳ 正在执行空间回收...";
+        btn.className = "btn-sys-geo-action btn-sys-geo-loading";
+        resultEl.innerHTML = '<span style="color: #888;">正在执行 VACUUM，请稍候...</span>';
+
+        try {
+            const res = await fetch("/api/db/vacuum", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({}),
+            });
+            const json = await res.json();
+            if (json.status === "success") {
+                btn.innerHTML = "✅ 空间回收完成";
+                btn.className = "btn-sys-geo-action btn-sys-geo-latest";
+                resultEl.innerHTML = '<span style="color: #16a34a;">✅ ' + (json.message || "VACUUM 执行成功") + '</span>';
+                // 刷新数据库状态以显示最新大小
+                await loadDBStatus();
+            } else {
+                btn.innerHTML = "❌ 执行失败，点击重试";
+                btn.className = "btn-sys-geo-action btn-sys-geo-error";
+                resultEl.innerHTML = '<span style="color: #d74242;">' + (json.message || "执行失败") + '</span>';
+            }
+        } catch (e) {
+            btn.innerHTML = "❌ 请求失败，点击重试";
+            btn.className = "btn-sys-geo-action btn-sys-geo-error";
+            resultEl.innerHTML = '<span style="color: #d74242;">网络请求失败</span>';
+        }
+        btn.disabled = false;
+        // 5秒后恢复按钮初始状态
+        setTimeout(() => {
+            btn.innerHTML = "🧹 执行空间回收 (VACUUM)";
+            btn.className = "btn-sys-geo-action btn-sys-geo-update";
+            resultEl.innerHTML = "";
+        }, 5000);
     }
 
     async function switchBackToSqlite() {
