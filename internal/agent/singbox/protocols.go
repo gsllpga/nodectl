@@ -6,7 +6,7 @@
 //	VLESS-TLS(WST/HUT), Trojan-TLS(WST/HUT)
 package singbox
 
-// ProtocolName 协议标识常量
+// ProtocolName 协议标识常量（全局统一使用下划线格式，与面板端一致）
 const (
 	ProtoSS        = "ss"
 	ProtoHY2       = "hy2"
@@ -14,16 +14,16 @@ const (
 	ProtoReality   = "reality"    // VLESS+Reality
 	ProtoSocks5    = "socks5"     // SOCKS5
 	ProtoTrojan    = "trojan"     // Trojan (自签TLS)
-	ProtoVmessTCP  = "vmess-tcp"  // VMess 纯TCP
-	ProtoVmessWS   = "vmess-ws"   // VMess WebSocket
-	ProtoVmessHTTP = "vmess-http" // VMess HTTP
-	ProtoVmessQUIC = "vmess-quic" // VMess QUIC(TLS)
-	ProtoVmessWST  = "vmess-wst"  // VMess WS+TLS
-	ProtoVmessHUT  = "vmess-hut"  // VMess HTTPUpgrade+TLS
-	ProtoVlessWST  = "vless-wst"  // VLESS WS+TLS
-	ProtoVlessHUT  = "vless-hut"  // VLESS HTTPUpgrade+TLS
-	ProtoTrojanWST = "trojan-wst" // Trojan WS+TLS
-	ProtoTrojanHUT = "trojan-hut" // Trojan HTTPUpgrade+TLS
+	ProtoVmessTCP  = "vmess_tcp"  // VMess 纯TCP
+	ProtoVmessWS   = "vmess_ws"   // VMess WebSocket
+	ProtoVmessHTTP = "vmess_http" // VMess HTTP
+	ProtoVmessQUIC = "vmess_quic" // VMess QUIC(TLS)
+	ProtoVmessWST  = "vmess_wst"  // VMess WS+TLS
+	ProtoVmessHUT  = "vmess_hut"  // VMess HTTPUpgrade+TLS
+	ProtoVlessWST  = "vless_wst"  // VLESS WS+TLS
+	ProtoVlessHUT  = "vless_hut"  // VLESS HTTPUpgrade+TLS
+	ProtoTrojanWST = "trojan_wst" // Trojan WS+TLS
+	ProtoTrojanHUT = "trojan_hut" // Trojan HTTPUpgrade+TLS
 )
 
 // AllProtocols 所有支持的协议名称列表

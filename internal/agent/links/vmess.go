@@ -7,8 +7,6 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
-
-	"nodectl/internal/agent/singbox"
 )
 
 // vmessLinkJSON VMess 链接 JSON 结构（v2rayN 标准格式）
@@ -92,30 +90,7 @@ func (g *Generator) generateVMess(tag, net string, port int, useTLS bool, path s
 	encoded := base64.StdEncoding.EncodeToString(jsonBytes)
 	uri := fmt.Sprintf("vmess://%s", encoded)
 
-	// 映射到对应的协议名
-	proto := tagToProto(tag)
-
 	return []Link{
-		{Protocol: proto, Name: name, URI: uri},
-	}
-}
-
-// tagToProto 将 tag 映射到协议常量
-func tagToProto(tag string) string {
-	switch tag {
-	case "vmess-tcp":
-		return singbox.ProtoVmessTCP
-	case "vmess-ws":
-		return singbox.ProtoVmessWS
-	case "vmess-http":
-		return singbox.ProtoVmessHTTP
-	case "vmess-quic":
-		return singbox.ProtoVmessQUIC
-	case "vmess-wst":
-		return singbox.ProtoVmessWST
-	case "vmess-hut":
-		return singbox.ProtoVmessHUT
-	default:
-		return tag
+		{Protocol: tag, Name: name, URI: uri},
 	}
 }

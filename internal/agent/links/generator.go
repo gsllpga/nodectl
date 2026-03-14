@@ -93,25 +93,25 @@ func (g *Generator) generateForProtocol(proto string) []Link {
 	case singbox.ProtoTrojan:
 		return g.generateTrojan()
 	case singbox.ProtoVmessTCP:
-		return g.generateVMess("vmess-tcp", "tcp", g.config.VMess.TCPPort, false, "")
+		return g.generateVMess(singbox.ProtoVmessTCP, "tcp", g.config.VMess.TCPPort, false, "")
 	case singbox.ProtoVmessWS:
-		return g.generateVMess("vmess-ws", "ws", g.config.VMess.WSPort, false, g.config.GetTransportPath())
+		return g.generateVMess(singbox.ProtoVmessWS, "ws", g.config.VMess.WSPort, false, g.config.GetTransportPath())
 	case singbox.ProtoVmessHTTP:
-		return g.generateVMess("vmess-http", "http", g.config.VMess.HTTPPort, false, g.config.GetTransportPath())
+		return g.generateVMess(singbox.ProtoVmessHTTP, "http", g.config.VMess.HTTPPort, false, g.config.GetTransportPath())
 	case singbox.ProtoVmessQUIC:
-		return g.generateVMess("vmess-quic", "quic", g.config.VMess.QUICPort, true, "")
+		return g.generateVMess(singbox.ProtoVmessQUIC, "quic", g.config.VMess.QUICPort, true, "")
 	case singbox.ProtoVmessWST:
-		return g.generateVMess("vmess-wst", "ws", g.config.VMess.WSTPort, true, g.config.GetTransportPath())
+		return g.generateVMess(singbox.ProtoVmessWST, "ws", g.config.VMess.WSTPort, true, g.config.GetTransportPath())
 	case singbox.ProtoVmessHUT:
-		return g.generateVMess("vmess-hut", "httpupgrade", g.config.VMess.HUTPort, true, g.config.GetTransportPath())
+		return g.generateVMess(singbox.ProtoVmessHUT, "httpupgrade", g.config.VMess.HUTPort, true, g.config.GetTransportPath())
 	case singbox.ProtoVlessWST:
-		return g.generateVlessTLS("vless-wst", "ws", g.config.VlessTLS.WSTPort)
+		return g.generateVlessTLS(singbox.ProtoVlessWST, "ws", g.config.VlessTLS.WSTPort)
 	case singbox.ProtoVlessHUT:
-		return g.generateVlessTLS("vless-hut", "httpupgrade", g.config.VlessTLS.HUTPort)
+		return g.generateVlessTLS(singbox.ProtoVlessHUT, "httpupgrade", g.config.VlessTLS.HUTPort)
 	case singbox.ProtoTrojanWST:
-		return g.generateTrojanTLS("trojan-wst", "ws", g.config.TrojanTLS.WSTPort)
+		return g.generateTrojanTLS(singbox.ProtoTrojanWST, "ws", g.config.TrojanTLS.WSTPort)
 	case singbox.ProtoTrojanHUT:
-		return g.generateTrojanTLS("trojan-hut", "httpupgrade", g.config.TrojanTLS.HUTPort)
+		return g.generateTrojanTLS(singbox.ProtoTrojanHUT, "httpupgrade", g.config.TrojanTLS.HUTPort)
 	default:
 		return nil
 	}

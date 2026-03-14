@@ -50,12 +50,7 @@ func (g *Generator) generateTrojanTLS(tag, transport string, port int) []Link {
 	uri := fmt.Sprintf("trojan://%s@%s:%d?sni=%s&type=%s&path=%s&allowInsecure=1&host=%s#%s",
 		urlEncode(cfg.Password), host, port, sni, transport, urlEncode(tp), sni, urlEncode(name))
 
-	proto := singbox.ProtoTrojanWST
-	if transport == "httpupgrade" {
-		proto = singbox.ProtoTrojanHUT
-	}
-
 	return []Link{
-		{Protocol: proto, Name: name, URI: uri},
+		{Protocol: tag, Name: name, URI: uri},
 	}
 }

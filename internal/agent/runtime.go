@@ -918,27 +918,27 @@ func (rt *Runtime) executePushConfig(cmd ServerCommand, reply func(CommandResult
 			case singbox.ProtoTrojan:
 				cfgMgr.Protocols.Trojan.Port = port
 			// VMess 族端口
-			case "vmess-tcp", "vmess_tcp":
+			case singbox.ProtoVmessTCP:
 				cfgMgr.Protocols.VMess.TCPPort = port
-			case "vmess-ws", "vmess_ws":
+			case singbox.ProtoVmessWS:
 				cfgMgr.Protocols.VMess.WSPort = port
-			case "vmess-http", "vmess_http":
+			case singbox.ProtoVmessHTTP:
 				cfgMgr.Protocols.VMess.HTTPPort = port
-			case "vmess-quic", "vmess_quic":
+			case singbox.ProtoVmessQUIC:
 				cfgMgr.Protocols.VMess.QUICPort = port
-			case "vmess-wst", "vmess_wst":
+			case singbox.ProtoVmessWST:
 				cfgMgr.Protocols.VMess.WSTPort = port
-			case "vmess-hut", "vmess_hut":
+			case singbox.ProtoVmessHUT:
 				cfgMgr.Protocols.VMess.HUTPort = port
 			// VLESS-TLS 族端口
-			case "vless-wst", "vless_wst":
+			case singbox.ProtoVlessWST:
 				cfgMgr.Protocols.VlessTLS.WSTPort = port
-			case "vless-hut", "vless_hut":
+			case singbox.ProtoVlessHUT:
 				cfgMgr.Protocols.VlessTLS.HUTPort = port
 			// Trojan-TLS 族端口
-			case "trojan-wst", "trojan_wst":
+			case singbox.ProtoTrojanWST:
 				cfgMgr.Protocols.TrojanTLS.WSTPort = port
-			case "trojan-hut", "trojan_hut":
+			case singbox.ProtoTrojanHUT:
 				cfgMgr.Protocols.TrojanTLS.HUTPort = port
 			}
 		}

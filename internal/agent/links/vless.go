@@ -50,12 +50,7 @@ func (g *Generator) generateVlessTLS(tag, transport string, port int) []Link {
 	uri := fmt.Sprintf("vless://%s@%s:%d?security=tls&sni=%s&type=%s&path=%s&allowInsecure=1&host=%s#%s",
 		cfg.UUID, host, port, sni, transport, urlEncode(tp), sni, urlEncode(name))
 
-	proto := singbox.ProtoVlessWST
-	if transport == "httpupgrade" {
-		proto = singbox.ProtoVlessHUT
-	}
-
 	return []Link{
-		{Protocol: proto, Name: name, URI: uri},
+		{Protocol: tag, Name: name, URI: uri},
 	}
 }

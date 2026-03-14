@@ -45,7 +45,7 @@ func apiAgentInitConfig(w http.ResponseWriter, r *http.Request) {
 	panelURL := loadSysConfigValue("panel_url")
 
 	// 构造协议配置（从节点当前链接推导启用的协议列表）
-	// 面板内部使用下划线格式（如 vmess_tcp, vless_wst），需要转换为 Agent 端的连字符格式（如 vmess-tcp, vless-wst）
+	// 面板与 Agent 统一使用下划线格式（如 vmess_tcp, vless_wst），无需转换
 	enabledProtocols := make([]string, 0)
 	if node.Links != nil {
 		disabledSet := make(map[string]bool)
@@ -54,7 +54,7 @@ func apiAgentInitConfig(w http.ResponseWriter, r *http.Request) {
 		}
 		for proto := range node.Links {
 			if !disabledSet[proto] {
-				enabledProtocols = append(enabledProtocols, normalizeProtoKeyForAgent(proto))
+				enabledProtocols = append(enabledProtocols, proto)
 			}
 		}
 	}
@@ -73,12 +73,12 @@ func apiAgentInitConfig(w http.ResponseWriter, r *http.Request) {
 
 	// 🆕 构造端口映射（从节点的 LinkPorts 获取每个协议的端口配置）
 	// Agent 使用这些端口配置来启动 sing-box 对应的 inbound
-	// 同样需要将 key 转换为 Agent 端格式
+	// 面板与 Agent 统一使用下划线格式，无需转换
 	ports := make(map[string]int)
 	if node.LinkPorts != nil {
 		for proto, port := range node.LinkPorts {
 			if port > 0 {
-				ports[normalizeProtoKeyForAgent(proto)] = port
+				ports[proto] = port
 			}
 		}
 	}
@@ -93,13 +93,6 @@ func apiAgentInitConfig(w http.ResponseWriter, r *http.Request) {
 			"ws_url":    wsURL,
 		},
 	})
-}
-
-// normalizeProtoKeyForAgent 将面板内部的协议 key 转换为 Agent 端使用的格式
-// 面板格式（下划线）→ Agent 格式（连字符），如 vmess_tcp → vmess-tcp, vless_wst → vless-wst
-func normalizeProtoKeyForAgent(panelKey string) string {
-	// 通用规则：下划线转连字符（vmess_tcp → vmess-tcp, vless_wst → vless-wst 等）
-	return strings.ReplaceAll(panelKey, "_", "-")
 }
 
 // ============================================================
