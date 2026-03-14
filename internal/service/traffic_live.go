@@ -562,23 +562,65 @@ func HandleAgentWS(w http.ResponseWriter, r *http.Request) {
 			currRX := msg.CounterRX
 			currTX := msg.CounterTX
 			if !state.CounterSeen {
+				// 首次收到该节点的计数器数据：仅建立基线，不产生增量
 				state.LastCounterRX = currRX
 				state.LastCounterTX = currTX
 				state.CounterBootID = msg.BootID
 				state.CounterSeen = true
+			} else if state.CounterBootID != msg.BootID {
+				// BootID 变更（机器重启 / Agent 重启导致 boot_id 变化）：
+				// 仅重置基线，不产生增量。
+				// 修复：旧逻辑将整个计数器值当作增量，导致一次性加入几百GB~几TB。
+				logger.Log.Info("Agent BootID 变更，重置计数器基线（不计入增量）",
+					"install_id", installID,
+					"old_boot_id", state.CounterBootID,
+					"new_boot_id", msg.BootID,
+					"old_counter_rx", state.LastCounterRX,
+					"old_counter_tx", state.LastCounterTX,
+					"new_counter_rx", currRX,
+					"new_counter_tx", currTX,
+				)
+				state.LastCounterRX = currRX
+				state.LastCounterTX = currTX
+				state.CounterBootID = msg.BootID
 			} else {
-				deltaRX := currRX
-				deltaTX := currTX
-				if state.CounterBootID == msg.BootID {
-					deltaRX = currRX - state.LastCounterRX
-					deltaTX = currTX - state.LastCounterTX
-					if deltaRX < 0 {
-						deltaRX = currRX
-					}
-					if deltaTX < 0 {
-						deltaTX = currTX
-					}
+				// 同一 BootID 下的正常增量计算
+				deltaRX := currRX - state.LastCounterRX
+				deltaTX := currTX - state.LastCounterTX
+
+				// 计数器回绕/重置检测：当前值 < 上次值，跳过本次增量（仅更新基线）
+				if deltaRX < 0 || deltaTX < 0 {
+					logger.Log.Warn("Agent 计数器回绕/重置，跳过本次增量",
+						"install_id", installID,
+						"delta_rx", deltaRX,
+						"delta_tx", deltaTX,
+						"counter_rx", currRX,
+						"counter_tx", currTX,
+						"last_counter_rx", state.LastCounterRX,
+						"last_counter_tx", state.LastCounterTX,
+					)
+					deltaRX = 0
+					deltaTX = 0
 				}
+
+				// 单次增量合理性检测：单次增量超过 100GB 视为异常，跳过并告警
+				// 即使网卡速率 100Gbps，5秒间隔最多约 62.5GB，100GB 已是极端上限
+				const maxSingleDelta = 100 * 1024 * 1024 * 1024 // 100 GB
+				if deltaRX > maxSingleDelta || deltaTX > maxSingleDelta {
+					logger.Log.Warn("Agent 单次流量增量异常过大，已丢弃",
+						"install_id", installID,
+						"delta_rx_bytes", deltaRX,
+						"delta_tx_bytes", deltaTX,
+						"counter_rx", currRX,
+						"counter_tx", currTX,
+						"last_counter_rx", state.LastCounterRX,
+						"last_counter_tx", state.LastCounterTX,
+						"boot_id", msg.BootID,
+					)
+					deltaRX = 0
+					deltaTX = 0
+				}
+
 				if deltaRX > 0 || deltaTX > 0 {
 					state.TotalRXBytes += deltaRX
 					state.TotalTXBytes += deltaTX
@@ -586,7 +628,6 @@ func HandleAgentWS(w http.ResponseWriter, r *http.Request) {
 				}
 				state.LastCounterRX = currRX
 				state.LastCounterTX = currTX
-				state.CounterBootID = msg.BootID
 			}
 		} else {
 			logger.Log.Warn("Agent WS 消息缺少 boot_id，忽略累计", "install_id", installID)
