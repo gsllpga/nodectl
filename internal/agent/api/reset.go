@@ -176,6 +176,13 @@ func (h *ResetHandler) regenerateCredentials(protocol string) error {
 		}
 		pc.Trojan.Password = password
 
+	case singbox.ProtoAnyTLS:
+		uuid, err := singbox.GenerateUUID()
+		if err != nil {
+			return err
+		}
+		pc.AnyTLS.Password = uuid
+
 	// VMess 族：重置共用 UUID
 	case singbox.ProtoVmessTCP, singbox.ProtoVmessWS, singbox.ProtoVmessHTTP,
 		singbox.ProtoVmessQUIC, singbox.ProtoVmessWST, singbox.ProtoVmessHUT:

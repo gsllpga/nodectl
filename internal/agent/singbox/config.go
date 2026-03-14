@@ -172,6 +172,20 @@ type sbTrojanUser struct {
 	Password string `json:"password"`
 }
 
+type sbAnyTLSInbound struct {
+	Type       string         `json:"type"`
+	Tag        string         `json:"tag"`
+	Listen     string         `json:"listen"`
+	ListenPort int            `json:"listen_port"`
+	Users      []sbAnyTLSUser `json:"users"`
+	Padding    []interface{}  `json:"padding_scheme"`
+	TLS        *sbTLSConfig   `json:"tls"`
+}
+
+type sbAnyTLSUser struct {
+	Password string `json:"password"`
+}
+
 type sbVMessInbound struct {
 	Type       string        `json:"type"`
 	Tag        string        `json:"tag"`
@@ -289,6 +303,18 @@ func (cm *ConfigManager) GenerateConfig() ([]byte, error) {
 		cfg.Inbounds = append(cfg.Inbounds, sbSocksInbound{
 			Type: "socks", Tag: "socks-in", Listen: "::", ListenPort: pc.Socks5.Port,
 			Users: []sbSocksUser{{Username: pc.Socks5.Username, Password: pc.Socks5.Password}},
+		})
+	}
+
+	if pc.IsEnabled(ProtoAnyTLS) {
+		cfg.Inbounds = append(cfg.Inbounds, sbAnyTLSInbound{
+			Type: "anytls", Tag: "anytls-in", Listen: "::", ListenPort: pc.AnyTLS.Port,
+			Users:   []sbAnyTLSUser{{Password: pc.AnyTLS.Password}},
+			Padding: []interface{}{},
+			TLS: &sbTLSConfig{
+				Enabled:         true,
+				CertificatePath: certPath, KeyPath: keyPath,
+			},
 		})
 	}
 
@@ -510,6 +536,10 @@ func (cm *ConfigManager) UpdateProtocol(protocol string, config any) error {
 	case ProtoTrojan:
 		if c, ok := config.(TrojanConfig); ok {
 			pc.Trojan = c
+		}
+	case ProtoAnyTLS:
+		if c, ok := config.(AnyTLSConfig); ok {
+			pc.AnyTLS = c
 		}
 	default:
 		return fmt.Errorf("协议 %s 不支持单独更新，请更新对应族配置", protocol)

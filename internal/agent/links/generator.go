@@ -92,6 +92,8 @@ func (g *Generator) generateForProtocol(proto string) []Link {
 		return g.generateSocks5()
 	case singbox.ProtoTrojan:
 		return g.generateTrojan()
+	case singbox.ProtoAnyTLS:
+		return g.generateAnyTLS()
 	case singbox.ProtoVmessTCP:
 		return g.generateVMess(singbox.ProtoVmessTCP, "tcp", g.config.VMess.TCPPort, false, "")
 	case singbox.ProtoVmessWS:

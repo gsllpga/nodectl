@@ -629,6 +629,17 @@
                     </div>
                 </div>
 
+                <div class="proto-nav-card" data-proto-id="anytls" onclick="selectGsProto('anytls', this)">
+                    <div class="proto-name">AnyTLS</div>
+                    <div class="proto-actions">
+                        <span class="proto-chip tcp">TCP</span>
+                        <div class="expand-indicator"><svg viewBox="0 0 24 24" width="16" height="16" fill="none"
+                                stroke="currentColor" stroke-width="2">
+                                <polyline points="9 18 15 12 9 6"></polyline>
+                            </svg></div>
+                    </div>
+                </div>
+
                 <label class="gs-section-label" style="margin-top:18px;">系统优化</label>
 
                 <div class="proto-nav-card" style="cursor:default;" onclick="event.stopPropagation()">
@@ -838,6 +849,23 @@
                     </div>
                 </div>
 
+                <!-- ===== AnyTLS ===== -->
+                <div class="proto-form" id="gs-form-anytls" style="display:none;">
+                    <div class="variant-section">
+                        <div class="variant-section-hd">
+                            <div class="variant-section-hd-title"><span class="proto-chip tcp">TCP</span> AnyTLS</div>
+                            <input type="number" id="gs_proxy_port_anytls" class="variant-port-input" placeholder="20021" oninput="triggerGsAutoSave()">
+                        </div>
+                        <div class="variant-section-bd">
+                            
+                            <div class="gs-field variant-field-sni">
+                                <label class="gs-label">客户端 SNI 伪装域名</label>
+                                <input type="text" id="gs_proxy_anytls_sni" class="gs-input" placeholder="addons.mozilla.org" oninput="triggerGsAutoSave()">
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
                 <!-- ===== Trojan 变种 ===== -->
                 <div class="proto-form" id="gs-form-trojan" style="display:none;">
                     <div class="variant-section">
@@ -1038,6 +1066,9 @@
                 document.getElementById('gs_proxy_port_trojan').value     = d.proxy_port_trojan     || '';
                 document.getElementById('gs_proxy_port_trojan_wst').value = d.proxy_port_trojan_wst || '';
                 document.getElementById('gs_proxy_port_trojan_hut').value = d.proxy_port_trojan_hut || '';
+                // AnyTLS
+                document.getElementById('gs_proxy_port_anytls').value = d.proxy_port_anytls || '';
+                document.getElementById('gs_proxy_anytls_sni').value  = d.proxy_anytls_sni  || '';
                 // TLS 传输路径（VLESS / VMess / Trojan 面板共用同一个值）
                 const tlsPath = d.proxy_tls_transport_path || '';
                 document.querySelectorAll('.tls-path-input').forEach(inp => inp.value = tlsPath);
@@ -1096,6 +1127,9 @@
                 "proxy_port_trojan":     document.getElementById('gs_proxy_port_trojan').value,
                 "proxy_port_trojan_wst": document.getElementById('gs_proxy_port_trojan_wst').value,
                 "proxy_port_trojan_hut": document.getElementById('gs_proxy_port_trojan_hut').value,
+                // AnyTLS
+                "proxy_port_anytls": document.getElementById('gs_proxy_port_anytls').value,
+                "proxy_anytls_sni":  document.getElementById('gs_proxy_anytls_sni').value,
                 // TLS 传输路径（三个面板共用）
                 "proxy_tls_transport_path": tlsPath,
                 "proxy_vmess_tls_sni": document.getElementById('gs_proxy_vmess_tls_sni').value,

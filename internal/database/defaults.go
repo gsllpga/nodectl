@@ -11,7 +11,7 @@ import (
 
 // SupportedProtocols 定义系统支持的节点协议列表 (全局变量，供前端和逻辑使用)
 var SupportedProtocols = []string{
-	"reality", "hy2", "socks5", "tuic", "ss", "trojan",
+	"reality", "hy2", "socks5", "tuic", "ss", "trojan", "anytls",
 	"vmess_tcp", "vmess_ws", "vmess_http", "vmess_quic",
 	"vmess_wst", "vmess_hut",
 	"vless_wst", "vless_hut",
@@ -188,6 +188,9 @@ func initProxySettings() {
 		{Key: "proxy_vmess_tls_sni", Value: "www.bing.com", Description: "VMess TLS 传输族默认客户端 SNI 伪装域名"},
 		{Key: "proxy_vless_tls_sni", Value: "learn.microsoft.com", Description: "VLESS TLS 传输族默认客户端 SNI 伪装域名"},
 		{Key: "proxy_trojan_tls_sni", Value: "www.bing.com", Description: "Trojan TLS 传输族默认客户端 SNI 伪装域名"},
+		// AnyTLS 协议配置
+		{Key: "proxy_port_anytls", Value: "20021", Description: "AnyTLS 默认监听端口"},
+		{Key: "proxy_anytls_sni", Value: "addons.mozilla.org", Description: "AnyTLS 客户端 SNI 伪装域名"},
 	}
 
 	for _, config := range defaultConfigs {

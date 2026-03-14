@@ -14,6 +14,7 @@ const (
 	ProtoReality   = "reality"    // VLESS+Reality
 	ProtoSocks5    = "socks5"     // SOCKS5
 	ProtoTrojan    = "trojan"     // Trojan (自签TLS)
+	ProtoAnyTLS    = "anytls"     // AnyTLS
 	ProtoVmessTCP  = "vmess_tcp"  // VMess 纯TCP
 	ProtoVmessWS   = "vmess_ws"   // VMess WebSocket
 	ProtoVmessHTTP = "vmess_http" // VMess HTTP
@@ -28,7 +29,7 @@ const (
 
 // AllProtocols 所有支持的协议名称列表
 var AllProtocols = []string{
-	ProtoSS, ProtoHY2, ProtoTUIC, ProtoReality, ProtoSocks5, ProtoTrojan,
+	ProtoSS, ProtoHY2, ProtoTUIC, ProtoReality, ProtoSocks5, ProtoTrojan, ProtoAnyTLS,
 	ProtoVmessTCP, ProtoVmessWS, ProtoVmessHTTP, ProtoVmessQUIC, ProtoVmessWST, ProtoVmessHUT,
 	ProtoVlessWST, ProtoVlessHUT, ProtoTrojanWST, ProtoTrojanHUT,
 }
@@ -50,6 +51,7 @@ type ProtocolConfig struct {
 	Reality RealityConfig `json:"reality,omitempty"`
 	Socks5  Socks5Config  `json:"socks5,omitempty"`
 	Trojan  TrojanConfig  `json:"trojan,omitempty"`
+	AnyTLS  AnyTLSConfig  `json:"anytls,omitempty"`
 
 	// VMess 族（共用 UUID）
 	VMess VMessGroupConfig `json:"vmess,omitempty"`
@@ -105,6 +107,13 @@ type TrojanConfig struct {
 	Port     int    `json:"port"`
 	Password string `json:"password"`
 	SNI      string `json:"sni"` // 客户端 SNI
+}
+
+// AnyTLSConfig AnyTLS 协议配置（自签 TLS）
+type AnyTLSConfig struct {
+	Port     int    `json:"port"`
+	Password string `json:"password"` // UUID 作为密码
+	SNI      string `json:"sni"`      // 客户端 SNI（默认 addons.mozilla.org）
 }
 
 // VMessGroupConfig VMess 协议族配置（共用 UUID）
@@ -163,6 +172,9 @@ func DefaultProtocolConfig() *ProtocolConfig {
 		Trojan: TrojanConfig{
 			SNI: "www.bing.com",
 		},
+		AnyTLS: AnyTLSConfig{
+			SNI: "addons.mozilla.org",
+		},
 		VMess: VMessGroupConfig{
 			TLSSNI: "www.bing.com",
 		},
@@ -213,7 +225,7 @@ func (pc *ProtocolConfig) GetTransportPath() string {
 // NeedSelfSignedCert 判断是否有协议需要自签证书
 func (pc *ProtocolConfig) NeedSelfSignedCert() bool {
 	certProtocols := []string{
-		ProtoHY2, ProtoTUIC, ProtoTrojan,
+		ProtoHY2, ProtoTUIC, ProtoTrojan, ProtoAnyTLS,
 		ProtoVmessQUIC, ProtoVmessWST, ProtoVmessHUT,
 		ProtoVlessWST, ProtoVlessHUT,
 		ProtoTrojanWST, ProtoTrojanHUT,

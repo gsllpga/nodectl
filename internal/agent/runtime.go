@@ -500,6 +500,18 @@ func (rt *Runtime) generateProtocolCredentials(pc *singbox.ProtocolConfig, proto
 			pc.Trojan.Password = pwd
 		}
 
+	case singbox.ProtoAnyTLS:
+		if port > 0 {
+			pc.AnyTLS.Port = port
+		}
+		if pc.AnyTLS.Password == "" {
+			uuid, err := singbox.GenerateUUID()
+			if err != nil {
+				return err
+			}
+			pc.AnyTLS.Password = uuid
+		}
+
 	// VMess 族
 	case singbox.ProtoVmessTCP:
 		if port > 0 {
@@ -917,6 +929,8 @@ func (rt *Runtime) executePushConfig(cmd ServerCommand, reply func(CommandResult
 				cfgMgr.Protocols.Socks5.Port = port
 			case singbox.ProtoTrojan:
 				cfgMgr.Protocols.Trojan.Port = port
+			case singbox.ProtoAnyTLS:
+				cfgMgr.Protocols.AnyTLS.Port = port
 			// VMess 族端口
 			case singbox.ProtoVmessTCP:
 				cfgMgr.Protocols.VMess.TCPPort = port

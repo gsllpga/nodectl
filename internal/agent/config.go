@@ -197,6 +197,8 @@ func getProtocolPort(p *singbox.ProtocolConfig, protocol string) int {
 		return p.Socks5.Port
 	case singbox.ProtoTrojan:
 		return p.Trojan.Port
+	case singbox.ProtoAnyTLS:
+		return p.AnyTLS.Port
 	case singbox.ProtoVmessTCP:
 		return p.VMess.TCPPort
 	case singbox.ProtoVmessWS:
