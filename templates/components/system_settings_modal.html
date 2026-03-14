@@ -2716,14 +2716,15 @@
                                         <p style="margin: 0">
                                             •
                                             <b>落库间隔:</b>
-                                            仅影响历史点采样密度，不影响累计值安全性，范围
-                                            10-3600 秒。
+                                            仅影响历史点采样密度，不影响累计值安全性。设为 0
+                                            表示关闭历史点落库（推荐 SQLite 用户），范围
+                                            0 或 10-3600 秒。
                                         </p>
                                     </div>
                                 </div>
                             </label>
                             <input type="number" id="sys_pref_traffic_point_persist_interval_sec" class="sys-input"
-                                placeholder="默认: 600" min="10" max="3600" oninput="triggerSysAutoSave()" />
+                                placeholder="默认: 0 (关闭)" min="0" max="3600" oninput="triggerSysAutoSave()" />
                         </div>
 
                         <div class="sys-field">
@@ -3883,7 +3884,7 @@
 
                 document.getElementById(
                     "sys_pref_traffic_point_persist_interval_sec",
-                ).value = data.pref_traffic_point_persist_interval_sec || "600";
+                ).value = data.pref_traffic_point_persist_interval_sec || "0";
                 document.getElementById(
                     "sys_agent_ws_push_interval_sec",
                 ).value = data.agent_ws_push_interval_sec || "2";
