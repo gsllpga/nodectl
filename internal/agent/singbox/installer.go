@@ -129,20 +129,38 @@ func (i *Installer) Download(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("创建临时文件失败: %w", err)
 	}
-	defer os.Remove(tmpFile.Name())
-	defer tmpFile.Close()
+	tmpFilePath := tmpFile.Name()
 
+	// 下载文件
 	if err := downloadFile(ctx, downloadURL, tmpFile); err != nil {
+		tmpFile.Close()
+		os.Remove(tmpFilePath)
 		return fmt.Errorf("下载 sing-box 失败: %w", err)
 	}
 
-	// 从 tar.gz 中提取 sing-box 二进制
-	if _, err := tmpFile.Seek(0, 0); err != nil {
-		return fmt.Errorf("重置文件指针失败: %w", err)
+	// 关闭文件以确保所有数据写入磁盘
+	if err := tmpFile.Close(); err != nil {
+		os.Remove(tmpFilePath)
+		return fmt.Errorf("关闭临时文件失败: %w", err)
 	}
 
+	// 重新打开临时文件进行解压
+	tmpFile, err = os.Open(tmpFilePath)
+	if err != nil {
+		os.Remove(tmpFilePath)
+		return fmt.Errorf("重新打开临时文件失败: %w", err)
+	}
+	defer tmpFile.Close()
+	defer os.Remove(tmpFilePath)
+
+	// 从 tar.gz 中提取 sing-box 二进制
 	if err := extractSingBox(tmpFile, i.binaryPath, version, arch); err != nil {
 		return fmt.Errorf("解压 sing-box 失败: %w", err)
+	}
+
+	// 确保文件同步到磁盘
+	if err := syncFile(i.binaryPath); err != nil {
+		log.Printf("[SingBox] 警告: 同步文件到磁盘失败: %v", err)
 	}
 
 	// 设置可执行权限
@@ -150,8 +168,26 @@ func (i *Installer) Download(ctx context.Context) error {
 		return fmt.Errorf("设置执行权限失败: %w", err)
 	}
 
+	// 验证文件
+	info, err := os.Stat(i.binaryPath)
+	if err != nil {
+		return fmt.Errorf("验证文件失败: %w", err)
+	}
+	log.Printf("[SingBox] 文件大小: %d bytes, 模式: %04o", info.Size(), info.Mode())
+
 	log.Printf("[SingBox] sing-box v%s 安装完成: %s", version, i.binaryPath)
 	return nil
+}
+
+// syncFile 确保文件同步到磁盘（仅 Linux/Unix）
+func syncFile(path string) error {
+	// 尝试打开文件并调用 fsync
+	f, err := os.OpenFile(path, os.O_RDONLY, 0)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	return f.Sync()
 }
 
 // Verify 验证二进制文件完整性（执行 sing-box version 确认可运行）
@@ -243,6 +279,11 @@ func extractSingBox(archive io.Reader, destPath, version, arch string) error {
 	// 路径格式: sing-box-{version}-linux-{arch}/sing-box
 	targetName := fmt.Sprintf("sing-box-%s-linux-%s/sing-box", version, arch)
 
+	log.Printf("[SingBox] 目标文件名: %s", targetName)
+
+	var foundEntries []string
+	var extracted bool
+
 	for {
 		header, err := tr.Next()
 		if err == io.EOF {
@@ -252,25 +293,60 @@ func extractSingBox(archive io.Reader, destPath, version, arch string) error {
 			return fmt.Errorf("读取 tar 条目失败: %w", err)
 		}
 
+		// 记录所有条目用于调试
+		foundEntries = append(foundEntries, fmt.Sprintf("%s (type=%d)", header.Name, header.Typeflag))
+
 		// 精确匹配或以 /sing-box 结尾（兼容不同版本格式）
 		if header.Name == targetName || strings.HasSuffix(header.Name, "/sing-box") {
 			if header.Typeflag != tar.TypeReg {
+				log.Printf("[SingBox] 跳过非普通文件: %s (type=%d)", header.Name, header.Typeflag)
 				continue
 			}
 
+			log.Printf("[SingBox] 找到匹配条目: %s, 大小: %d bytes", header.Name, header.Size)
+
+			// 先创建目标文件
 			out, err := os.OpenFile(destPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0755)
 			if err != nil {
 				return fmt.Errorf("创建目标文件失败: %w", err)
 			}
-			defer out.Close()
 
-			if _, err := io.Copy(out, tr); err != nil {
-				return fmt.Errorf("写入二进制失败: %w", err)
+			// 立即复制内容并关闭文件（不使用 defer）
+			written, copyErr := io.Copy(out, tr)
+			closeErr := out.Close()
+
+			if copyErr != nil {
+				return fmt.Errorf("写入二进制失败: %w", copyErr)
+			}
+			if closeErr != nil {
+				return fmt.Errorf("关闭文件失败: %w", closeErr)
 			}
 
-			return nil
+			log.Printf("[SingBox] 解压完成: 写入 %d bytes 到 %s", written, destPath)
+			extracted = true
+			break
 		}
 	}
 
-	return fmt.Errorf("归档中未找到 sing-box 二进制 (查找: %s)", targetName)
+	if !extracted {
+		log.Printf("[SingBox] 归档内容列表:")
+		for _, entry := range foundEntries {
+			log.Printf("[SingBox]   - %s", entry)
+		}
+		return fmt.Errorf("归档中未找到 sing-box 二进制 (查找: %s, 共 %d 个条目)", targetName, len(foundEntries))
+	}
+
+	// 验证提取的文件
+	info, err := os.Stat(destPath)
+	if err != nil {
+		return fmt.Errorf("验证提取文件失败: %w", err)
+	}
+
+	log.Printf("[SingBox] 文件验证: %s, 大小=%d bytes, 模式=%04o", destPath, info.Size(), info.Mode())
+
+	if info.Size() == 0 {
+		return fmt.Errorf("提取的文件大小为 0，可能解压失败")
+	}
+
+	return nil
 }

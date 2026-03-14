@@ -894,10 +894,11 @@ func (rt *Runtime) executeCheckAgentUpdate(reply func(CommandResult)) {
 //   - "tuic":       → pc.TUIC.SNI
 //   - "anytls":     → pc.AnyTLS.SNI
 //   - "vmess_tls":  → pc.VMess.TLSSNI
-//   - "vless_tls":  → pc.VlessTLS.TLSSNI
+//   - "vless_tls":  → pc.VlessTLS.TLSSNI & pc.Reality.SNI（reality 复用 vless_tls 的 SNI）
 //   - "trojan_tls": → pc.TrojanTLS.TLSSNI
 //
 // 仅覆盖 sniMap 中存在且非空的项，其余保留 ProtocolConfig 原有值（内置默认或缓存值）
+// 注意：reality 不再有独立的 SNI 配置，统一使用 vless_tls 的 SNI
 func applySNIConfig(pc *singbox.ProtocolConfig, sniMap map[string]string) {
 	if len(sniMap) == 0 {
 		return
@@ -911,9 +912,6 @@ func applySNIConfig(pc *singbox.ProtocolConfig, sniMap map[string]string) {
 	if v, ok := sniMap["trojan"]; ok && v != "" {
 		pc.Trojan.SNI = v
 	}
-	if v, ok := sniMap["reality"]; ok && v != "" {
-		pc.Reality.SNI = v
-	}
 	if v, ok := sniMap["anytls"]; ok && v != "" {
 		pc.AnyTLS.SNI = v
 	}
@@ -922,6 +920,8 @@ func applySNIConfig(pc *singbox.ProtocolConfig, sniMap map[string]string) {
 	}
 	if v, ok := sniMap["vless_tls"]; ok && v != "" {
 		pc.VlessTLS.TLSSNI = v
+		// reality 复用 vless_tls 的 SNI，不再单独配置
+		pc.Reality.SNI = v
 	}
 	if v, ok := sniMap["trojan_tls"]; ok && v != "" {
 		pc.TrojanTLS.TLSSNI = v

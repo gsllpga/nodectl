@@ -167,7 +167,7 @@ func DefaultProtocolConfig() *ProtocolConfig {
 			SNI: "www.bing.com",
 		},
 		Reality: RealityConfig{
-			SNI: "addons.mozilla.org",
+			SNI: "www.bing.com", // 与 VlessTLS 保持一致，面板下发 vless_tls SNI 时同步覆盖
 		},
 		Trojan: TrojanConfig{
 			SNI: "www.bing.com",

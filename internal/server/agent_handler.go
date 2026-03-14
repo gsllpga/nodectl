@@ -327,11 +327,11 @@ func loadSNIConfig() map[string]string {
 		"proxy_hy2_sni":        "hy2",
 		"proxy_tuic_sni":       "tuic",
 		"proxy_trojan_sni":     "trojan",
-		"proxy_reality_sni":    "reality",
 		"proxy_anytls_sni":     "anytls",
 		"proxy_vmess_tls_sni":  "vmess_tls",
 		"proxy_vless_tls_sni":  "vless_tls",
 		"proxy_trojan_tls_sni": "trojan_tls",
+		// reality 不再单独下发 SNI，由 Agent 端复用 vless_tls 的 SNI
 	}
 
 	// 收集所有需要查询的 Key
