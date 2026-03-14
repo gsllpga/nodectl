@@ -389,6 +389,12 @@ func Start(tmplFS embed.FS) {
 	mux.HandleFunc("/api/cf/ipopt/speed-urls/update", withAuthAndSecure(apiCFIPOptSpeedURLUpdate))          // 更新测速地址
 	mux.HandleFunc("/api/cf/ipopt/speed-urls/delete", withAuthAndSecure(apiCFIPOptSpeedURLDelete))          // 删除测速地址
 	mux.HandleFunc("/api/cf/ipopt/speed-urls/set-default", withAuthAndSecure(apiCFIPOptSpeedURLSetDefault)) // 设置默认测速地址
+	// ========== 自定义节点管理 ==========
+	mux.HandleFunc("/api/custom-nodes/list", withAuthAndSecure(apiCustomNodesList))     // 获取自定义节点列表
+	mux.HandleFunc("/api/custom-nodes/add", withAuthAndSecure(apiCustomNodesAdd))       // 添加自定义节点
+	mux.HandleFunc("/api/custom-nodes/update", withAuthAndSecure(apiCustomNodesUpdate)) // 更新自定义节点
+	mux.HandleFunc("/api/custom-nodes/delete", withAuthAndSecure(apiCustomNodesDelete)) // 删除自定义节点
+
 	// 手动优选列表
 	mux.HandleFunc("/api/cf/ipopt/manual/list", withAuthAndSecure(apiCFIPOptManualList))         // 获取手动优选IP列表
 	mux.HandleFunc("/api/cf/ipopt/manual/add", withAuthAndSecure(apiCFIPOptManualAdd))           // 添加手动优选IP

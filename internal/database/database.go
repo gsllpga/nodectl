@@ -362,6 +362,30 @@ func (r *AirportSpeedTestResult) BeforeCreate(tx *gorm.DB) (err error) {
 	return
 }
 
+// ------------------- 自定义节点 -------------------
+
+// CustomNode 自定义协议链接节点表
+type CustomNode struct {
+	ID          string    `gorm:"primaryKey;type:varchar(36)" json:"id"`
+	Link        string    `gorm:"type:text" json:"link"`            // 原始协议链接 (vmess://, vless://, ss:// 等)
+	Name        string    `gorm:"type:varchar(255)" json:"name"`    // 从链接中解析出的节点名称
+	Protocol    string    `gorm:"type:varchar(32)" json:"protocol"` // 协议类型
+	RoutingType int       `gorm:"default:1" json:"routing_type"`    // 1=直连, 2=落地, 0=屏蔽
+	CreatedAt   time.Time `gorm:"column:created_at" json:"created_at"`
+	UpdatedAt   time.Time `gorm:"column:updated_at" json:"updated_at"`
+}
+
+func (CustomNode) TableName() string {
+	return "custom_nodes"
+}
+
+func (n *CustomNode) BeforeCreate(tx *gorm.DB) (err error) {
+	if n.ID == "" {
+		n.ID = uuid.New().String()
+	}
+	return
+}
+
 // ------------------- 数据库初始化 -------------------
 
 // openSQLite 打开 SQLite 数据库连接
@@ -430,6 +454,7 @@ func autoMigrateAll(db *gorm.DB) error {
 		&AirportNode{},
 		&AirportSpeedTestHistory{},
 		&AirportSpeedTestResult{},
+		&CustomNode{},
 	)
 }
 
@@ -550,8 +575,10 @@ func GetDBStatus() DBStatus {
 	status.RecordInfo["airport_subs"] = count
 	DB.Model(&AirportNode{}).Count(&count)
 	status.RecordInfo["airport_nodes"] = count
+	DB.Model(&CustomNode{}).Count(&count)
+	status.RecordInfo["custom_nodes"] = count
 
-	status.TableCount = 5
+	status.TableCount = 6
 	return status
 }
 
@@ -693,6 +720,11 @@ func MigrateToPostgres(pgCfg DBConfig) error {
 	// 4.7 迁移 AirportSpeedTestResult
 	if err := migrateTable[AirportSpeedTestResult](srcDB, dstDB, "airport_speed_test_results"); err != nil {
 		return fmt.Errorf("迁移 airport_speed_test_results 失败: %w", err)
+	}
+
+	// 4.8 迁移 CustomNode
+	if err := migrateTable[CustomNode](srcDB, dstDB, "custom_nodes"); err != nil {
+		return fmt.Errorf("迁移 custom_nodes 失败: %w", err)
 	}
 
 	// 5. 修正 PostgreSQL 自增序列，避免后续写入撞主键

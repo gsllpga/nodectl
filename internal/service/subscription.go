@@ -125,6 +125,24 @@ func GenerateRawNodesYAML(routingType int, useFlag bool) (string, error) {
 		}
 	}
 
+	// 注入自定义节点 (Custom Nodes)
+	var customNodes []database.CustomNode
+	// routingType: 1=直连, 2=落地; 屏蔽(0)的不加入订阅
+	if err := database.DB.Where("routing_type = ?", routingType).
+		Order("created_at ASC").Find(&customNodes).Error; err == nil {
+
+		for _, cnode := range customNodes {
+			proxyNode := ParseLinkToClashNode(cnode.Link, "")
+			if proxyNode != nil {
+				// 使用链接中解析出的原始名称（不做转化）
+				if cnode.Name != "" && cnode.Name != "自定义节点" {
+					proxyNode.Name = cnode.Name
+				}
+				proxyList = append(proxyList, proxyNode)
+			}
+		}
+	}
+
 	// 如果遍历完数据库后，proxyList 依然为空（说明用户没配节点，或节点都被禁用了）
 	// 强制插入一个 "直连" 类型的占位节点，防止客户端报错，并实现自动直连
 	if len(proxyList) == 0 {
@@ -284,6 +302,17 @@ func GenerateV2RaySubBase64(useFlag bool) (string, error) {
 
 			// 追加到订阅列表
 			lines = append(lines, finalLink)
+		}
+	}
+
+	// 注入自定义节点 (Custom Nodes) - V2Ray 订阅中，只要不是屏蔽(0)的都加入
+	var customNodes []database.CustomNode
+	if err := database.DB.Where("routing_type IN ?", []int{1, 2}).
+		Order("created_at ASC").Find(&customNodes).Error; err == nil {
+
+		for _, cnode := range customNodes {
+			// 直接使用原始链接，保留链接中的名称
+			lines = append(lines, strings.TrimSpace(cnode.Link))
 		}
 	}
 
