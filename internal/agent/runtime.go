@@ -272,19 +272,29 @@ func (rt *Runtime) initSingBox(ctx context.Context) {
 		}
 	}
 
+	// 🆕 端口冲突预检测
+	portConflicts := singbox.CheckPortConflicts(cfgMgr.Protocols)
+	if len(portConflicts) > 0 {
+		conflictMsg := singbox.FormatPortConflictsMessage(portConflicts)
+		log.Printf("[Agent] 初始化检测到端口冲突:\n%s", conflictMsg)
+		log.Printf("[Agent] 由于端口冲突，sing-box 未启动。请通过面板修改端口后重新推送配置")
+		return
+	}
+
 	// 生成 sing-box 配置
 	if err := cfgMgr.GenerateAndSave(); err != nil {
 		log.Printf("[Agent] 生成 sing-box 配置失败: %v", err)
 		return
 	}
 
-	// 启动 sing-box
-	if err := rt.singboxMgr.Start(ctx); err != nil {
-		log.Printf("[Agent] 启动 sing-box 失败: %v", err)
+	// 启动 sing-box 并验证健康状态
+	if err := rt.singboxMgr.StartAndVerify(ctx, 3*time.Second); err != nil {
+		log.Printf("[Agent] 启动 sing-box 失败（进程可能立即退出）: %v", err)
+		log.Printf("[Agent] 提示: 请检查端口是否被其他进程占用，或查看 /var/log/nodectl-agent/singbox.log 获取详细错误")
 		return
 	}
 
-	log.Printf("[Agent] sing-box 已启动")
+	log.Printf("[Agent] sing-box 已启动，进程运行正常")
 }
 
 // initConfigResponse 面板 /api/agent/init-config 的响应结构
@@ -969,6 +979,22 @@ func (rt *Runtime) executePushConfig(cmd ServerCommand, reply func(CommandResult
 		}
 	}
 
+	// 2.6 🆕 端口冲突预检测：检查协议之间端口重复 + 系统端口占用
+	reply(CommandResult{Type: "progress", Stage: "检查端口冲突..."})
+	portConflicts := singbox.CheckPortConflicts(cfgMgr.Protocols)
+	if len(portConflicts) > 0 {
+		conflictMsg := singbox.FormatPortConflictsMessage(portConflicts)
+		log.Printf("[Agent] push-config: 检测到端口冲突:\n%s", conflictMsg)
+		// 逐条回传端口冲突详情，让前端日志面板能逐行显示
+		for _, c := range portConflicts {
+			reply(CommandResult{Type: "progress", Stage: fmt.Sprintf("⚠️ 端口冲突: %s", c.Reason)})
+		}
+		// 端口冲突是致命错误，不继续启动 sing-box（否则 sing-box 必定启动失败）
+		reply(CommandResult{Type: "result", Status: "error", Message: fmt.Sprintf("配置推送失败: 检测到 %d 个端口冲突，请修改端口后重试", len(portConflicts))})
+		return
+	}
+	reply(CommandResult{Type: "progress", Stage: "端口检查通过，无冲突"})
+
 	// 3. 保存协议缓存
 	reply(CommandResult{Type: "progress", Stage: "保存协议配置缓存..."})
 	if err := cfgMgr.SaveToCache(); err != nil {
@@ -1008,12 +1034,16 @@ func (rt *Runtime) executePushConfig(cmd ServerCommand, reply func(CommandResult
 		return
 	}
 
-	// 8. 启动 sing-box
+	// 8. 启动 sing-box 并验证健康状态（等待 3 秒确认进程存活）
 	reply(CommandResult{Type: "progress", Stage: "启动 sing-box..."})
-	if err := rt.singboxMgr.Start(ctx); err != nil {
-		reply(CommandResult{Type: "result", Status: "error", Message: fmt.Sprintf("启动 sing-box 失败: %v", err)})
+	if err := rt.singboxMgr.StartAndVerify(ctx, 3*time.Second); err != nil {
+		log.Printf("[Agent] push-config: sing-box 启动验证失败: %v", err)
+		reply(CommandResult{Type: "progress", Stage: fmt.Sprintf("❌ sing-box 启动失败: %v", err)})
+		reply(CommandResult{Type: "progress", Stage: "提示: 请检查端口是否被其他进程占用，或查看 Agent 日志获取详细错误"})
+		reply(CommandResult{Type: "result", Status: "error", Message: fmt.Sprintf("sing-box 启动失败: %v", err)})
 		return
 	}
+	reply(CommandResult{Type: "progress", Stage: "sing-box 启动成功，进程运行正常"})
 
 	// 9. 上报链接更新
 	reply(CommandResult{Type: "progress", Stage: "上报链接更新..."})
@@ -1145,16 +1175,31 @@ func (rt *Runtime) executeReinstallSingbox(cmd ServerCommand, reply func(Command
 		}
 		cfgMgr.SaveToCache()
 
+		// 4.5 端口冲突预检测
+		reply(CommandResult{Type: "progress", Stage: "检查端口冲突..."})
+		portConflicts := singbox.CheckPortConflicts(cfgMgr.Protocols)
+		if len(portConflicts) > 0 {
+			for _, c := range portConflicts {
+				reply(CommandResult{Type: "progress", Stage: fmt.Sprintf("⚠️ 端口冲突: %s", c.Reason)})
+			}
+			reply(CommandResult{Type: "result", Status: "error", Message: fmt.Sprintf("重新安装失败: 检测到 %d 个端口冲突，请修改端口后重试", len(portConflicts))})
+			return
+		}
+
 		// 5. 生成配置并启动
-		reply(CommandResult{Type: "progress", Stage: "生成配置并启动..."})
+		reply(CommandResult{Type: "progress", Stage: "生成 sing-box 配置..."})
 		if err := cfgMgr.GenerateAndSave(); err != nil {
 			reply(CommandResult{Type: "result", Status: "error", Message: fmt.Sprintf("生成配置失败: %v", err)})
 			return
 		}
-		if err := rt.singboxMgr.Start(ctx); err != nil {
-			reply(CommandResult{Type: "result", Status: "error", Message: fmt.Sprintf("启动 sing-box 失败: %v", err)})
+		reply(CommandResult{Type: "progress", Stage: "启动 sing-box..."})
+		if err := rt.singboxMgr.StartAndVerify(ctx, 3*time.Second); err != nil {
+			log.Printf("[Agent] reinstall: sing-box 启动验证失败: %v", err)
+			reply(CommandResult{Type: "progress", Stage: fmt.Sprintf("❌ sing-box 启动失败: %v", err)})
+			reply(CommandResult{Type: "result", Status: "error", Message: fmt.Sprintf("sing-box 启动失败: %v", err)})
 			return
 		}
+		reply(CommandResult{Type: "progress", Stage: "sing-box 启动成功，进程运行正常"})
 
 		// 6. 上报链接更新
 		rt.reportLinksUpdate(ctx, "reinstall", payload.Protocols)

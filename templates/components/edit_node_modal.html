@@ -831,6 +831,10 @@
     .cmd-log-body .line { padding: 1px 0; }
     .cmd-log-body .line.result-ok { color: #a6e3a1; font-weight: 600; }
     .cmd-log-body .line.result-error { color: #f38ba8; font-weight: 600; }
+    .cmd-log-body .line.warn { color: #fab387; font-weight: 600; }
+    .cmd-log-body .line.error-detail { color: #f38ba8; padding: 2px 0; }
+    .cmd-log-body .line.success { color: #a6e3a1; }
+    .cmd-log-body .line.info-highlight { color: #89b4fa; }
 </style>
 
 <div class="edit-modal-overlay" id="editNodeModal">
@@ -991,12 +995,12 @@
 
             <div class="edit-footer">
                 <button type="button" class="btn-footer-close" onclick="closeEditModal()">关闭</button>
-                <button type="button" class="btn-footer-close" id="btnPushConfig" style="background:#007aff; color:#fff; display:flex; align-items:center; gap:5px;" onclick="pushConfigToAgent()" title="推送当前启用的协议及端口配置给 Agent，Agent 将重新配置 sing-box">
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <button type="button" class="btn-footer-close" id="btnPushConfig" style="background:#007aff; color:#fff; display:flex; align-items:center; gap:5px; transition: all 0.2s;" onclick="handlePushConfigClick()" title="推送当前启用的协议及端口配置给 Agent，Agent 将重新配置 sing-box">
+                    <svg id="btnPushConfigIcon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                         <path d="M22 2L11 13"></path>
                         <path d="M22 2L15 22L11 13L2 9L22 2Z"></path>
                     </svg>
-                    推送配置
+                    <span id="btnPushConfigText">推送配置</span>
                 </button>
             </div>
         </div>
@@ -1061,8 +1065,25 @@
         el.value = formatTrafficLimitBytes(bytes);
     }
 
-    function openEditModal(uuid) {
+    async function openEditModal(uuid) {
         isInitializingEdit = true;
+
+        // 静默刷新节点数据，确保打开弹窗时数据是最新的
+        try {
+            const resp = await fetch('/api/get-nodes');
+            const result = await resp.json();
+            if (result.status === 'success') {
+                window.allNodesData = {};
+                const cacheNodes = (nodes) => {
+                    if (nodes) nodes.forEach(n => (window.allNodesData[n.uuid] = n));
+                };
+                cacheNodes(result.data.direct_nodes);
+                cacheNodes(result.data.land_nodes);
+            }
+        } catch (e) {
+            console.warn('静默刷新节点数据失败:', e);
+        }
+
         const node = window.allNodesData[uuid];
         if (!node) { alert('数据加载异常，请刷新'); return; }
 
@@ -1384,15 +1405,31 @@
         document.getElementById('editModalCard').classList.add('has-content');
     }
 
+    // classifyLogLine 根据日志内容自动分类样式
+    function classifyLogLine(text) {
+        if (!text) return '';
+        // 错误/失败关键词
+        if (/❌|失败|错误|error|fail|fatal|refused|denied|占用/i.test(text)) return 'error-detail';
+        // 警告/冲突关键词
+        if (/⚠️|警告|warn|冲突|conflict|端口.*被|port.*in use|address already in use/i.test(text)) return 'warn';
+        // 成功关键词
+        if (/✅|成功|完成|ok|running|started|通过/i.test(text)) return 'success';
+        // 提示信息
+        if (/提示|hint|tip|建议|请检查|请修改/i.test(text)) return 'info-highlight';
+        return '';
+    }
+
     function appendCmdLog(entry) {
         const body = document.getElementById('cmdLogBody');
         const dot = document.getElementById('cmdLogDot');
         const titleEl = document.getElementById('cmdLogTitle');
 
         if (entry.type === 'progress') {
+            const text = (entry.message || '').replace(/\x1b\[[0-9;]*m/g, '');
             const line = document.createElement('div');
-            line.className = 'line';
-            line.textContent = (entry.message || '').replace(/\x1b\[[0-9;]*m/g, '');
+            const extraClass = classifyLogLine(text);
+            line.className = 'line' + (extraClass ? ' ' + extraClass : '');
+            line.textContent = text;
             body.appendChild(line);
         } else if (entry.type === 'result') {
             const line = document.createElement('div');
@@ -1849,6 +1886,41 @@
         triggerNodeAutoSave();
     }
 
+    // 推送配置按钮二次确认逻辑
+    let _pushConfigConfirmTimer = null;
+    let _pushConfigInConfirm = false;
+
+    function handlePushConfigClick() {
+        const btn = document.getElementById('btnPushConfig');
+        const textEl = document.getElementById('btnPushConfigText');
+        if (!btn || !textEl) return;
+
+        if (_pushConfigInConfirm) {
+            // 第二次点击：执行推送
+            _pushConfigInConfirm = false;
+            clearTimeout(_pushConfigConfirmTimer);
+            resetPushConfigBtn();
+            pushConfigToAgent();
+        } else {
+            // 第一次点击：进入确认状态
+            _pushConfigInConfirm = true;
+            btn.style.background = '#ff9500';
+            textEl.textContent = '确定推送';
+            // 3秒后自动恢复
+            _pushConfigConfirmTimer = setTimeout(() => {
+                resetPushConfigBtn();
+            }, 3000);
+        }
+    }
+
+    function resetPushConfigBtn() {
+        _pushConfigInConfirm = false;
+        const btn = document.getElementById('btnPushConfig');
+        const textEl = document.getElementById('btnPushConfigText');
+        if (btn) btn.style.background = '#007aff';
+        if (textEl) textEl.textContent = '推送配置';
+    }
+
     // 推送当前启用的协议及端口配置给 Agent
     function pushConfigToAgent() {
         const uuid = document.getElementById('editNodeUUID').value;
@@ -1882,7 +1954,20 @@
             return;
         }
 
-        if (!confirm('确定要推送配置到「' + name + '」？\nAgent 将根据最新的启用协议和端口配置重新生成 sing-box 配置并重启。\n\n启用的协议: ' + enabledProtocols.join(', '))) {
+        // 🆕 前端侧端口重复预检测
+        const portToProtos = {};
+        for (const [proto, port] of Object.entries(protocolPorts)) {
+            if (!portToProtos[port]) portToProtos[port] = [];
+            portToProtos[port].push(proto);
+        }
+        const duplicates = [];
+        for (const [port, protos] of Object.entries(portToProtos)) {
+            if (protos.length > 1) {
+                duplicates.push(`端口 ${port} 被 ${protos.map(p => p.toUpperCase()).join(', ')} 共用`);
+            }
+        }
+        if (duplicates.length > 0) {
+            alert('⚠️ 检测到端口冲突，请先修改：\n\n' + duplicates.join('\n'));
             return;
         }
 

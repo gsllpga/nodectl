@@ -9,10 +9,12 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 )
@@ -394,4 +396,199 @@ func (m *Manager) Shutdown() {
 	if err := m.Stop(); err != nil {
 		log.Printf("[SingBox] 关闭 sing-box 失败: %v", err)
 	}
+}
+
+// PortConflict 端口冲突信息
+type PortConflict struct {
+	Protocol string // 协议名称（如 "ss", "hy2"）
+	Port     int    // 冲突端口
+	Network  string // "tcp" / "udp"
+	Reason   string // 冲突原因描述
+}
+
+// CheckPortConflicts 检测协议配置中的端口冲突问题
+// 返回两类冲突：
+// 1. 协议之间的端口重复（同一端口被多个协议使用）
+// 2. 端口被系统其他进程占用
+func CheckPortConflicts(pc *ProtocolConfig) []PortConflict {
+	var conflicts []PortConflict
+
+	// 1. 收集所有启用协议的端口
+	type protoPort struct {
+		protocol string
+		port     int
+		networks []string // tcp, udp, or both
+	}
+
+	var protoPorts []protoPort
+	enabledList := pc.EnabledProtocolList()
+
+	for _, proto := range enabledList {
+		port := getProtoPort(pc, proto)
+		if port <= 0 {
+			continue
+		}
+		nets := getProtoNetworks(proto)
+		protoPorts = append(protoPorts, protoPort{protocol: proto, port: port, networks: nets})
+	}
+
+	// 2. 检测协议之间的端口重复
+	portUsageMap := make(map[string][]string) // "tcp:8388" -> ["ss", "socks5"]
+	for _, pp := range protoPorts {
+		for _, n := range pp.networks {
+			key := fmt.Sprintf("%s:%d", n, pp.port)
+			portUsageMap[key] = append(portUsageMap[key], pp.protocol)
+		}
+	}
+	for key, protos := range portUsageMap {
+		if len(protos) > 1 {
+			parts := strings.SplitN(key, ":", 2)
+			network := parts[0]
+			port, _ := strconv.Atoi(parts[1])
+			conflicts = append(conflicts, PortConflict{
+				Protocol: strings.Join(protos, ", "),
+				Port:     port,
+				Network:  network,
+				Reason:   fmt.Sprintf("端口 %d/%s 被多个协议共用: [%s]", port, strings.ToUpper(network), strings.Join(protos, ", ")),
+			})
+		}
+	}
+
+	// 3. 检测端口是否被系统其他进程占用
+	checkedPorts := make(map[string]bool)
+	for _, pp := range protoPorts {
+		for _, n := range pp.networks {
+			key := fmt.Sprintf("%s:%d", n, pp.port)
+			if checkedPorts[key] {
+				continue
+			}
+			checkedPorts[key] = true
+
+			if isPortInUse(n, pp.port) {
+				conflicts = append(conflicts, PortConflict{
+					Protocol: pp.protocol,
+					Port:     pp.port,
+					Network:  n,
+					Reason:   fmt.Sprintf("端口 %d/%s (协议 %s) 已被系统其他进程占用", pp.port, strings.ToUpper(n), pp.protocol),
+				})
+			}
+		}
+	}
+
+	return conflicts
+}
+
+// getProtoPort 获取协议的端口号
+func getProtoPort(pc *ProtocolConfig, proto string) int {
+	switch proto {
+	case ProtoSS:
+		return pc.SS.Port
+	case ProtoHY2:
+		return pc.HY2.Port
+	case ProtoTUIC:
+		return pc.TUIC.Port
+	case ProtoReality:
+		return pc.Reality.Port
+	case ProtoSocks5:
+		return pc.Socks5.Port
+	case ProtoTrojan:
+		return pc.Trojan.Port
+	case ProtoAnyTLS:
+		return pc.AnyTLS.Port
+	case ProtoVmessTCP:
+		return pc.VMess.TCPPort
+	case ProtoVmessWS:
+		return pc.VMess.WSPort
+	case ProtoVmessHTTP:
+		return pc.VMess.HTTPPort
+	case ProtoVmessQUIC:
+		return pc.VMess.QUICPort
+	case ProtoVmessWST:
+		return pc.VMess.WSTPort
+	case ProtoVmessHUT:
+		return pc.VMess.HUTPort
+	case ProtoVlessWST:
+		return pc.VlessTLS.WSTPort
+	case ProtoVlessHUT:
+		return pc.VlessTLS.HUTPort
+	case ProtoTrojanWST:
+		return pc.TrojanTLS.WSTPort
+	case ProtoTrojanHUT:
+		return pc.TrojanTLS.HUTPort
+	default:
+		return 0
+	}
+}
+
+// getProtoNetworks 返回协议使用的网络类型
+func getProtoNetworks(proto string) []string {
+	switch proto {
+	case ProtoHY2, ProtoTUIC, ProtoVmessQUIC:
+		return []string{"udp"}
+	default:
+		return []string{"tcp"}
+	}
+}
+
+// isPortInUse 检测指定端口是否被占用
+func isPortInUse(network string, port int) bool {
+	addr := fmt.Sprintf(":%d", port)
+	switch network {
+	case "tcp":
+		ln, err := net.Listen("tcp", addr)
+		if err != nil {
+			return true // 端口被占用
+		}
+		ln.Close()
+		return false
+	case "udp":
+		conn, err := net.ListenPacket("udp", addr)
+		if err != nil {
+			return true // 端口被占用
+		}
+		conn.Close()
+		return false
+	default:
+		return false
+	}
+}
+
+// StartAndVerify 启动 sing-box 并等待一段时间验证是否存活
+// 返回：启动错误 或 验证失败错误
+// healthCheckDuration: 启动后等待多久来验证进程存活（推荐 2-3 秒）
+func (m *Manager) StartAndVerify(ctx context.Context, healthCheckDuration time.Duration) error {
+	if err := m.Start(ctx); err != nil {
+		return err
+	}
+
+	// 等待一段时间，检测 sing-box 是否快速退出（如端口冲突、配置错误等）
+	time.Sleep(healthCheckDuration)
+
+	m.mu.RLock()
+	running := m.running
+	lastErr := m.lastError
+	m.mu.RUnlock()
+
+	if !running {
+		errMsg := "sing-box 启动后立即退出"
+		if lastErr != "" {
+			errMsg = fmt.Sprintf("sing-box 启动后立即退出: %s", lastErr)
+		}
+		return fmt.Errorf(errMsg)
+	}
+
+	return nil
+}
+
+// FormatPortConflictsMessage 将端口冲突列表格式化为人类可读的消息
+func FormatPortConflictsMessage(conflicts []PortConflict) string {
+	if len(conflicts) == 0 {
+		return ""
+	}
+	var sb strings.Builder
+	sb.WriteString(fmt.Sprintf("⚠️ 检测到 %d 个端口冲突问题:\n", len(conflicts)))
+	for i, c := range conflicts {
+		sb.WriteString(fmt.Sprintf("  %d. %s\n", i+1, c.Reason))
+	}
+	return sb.String()
 }
