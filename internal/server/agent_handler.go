@@ -83,12 +83,16 @@ func apiAgentInitConfig(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// 🆕 从 SysConfig 加载自定义 SNI 配置，下发给 Agent
+	sniConfig := loadSNIConfig()
+
 	sendJSON(w, "success", map[string]interface{}{
 		"data": map[string]interface{}{
 			"protocols": map[string]interface{}{
 				"enabled": enabledProtocols,
 			},
 			"ports":     ports,
+			"sni":       sniConfig,
 			"panel_url": panelURL,
 			"ws_url":    wsURL,
 		},
@@ -312,6 +316,46 @@ func loadSysConfigValue(key string) string {
 		return ""
 	}
 	return strings.TrimSpace(cfg.Value)
+}
+
+// loadSNIConfig 从 SysConfig 表加载所有协议的自定义 SNI 配置
+// 返回 map[string]string，key 为协议标识（与 Agent 端 ProtocolConfig 字段对应），value 为 SNI 域名
+// 仅返回非空的自定义 SNI，Agent 端对未包含的协议继续使用内置默认值
+func loadSNIConfig() map[string]string {
+	// SysConfig Key -> SNI 配置标识的映射
+	keyToProto := map[string]string{
+		"proxy_hy2_sni":        "hy2",
+		"proxy_tuic_sni":       "tuic",
+		"proxy_trojan_sni":     "trojan",
+		"proxy_reality_sni":    "reality",
+		"proxy_anytls_sni":     "anytls",
+		"proxy_vmess_tls_sni":  "vmess_tls",
+		"proxy_vless_tls_sni":  "vless_tls",
+		"proxy_trojan_tls_sni": "trojan_tls",
+	}
+
+	// 收集所有需要查询的 Key
+	keys := make([]string, 0, len(keyToProto))
+	for k := range keyToProto {
+		keys = append(keys, k)
+	}
+
+	var cfgs []database.SysConfig
+	database.DB.Where("key IN ?", keys).Find(&cfgs)
+
+	result := make(map[string]string)
+	valueByKey := make(map[string]string, len(cfgs))
+	for _, c := range cfgs {
+		valueByKey[c.Key] = strings.TrimSpace(c.Value)
+	}
+
+	for sysKey, protoKey := range keyToProto {
+		if val, ok := valueByKey[sysKey]; ok && val != "" {
+			result[protoKey] = val
+		}
+	}
+
+	return result
 }
 
 // ============================================================

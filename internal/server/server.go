@@ -321,7 +321,6 @@ func Start(tmplFS embed.FS) {
 
 	// ========== 节点控制 (Agent 命令下发) ==========
 	mux.HandleFunc("/api/callback/reset-protocol", withAuthAndSecure(apiResetProtocol))                       // 🆕 协议重置接口（管理员操作，需登录鉴权）
-	mux.HandleFunc("/api/node/control/reinstall-singbox", withAuthAndSecure(apiNodeControlReinstall))         // 远程重装 sing-box
 	mux.HandleFunc("/api/node/control/check-agent-update", withAuthAndSecure(apiNodeControlCheckAgentUpdate)) // 远程检查 Agent 更新
 	mux.HandleFunc("/api/node/control/push-config", withAuthAndSecure(apiNodeControlPushConfig))              // 推送协议配置到 Agent
 	mux.HandleFunc("/api/node/control/tunnel-start", withAuthAndSecure(apiNodeControlTunnelStart))            // 远程启动 tunnel

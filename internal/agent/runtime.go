@@ -363,9 +363,10 @@ func (rt *Runtime) fetchAndBuildProtocolConfig(ctx context.Context) (*singbox.Pr
 			Protocols struct {
 				Enabled []string `json:"enabled"`
 			} `json:"protocols"`
-			Ports    map[string]int `json:"ports"`
-			PanelURL string         `json:"panel_url"`
-			WSURL    string         `json:"ws_url"`
+			Ports    map[string]int    `json:"ports"`
+			SNI      map[string]string `json:"sni"` // 🆕 面板自定义 SNI 配置
+			PanelURL string            `json:"panel_url"`
+			WSURL    string            `json:"ws_url"`
 		} `json:"data"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&apiResp); err != nil {
@@ -378,15 +379,19 @@ func (rt *Runtime) fetchAndBuildProtocolConfig(ctx context.Context) (*singbox.Pr
 
 	enabledProtocols := apiResp.Data.Protocols.Enabled
 	ports := apiResp.Data.Ports
+	sniMap := apiResp.Data.SNI
 
 	if len(enabledProtocols) == 0 {
 		return nil, fmt.Errorf("面板返回的启用协议列表为空（节点可能尚未配置协议）")
 	}
 
-	log.Printf("[Agent] 面板返回: 启用协议=%v, 端口=%v", enabledProtocols, ports)
+	log.Printf("[Agent] 面板返回: 启用协议=%v, 端口=%v, sni=%v", enabledProtocols, ports, sniMap)
 
 	// 4. 构建完整的 ProtocolConfig（端口来自面板，凭据本地生成）
 	pc := singbox.DefaultProtocolConfig()
+
+	// 🆕 应用面板下发的自定义 SNI 配置（覆盖内置默认值）
+	applySNIConfig(pc, sniMap)
 
 	// 设置启用的协议
 	for _, proto := range enabledProtocols {
@@ -883,13 +888,54 @@ func (rt *Runtime) executeCheckAgentUpdate(reply func(CommandResult)) {
 	}()
 }
 
+// applySNIConfig 将面板下发的自定义 SNI 配置应用到 ProtocolConfig
+// sniMap key 定义：
+//   - "hy2":        → pc.HY2.SNI
+//   - "tuic":       → pc.TUIC.SNI
+//   - "anytls":     → pc.AnyTLS.SNI
+//   - "vmess_tls":  → pc.VMess.TLSSNI
+//   - "vless_tls":  → pc.VlessTLS.TLSSNI
+//   - "trojan_tls": → pc.TrojanTLS.TLSSNI
+//
+// 仅覆盖 sniMap 中存在且非空的项，其余保留 ProtocolConfig 原有值（内置默认或缓存值）
+func applySNIConfig(pc *singbox.ProtocolConfig, sniMap map[string]string) {
+	if len(sniMap) == 0 {
+		return
+	}
+	if v, ok := sniMap["hy2"]; ok && v != "" {
+		pc.HY2.SNI = v
+	}
+	if v, ok := sniMap["tuic"]; ok && v != "" {
+		pc.TUIC.SNI = v
+	}
+	if v, ok := sniMap["trojan"]; ok && v != "" {
+		pc.Trojan.SNI = v
+	}
+	if v, ok := sniMap["reality"]; ok && v != "" {
+		pc.Reality.SNI = v
+	}
+	if v, ok := sniMap["anytls"]; ok && v != "" {
+		pc.AnyTLS.SNI = v
+	}
+	if v, ok := sniMap["vmess_tls"]; ok && v != "" {
+		pc.VMess.TLSSNI = v
+	}
+	if v, ok := sniMap["vless_tls"]; ok && v != "" {
+		pc.VlessTLS.TLSSNI = v
+	}
+	if v, ok := sniMap["trojan_tls"]; ok && v != "" {
+		pc.TrojanTLS.TLSSNI = v
+	}
+}
+
 // executePushConfig 处理后端下发的推送配置命令
-// payload: {"protocols": ["ss", "hy2", ...], "ports": {"ss": 8388, "hy2": 8443, ...}, "tunnel": {...}}
+// payload: {"protocols": ["ss", "hy2", ...], "ports": {"ss": 8388, "hy2": 8443, ...}, "sni": {...}, "tunnel": {...}}
 // 功能：根据前端编辑的启用协议列表和端口配置，更新本地协议配置、重新生成 sing-box 配置并重启
 func (rt *Runtime) executePushConfig(cmd ServerCommand, reply func(CommandResult)) {
 	var payload struct {
 		Protocols []string          `json:"protocols"`
 		Ports     map[string]int    `json:"ports"`
+		SNI       map[string]string `json:"sni"` // 🆕 面板自定义 SNI 配置
 		Tunnel    *tunnelCmdPayload `json:"tunnel,omitempty"`
 	}
 	if len(cmd.Payload) > 0 {
@@ -966,6 +1012,13 @@ func (rt *Runtime) executePushConfig(cmd ServerCommand, reply func(CommandResult
 				cfgMgr.Protocols.TrojanTLS.HUTPort = port
 			}
 		}
+	}
+
+	// 2.3 🆕 应用面板下发的自定义 SNI 配置（覆盖内置默认值）
+	if len(payload.SNI) > 0 {
+		reply(CommandResult{Type: "progress", Stage: "应用自定义 SNI 配置..."})
+		applySNIConfig(cfgMgr.Protocols, payload.SNI)
+		log.Printf("[Agent] push-config: 已应用自定义 SNI: %v", payload.SNI)
 	}
 
 	// 2.5 🆕 为新启用的协议生成缺失的凭据（UUID、密码、Reality 密钥对等）

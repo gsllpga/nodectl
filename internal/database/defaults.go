@@ -167,6 +167,8 @@ func initProxySettings() {
 		// 可配置 SNI（原先硬编码 www.bing.com）
 		{Key: "proxy_hy2_sni", Value: "www.bing.com", Description: "HY2 客户端 SNI 伪装域名"},
 		{Key: "proxy_tuic_sni", Value: "www.bing.com", Description: "TUIC 客户端 SNI 伪装域名"},
+		{Key: "proxy_trojan_sni", Value: "www.bing.com", Description: "Trojan 客户端 SNI 伪装域名"},
+		{Key: "proxy_reality_sni", Value: "addons.mozilla.org", Description: "Reality 伪装域名 (SNI)"},
 		// 系统优化选项
 		{Key: "proxy_enable_bbr", Value: "true", Description: "是否在安装时启用 BBR 内核加速"},
 		// VMess 协议族端口

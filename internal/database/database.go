@@ -187,6 +187,7 @@ func loadDefaultPortsFromSysConfig(tx *gorm.DB) map[string]int {
 		"reality":    "proxy_port_reality",
 		"socks5":     "proxy_port_socks5",
 		"trojan":     "proxy_port_trojan",
+		"anytls":     "proxy_port_anytls",
 		"vmess_tcp":  "proxy_port_vmess_tcp",
 		"vmess_ws":   "proxy_port_vmess_ws",
 		"vmess_http": "proxy_port_vmess_http",

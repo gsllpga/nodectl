@@ -1560,78 +1560,6 @@ func apiDeleteNode(w http.ResponseWriter, r *http.Request) {
 
 // ------------------- [节点控制接口] -------------------
 
-// apiNodeControlReinstall 远程重新安装节点 sing-box（异步下发 + 返回 command_id）
-// 路由: POST /api/node/control/reinstall-singbox
-// 请求体: { "uuid": "节点UUID" }
-func apiNodeControlReinstall(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		sendJSON(w, "error", "仅支持 POST 请求")
-		return
-	}
-
-	var req struct {
-		UUID string `json:"uuid"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.UUID == "" {
-		sendJSON(w, "error", "参数错误: uuid 不能为空")
-		return
-	}
-
-	// 查找节点
-	var node database.NodePool
-	if err := database.DB.Where("uuid = ?", req.UUID).First(&node).Error; err != nil {
-		sendJSON(w, "error", "节点不存在")
-		return
-	}
-
-	// 检查节点是否在线
-	if !service.IsNodeOnline(node.InstallID) {
-		sendJSON(w, "error", "节点不在线，无法执行命令")
-		return
-	}
-
-	// 从数据库中已有链接提取协议列表
-	// 面板与 Agent 统一使用下划线格式，无需转换
-	protocols := make([]string, 0, len(node.Links))
-	for proto := range node.Links {
-		protocols = append(protocols, proto)
-	}
-	if len(protocols) == 0 {
-		sendJSON(w, "error", "该节点没有已知协议信息，无法重装")
-		return
-	}
-
-	// 将协议列表作为 payload 下发给 agent（异步，不等待结果）
-	payload := map[string]interface{}{
-		"protocols": protocols,
-	}
-	if node.TunnelEnabled {
-		if tunnelPayload, e := buildNodeTunnelCommandPayload(node); e == nil {
-			payload["tunnel"] = tunnelPayload
-		} else {
-			logger.Log.Warn("重装 sing-box 时跳过 Tunnel 刷新", "uuid", req.UUID, "error", e)
-		}
-	}
-
-	commandID, err := service.FireCommandToNode(node.InstallID, "reinstall-singbox", payload)
-	if err != nil {
-		logger.Log.Error("重装 sing-box 命令下发失败", "uuid", req.UUID, "error", err)
-		sendJSON(w, "error", fmt.Sprintf("命令下发失败: %v", err))
-		return
-	}
-
-	resp := map[string]interface{}{
-		"command_id": commandID,
-		"message":    "命令已下发，正在执行...",
-	}
-	if _, ok := payload["tunnel"]; ok {
-		resp["message"] = "命令已下发，重装完成后会自动刷新 Tunnel 配置"
-	}
-
-	logger.Log.Info("重装 sing-box 命令已下发", "uuid", req.UUID, "command_id", commandID)
-	sendJSON(w, "success", resp)
-}
-
 // apiNodeControlCheckAgentUpdate 远程触发 Agent 主动检查更新（异步下发 + 返回 command_id）
 // 路由: POST /api/node/control/check-agent-update
 // 请求体: { "uuid": "节点UUID" }
@@ -1909,9 +1837,13 @@ func apiNodeControlPushConfig(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// 🆕 从 SysConfig 加载自定义 SNI 配置，下发给 Agent
+	sniConfig := loadSNIConfig()
+
 	payload := map[string]interface{}{
 		"protocols": req.Protocols,
 		"ports":     mergedPorts,
+		"sni":       sniConfig,
 	}
 
 	// 如果节点启用了 Tunnel，附带 Tunnel 配置
