@@ -415,8 +415,12 @@ type PortConflict struct {
 // CheckPortConflicts 检测协议配置中的端口冲突问题
 // 返回两类冲突：
 // 1. 协议之间的端口重复（同一端口被多个协议使用）
-// 2. 端口被系统其他进程占用
-func CheckPortConflicts(pc *ProtocolConfig) []PortConflict {
+// 2. 端口被系统其他进程占用（排除当前 sing-box 自身占用的端口）
+//
+// excludePorts: 需要排除的端口集合（当前 sing-box 已在使用的端口），
+// 这些端口虽然"被占用"，但属于 sing-box 自身进程，不应视为冲突。
+// 传 nil 表示不排除任何端口（首次启动时使用）。
+func CheckPortConflicts(pc *ProtocolConfig, excludePorts map[string]bool) []PortConflict {
 	var conflicts []PortConflict
 
 	// 1. 收集所有启用协议的端口
@@ -461,6 +465,7 @@ func CheckPortConflicts(pc *ProtocolConfig) []PortConflict {
 	}
 
 	// 3. 检测端口是否被系统其他进程占用
+	// 排除当前 sing-box 自身已占用的端口（推送新配置时，sing-box 仍在运行）
 	checkedPorts := make(map[string]bool)
 	for _, pp := range protoPorts {
 		for _, n := range pp.networks {
@@ -469,6 +474,11 @@ func CheckPortConflicts(pc *ProtocolConfig) []PortConflict {
 				continue
 			}
 			checkedPorts[key] = true
+
+			// 如果该端口在排除列表中（即当前 sing-box 正在使用的端口），跳过检测
+			if excludePorts != nil && excludePorts[key] {
+				continue
+			}
 
 			if isPortInUse(n, pp.port) {
 				conflicts = append(conflicts, PortConflict{
@@ -482,6 +492,30 @@ func CheckPortConflicts(pc *ProtocolConfig) []PortConflict {
 	}
 
 	return conflicts
+}
+
+// CollectCurrentPorts 收集当前协议配置中所有已启用协议的端口集合
+// 返回 map[string]bool，key 格式为 "tcp:20021" 或 "udp:8443"
+// 用于在推送新配置时，排除当前 sing-box 自身占用的端口
+func CollectCurrentPorts(pc *ProtocolConfig) map[string]bool {
+	if pc == nil {
+		return nil
+	}
+	ports := make(map[string]bool)
+	for _, proto := range pc.EnabledProtocolList() {
+		port := getProtoPort(pc, proto)
+		if port <= 0 {
+			continue
+		}
+		for _, n := range getProtoNetworks(proto) {
+			key := fmt.Sprintf("%s:%d", n, port)
+			ports[key] = true
+		}
+	}
+	if len(ports) == 0 {
+		return nil
+	}
+	return ports
 }
 
 // getProtoPort 获取协议的端口号

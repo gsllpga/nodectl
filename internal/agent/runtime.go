@@ -272,8 +272,8 @@ func (rt *Runtime) initSingBox(ctx context.Context) {
 		}
 	}
 
-	// 🆕 端口冲突预检测
-	portConflicts := singbox.CheckPortConflicts(cfgMgr.Protocols)
+	// 🆕 端口冲突预检测（首次启动，不排除任何端口）
+	portConflicts := singbox.CheckPortConflicts(cfgMgr.Protocols, nil)
 	if len(portConflicts) > 0 {
 		conflictMsg := singbox.FormatPortConflictsMessage(portConflicts)
 		log.Printf("[Agent] 初始化检测到端口冲突:\n%s", conflictMsg)
@@ -951,10 +951,46 @@ func (rt *Runtime) executePushConfig(cmd ServerCommand, reply func(CommandResult
 		return
 	}
 
-	reply(CommandResult{Type: "progress", Stage: fmt.Sprintf("收到推送配置：协议 %v", payload.Protocols)})
-
 	cfgMgr := rt.singboxMgr.GetConfigManager()
 	ctx := context.Background()
+
+	// 0. 记录旧协议列表和端口（用于差异显示和端口冲突排除）
+	oldProtocols := cfgMgr.Protocols.EnabledProtocolList()
+	oldPorts := singbox.CollectCurrentPorts(cfgMgr.Protocols)
+
+	// 计算协议变更差异：新增、删除、保留
+	oldSet := make(map[string]bool)
+	for _, p := range oldProtocols {
+		oldSet[p] = true
+	}
+	newSet := make(map[string]bool)
+	for _, p := range payload.Protocols {
+		newSet[p] = true
+	}
+	var addedProtos, removedProtos, keptProtos []string
+	for _, p := range payload.Protocols {
+		if oldSet[p] {
+			keptProtos = append(keptProtos, p)
+		} else {
+			addedProtos = append(addedProtos, p)
+		}
+	}
+	for _, p := range oldProtocols {
+		if !newSet[p] {
+			removedProtos = append(removedProtos, p)
+		}
+	}
+
+	// 显示协议变更摘要
+	if len(addedProtos) > 0 && len(removedProtos) > 0 {
+		reply(CommandResult{Type: "progress", Stage: fmt.Sprintf("收到推送配置：新增协议 %v，删除协议 %v", addedProtos, removedProtos)})
+	} else if len(addedProtos) > 0 {
+		reply(CommandResult{Type: "progress", Stage: fmt.Sprintf("收到推送配置：新增协议 %v（保留 %v）", addedProtos, keptProtos)})
+	} else if len(removedProtos) > 0 {
+		reply(CommandResult{Type: "progress", Stage: fmt.Sprintf("收到推送配置：删除协议 %v（保留 %v）", removedProtos, keptProtos)})
+	} else {
+		reply(CommandResult{Type: "progress", Stage: fmt.Sprintf("收到推送配置：协议未变更 %v（可能更新了端口/SNI 配置）", payload.Protocols)})
+	}
 
 	// 1. 更新协议启用状态：先全部禁用，再启用前端传来的协议
 	reply(CommandResult{Type: "progress", Stage: "更新协议启用状态..."})
@@ -1033,8 +1069,9 @@ func (rt *Runtime) executePushConfig(cmd ServerCommand, reply func(CommandResult
 	}
 
 	// 2.6 🆕 端口冲突预检测：检查协议之间端口重复 + 系统端口占用
+	// 排除当前 sing-box 自身已占用的端口（如 anytls:20021 正在运行，添加 reality 时不应报告 20021 冲突）
 	reply(CommandResult{Type: "progress", Stage: "检查端口冲突..."})
-	portConflicts := singbox.CheckPortConflicts(cfgMgr.Protocols)
+	portConflicts := singbox.CheckPortConflicts(cfgMgr.Protocols, oldPorts)
 	if len(portConflicts) > 0 {
 		conflictMsg := singbox.FormatPortConflictsMessage(portConflicts)
 		log.Printf("[Agent] push-config: 检测到端口冲突:\n%s", conflictMsg)
@@ -1230,7 +1267,7 @@ func (rt *Runtime) executeReinstallSingbox(cmd ServerCommand, reply func(Command
 
 		// 4.5 端口冲突预检测
 		reply(CommandResult{Type: "progress", Stage: "检查端口冲突..."})
-		portConflicts := singbox.CheckPortConflicts(cfgMgr.Protocols)
+		portConflicts := singbox.CheckPortConflicts(cfgMgr.Protocols, nil)
 		if len(portConflicts) > 0 {
 			for _, c := range portConflicts {
 				reply(CommandResult{Type: "progress", Stage: fmt.Sprintf("⚠️ 端口冲突: %s", c.Reason)})
