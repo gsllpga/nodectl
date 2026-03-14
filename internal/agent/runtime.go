@@ -272,6 +272,12 @@ func (rt *Runtime) initSingBox(ctx context.Context) {
 		}
 	}
 
+	// 🆕 检测并终止遗留的 sing-box 进程（Agent 通过 execve 更新后，旧 sing-box 仍在运行）
+	// 必须在端口冲突检测之前执行，否则旧 sing-box 占用的端口会被误报为冲突
+	if rt.singboxMgr.KillOrphanProcess() {
+		log.Printf("[Agent] 已终止遗留的 sing-box 进程，准备启动新实例")
+	}
+
 	// 🆕 端口冲突预检测（首次启动，不排除任何端口）
 	portConflicts := singbox.CheckPortConflicts(cfgMgr.Protocols, nil)
 	if len(portConflicts) > 0 {
