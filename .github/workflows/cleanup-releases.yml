@@ -10,9 +10,9 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       permissions:
-      contents: write  # 允许删除 Release 和 Git Tag
-      packages: write  # 允许删除 GHCR 中的 Docker 镜像
-      actions: write   # 允许删除旧的 Actions 运行记录
+        contents: write  # 允许删除 Release 和 Git Tag
+        packages: write  # 允许删除 GHCR 中的 Docker 镜像
+        actions: write   # 允许删除旧的 Actions 运行记录
 
     steps:
       # 🌟 先拉取代码，让环境里拥有 .git 仓库上下文
