@@ -6,6 +6,7 @@ import (
 	"context"
 	"crypto/tls"
 	"embed"
+	"fmt"
 	"html/template"
 	"io/fs"
 	"log"
@@ -18,6 +19,7 @@ import (
 	"sync"
 	"time"
 
+	"nodectl/internal/database"
 	"nodectl/internal/logger"
 	"nodectl/internal/middleware"
 	"nodectl/internal/service"
@@ -422,9 +424,11 @@ func Start(tmplFS embed.FS) {
 		err := service.LoadCertificate()
 		certLoaded := (err == nil)
 
-		// 实例化当前 Server，统一监听 8080 端口
+		// 实例化当前 Server，动态读取监听端口（Docker 环境始终为 8080）
+		webPort := database.GetWebPort()
+		listenAddr := fmt.Sprintf(":%d", webPort)
 		activeServer := &http.Server{
-			Addr:     ":8080",
+			Addr:     listenAddr,
 			Handler:  mux,
 			ErrorLog: log.New(&serverLogWriter{}, "", 0),
 		}
@@ -448,14 +452,14 @@ func Start(tmplFS embed.FS) {
 			<-restartChan // 阻塞等待通道信号
 			logger.Log.Info("收到重启信号，正在卸载当前网络服务...")
 			if srv != nil {
-				srv.Close() // 强制关闭服务，释放 8080 端口
+				srv.Close() // 强制关闭服务，释放监听端口
 			}
 		}(activeServer)
 
 		// [主线程] 启动服务并阻塞
 		var serveErr error
 		if certLoaded {
-			logger.ConsoleAndLog.Info("网络服务已启动", "mode", "HTTPS", "addr", "https://localhost:8080", "domain", service.GetCurrentCertInfo().Domain)
+			logger.ConsoleAndLog.Info("网络服务已启动", "mode", "HTTPS", "addr", fmt.Sprintf("https://localhost:%d", webPort), "domain", service.GetCurrentCertInfo().Domain)
 			// 首次启动时，在 Web 服务准备就绪后自动拉起 Tunnel
 			if firstBoot {
 				go service.AutoStartCFTunnel()
@@ -463,7 +467,7 @@ func Start(tmplFS embed.FS) {
 			}
 			serveErr = activeServer.ListenAndServeTLS("", "")
 		} else {
-			logger.ConsoleAndLog.Info("网络服务已启动", "mode", "HTTP", "addr", "http://localhost:8080", "msg", "如需使用 HTTPS，请在面板上传证书")
+			logger.ConsoleAndLog.Info("网络服务已启动", "mode", "HTTP", "addr", fmt.Sprintf("http://localhost:%d", webPort), "msg", "如需使用 HTTPS，请在面板上传证书")
 			// 首次启动时，在 Web 服务准备就绪后自动拉起 Tunnel
 			if firstBoot {
 				go service.AutoStartCFTunnel()

@@ -38,6 +38,7 @@ type DBConfig struct {
 	Password string `json:"password,omitempty"` // PostgreSQL 密码
 	DBName   string `json:"dbname,omitempty"`   // PostgreSQL 数据库名
 	SSLMode  string `json:"sslmode,omitempty"`  // PostgreSQL SSL 模式 (disable/require/verify-full)
+	WebPort  int    `json:"web_port,omitempty"` // Web 服务监听端口 (默认 8080，Docker 环境始终使用 8080)
 }
 
 // DBStatus 数据库状态信息
@@ -922,4 +923,49 @@ func formatBytesHuman(bytes int64) string {
 // GetUnderlyingDB 获取底层 sql.DB 实例 (用于外部模块的 Ping、Stats 等)
 func GetUnderlyingDB() (*sql.DB, error) {
 	return DB.DB()
+}
+
+// ------------------- Web 端口管理 -------------------
+
+// DefaultWebPort Web 服务默认监听端口
+const DefaultWebPort = 8080
+
+// isRunningInDocker 检测当前是否运行在 Docker 容器内
+// 通过检查 /.dockerenv 文件或 /proc/1/cgroup 中是否包含 docker/containerd 关键字判断，
+// 不需要任何额外的环境依赖。
+func isRunningInDocker() bool {
+	// 方法 1: 检查 /.dockerenv 文件（Docker 运行时自动创建）
+	if _, err := os.Stat("/.dockerenv"); err == nil {
+		return true
+	}
+	// 方法 2: 检查 /proc/1/cgroup 中是否包含 docker 或 containerd 关键字
+	data, err := os.ReadFile("/proc/1/cgroup")
+	if err == nil {
+		content := strings.ToLower(string(data))
+		if strings.Contains(content, "docker") || strings.Contains(content, "containerd") {
+			return true
+		}
+	}
+	return false
+}
+
+// GetWebPort 获取 Web 服务监听端口。
+// 规则：
+//  1. Docker 环境始终返回 8080（避免用户在容器内误改端口导致服务不可达）
+//  2. 非 Docker 环境：优先读取 data/dbconfig.json 中的 web_port 字段
+//  3. 若未配置或值无效（<1 或 >65535），返回默认端口 8080
+func GetWebPort() int {
+	if isRunningInDocker() {
+		return DefaultWebPort
+	}
+	cfg := LoadDBConfig()
+	if cfg.WebPort >= 1 && cfg.WebPort <= 65535 {
+		return cfg.WebPort
+	}
+	return DefaultWebPort
+}
+
+// GetWebPortStr 返回 Web 端口的字符串形式，格式如 ":8080"，可直接用于 http.Server.Addr
+func GetWebPortStr() string {
+	return fmt.Sprintf(":%d", GetWebPort())
 }

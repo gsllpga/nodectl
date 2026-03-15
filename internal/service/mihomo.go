@@ -58,17 +58,9 @@ func InitMihomo() {
 		binPath: filepath.Join(dir, binName),
 	}
 
-	// 检查核心是否就绪
+	// 检查核心是否就绪，仅输出日志提示
 	if !GlobalMihomo.IsCoreReady() {
-		logger.Log.Warn("本地暂无 Mihomo 核心，正在启动后台自动下载...")
-		// 开启一个后台协程静默下载，不阻塞主程序启动
-		go func() {
-			if err := GlobalMihomo.ForceUpdate(); err != nil {
-				logger.Log.Error("Mihomo 核心启动时自动下载失败", "error", err)
-			} else {
-				logger.Log.Info("Mihomo 核心自动下载部署完成！前端测速功能已就绪。")
-			}
-		}()
+		logger.Log.Warn("本地暂无 Mihomo 核心，请在系统设置中手动下载。测速功能需要 Mihomo 核心支持。")
 	} else {
 		logger.Log.Debug("Mihomo 测试核心已就绪", "version", GlobalMihomo.GetLocalVersion())
 	}

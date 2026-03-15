@@ -33,13 +33,14 @@ const (
 	cfTunnelPIDFile   = "data/cf/tunnel/cloudflared.pid"
 )
 
-// getAutoOriginURL 自动获取本地服务回源地址
+// getAutoOriginURL 自动获取本地服务回源地址（端口跟随 dbconfig.json 中的 web_port 配置）
 func getAutoOriginURL() string {
+	port := database.GetWebPort()
 	certEnabled := strings.ToLower(strings.TrimSpace(getCFConfig("cf_cert_enabled")))
 	if (certEnabled == "true" || certEnabled == "1") && HasValidLocalCertificate() {
-		return "https://127.0.0.1:8080"
+		return fmt.Sprintf("https://127.0.0.1:%d", port)
 	}
-	return "http://127.0.0.1:8080"
+	return fmt.Sprintf("http://127.0.0.1:%d", port)
 }
 
 // cfTunnelBinaryName 返回当前平台的 cloudflared 二进制名
@@ -2221,7 +2222,7 @@ func OneClickSetupCFTunnel(token, subdomain, domain, tunnelName string, progress
 		"cf_domain":                   domain,
 		"cf_tunnel_name":              tunnelName,
 		"cf_tunnel_subdomain":         subdomain,
-		"cf_tunnel_origin_url":        "http://127.0.0.1:8080",
+		"cf_tunnel_origin_url":        fmt.Sprintf("http://127.0.0.1:%d", database.GetWebPort()),
 		"cf_tunnel_bind_main_process": "true",
 		"cf_tunnel_enabled":           "true",
 	}
