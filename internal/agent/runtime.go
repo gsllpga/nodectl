@@ -41,7 +41,6 @@ type Runtime struct {
 	// 🆕 sing-box 管理模块
 	singboxMgr *singbox.Manager
 	linkGen    *links.Generator
-	apiReport  *api.Reporter
 }
 
 // NewRuntime 创建运行时实例
@@ -1199,10 +1198,9 @@ func (rt *Runtime) executeResetLinks(cmd ServerCommand, reply func(CommandResult
 
 	cfgMgr := rt.singboxMgr.GetConfigManager()
 
-	// 创建重置处理器
+	// 创建重置处理器（链接上报已迁移至 WS 通道，由下方 reportLinksUpdate 负责）
 	publicIP := api.GetPublicIP()
-	apiReporter := api.NewReporter(api.DeriveReportURL(rt.cfg.WSURL), rt.cfg.InstallID)
-	resetHandler := api.NewResetHandler(cfgMgr, rt.singboxMgr, apiReporter, publicIP)
+	resetHandler := api.NewResetHandler(cfgMgr, rt.singboxMgr, publicIP)
 
 	// 执行批量重置
 	if err := resetHandler.ResetMultiple(context.Background(), payload.Protocols); err != nil {

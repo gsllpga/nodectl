@@ -197,7 +197,7 @@ func initProxySettings() {
 		{Key: "proxy_trojan_tls_sni", Value: "www.bing.com", Description: "Trojan TLS 传输族默认客户端 SNI 伪装域名"},
 		// AnyTLS 协议配置
 		{Key: "proxy_port_anytls", Value: "20021", Description: "AnyTLS 默认监听端口"},
-		{Key: "proxy_anytls_sni", Value: "addons.mozilla.org", Description: "AnyTLS 客户端 SNI 伪装域名"},
+		{Key: "proxy_anytls_sni", Value: "learn.microsoft.com", Description: "AnyTLS 客户端 SNI 伪装域名"},
 	}
 
 	for _, config := range defaultConfigs {

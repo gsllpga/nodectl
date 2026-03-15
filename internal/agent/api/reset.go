@@ -1,6 +1,8 @@
 // 路径: internal/agent/api/reset.go
 // 协议重置处理模块
-// 处理单个/批量协议重置：重新生成密钥/密码/UUID，触发链接上报
+// 处理单个/批量协议重置：重新生成密钥/密码/UUID
+// 注意：链接上报已迁移至 WebSocket 通道（runtime.go 中的 reportLinksUpdate），
+// 本模块不再负责上报，仅负责凭据重置和配置重载。
 package api
 
 import (
@@ -15,16 +17,14 @@ import (
 type ResetHandler struct {
 	configMgr *singbox.ConfigManager
 	manager   *singbox.Manager
-	reporter  *Reporter
 	publicIP  string
 }
 
 // NewResetHandler 创建重置处理器
-func NewResetHandler(configMgr *singbox.ConfigManager, manager *singbox.Manager, reporter *Reporter, publicIP string) *ResetHandler {
+func NewResetHandler(configMgr *singbox.ConfigManager, manager *singbox.Manager, publicIP string) *ResetHandler {
 	return &ResetHandler{
 		configMgr: configMgr,
 		manager:   manager,
-		reporter:  reporter,
 		publicIP:  publicIP,
 	}
 }
@@ -54,13 +54,7 @@ func (h *ResetHandler) ResetProtocol(ctx context.Context, protocol string) error
 		}
 	}
 
-	// 上报链接更新
-	if h.reporter != nil {
-		if err := h.reporter.ReportLinksUpdate(ctx, h.publicIP, h.configMgr.Protocols, []string{protocol}); err != nil {
-			log.Printf("[Reset] 上报链接更新失败: %v", err)
-			// 不返回错误，重置本身已成功
-		}
-	}
+	// 链接上报已迁移至 WS 通道，由调用方（runtime.go reportLinksUpdate）负责
 
 	log.Printf("[Reset] 协议 %s 重置完成", protocol)
 	return nil
@@ -97,12 +91,7 @@ func (h *ResetHandler) ResetMultiple(ctx context.Context, protocols []string) er
 		}
 	}
 
-	// 上报链接更新
-	if h.reporter != nil {
-		if err := h.reporter.ReportLinksUpdate(ctx, h.publicIP, h.configMgr.Protocols, protocols); err != nil {
-			log.Printf("[Reset] 上报链接更新失败: %v", err)
-		}
-	}
+	// 链接上报已迁移至 WS 通道，由调用方（runtime.go reportLinksUpdate）负责
 
 	log.Printf("[Reset] 批量重置完成: %v", protocols)
 	return nil
