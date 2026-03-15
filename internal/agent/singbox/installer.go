@@ -56,14 +56,29 @@ func (p *platformInfo) String() string {
 	return fmt.Sprintf("os=%s, arch=%s, libc=%s, distro=%s", p.OS, p.Arch, libc, distro)
 }
 
-// archSuffix 返回 sing-box Release 文件名中使用的架构+变体后缀
-// 例如: "amd64", "amd64-musl", "arm64", "armv7"
+// archSuffix 返回 sing-box Release 文件名中使用的架构+libc 后缀
+// sing-box 1.12+ Release 文件命名规则:
+//   - 静态编译(通用): sing-box-{ver}-linux-{arch}.tar.gz
+//   - glibc 动态链接: sing-box-{ver}-linux-{arch}-glibc.tar.gz
+//   - musl 动态链接:  sing-box-{ver}-linux-{arch}-musl.tar.gz
+//
+// 为确保兼容性，明确使用 -glibc 或 -musl 后缀版本
+// 例如: "amd64-musl", "amd64-glibc", "arm64-musl", "armv7-glibc"
 func (p *platformInfo) archSuffix() string {
 	suffix := p.Arch
 	if p.IsMusl {
 		suffix += "-musl"
+	} else if p.LibC == "glibc" {
+		suffix += "-glibc"
 	}
+	// 如果 LibC 未知，不加后缀（使用静态编译的通用版本）
 	return suffix
+}
+
+// archSuffixFallback 返回回退用的架构后缀（不带 libc 标识的通用版本）
+// 当指定 libc 版本下载失败时使用
+func (p *platformInfo) archSuffixFallback() string {
+	return p.Arch
 }
 
 // Installer sing-box 安装器
@@ -133,6 +148,7 @@ func (i *Installer) NeedUpdate(latestVersion string) bool {
 }
 
 // Download 下载并安装 sing-box 二进制
+// 支持多候选 URL 回退: 优先下载与系统 libc 匹配的版本，失败则回退到通用版本
 func (i *Installer) Download(ctx context.Context) error {
 	// 检测完整的平台信息
 	platform := detectPlatform()
@@ -150,15 +166,6 @@ func (i *Installer) Download(ctx context.Context) error {
 		version = DefaultSingBoxVersion
 	}
 
-	// 构造下载 URL
-	// 格式: sing-box-{version}-linux-{archSuffix}.tar.gz
-	// archSuffix 示例: amd64, amd64-musl, arm64, armv7
-	archSuffix := platform.archSuffix()
-	filename := fmt.Sprintf("sing-box-%s-linux-%s.tar.gz", version, archSuffix)
-	downloadURL := fmt.Sprintf("%s/download/v%s/%s", SingBoxGitHubRepo, version, filename)
-
-	log.Printf("[SingBox] 下载 sing-box v%s (arch=%s, libc=%s): %s", version, platform.Arch, platform.LibC, downloadURL)
-
 	// 确保目标目录存在
 	if dir := filepath.Dir(i.binaryPath); dir != "" {
 		if err := os.MkdirAll(dir, 0755); err != nil {
@@ -166,6 +173,90 @@ func (i *Installer) Download(ctx context.Context) error {
 		}
 	}
 
+	// 构建候选下载列表（按优先级排序）
+	// sing-box 1.12+ Release 命名规则:
+	//   sing-box-{ver}-linux-{arch}.tar.gz         (静态编译/通用)
+	//   sing-box-{ver}-linux-{arch}-glibc.tar.gz   (glibc 动态链接)
+	//   sing-box-{ver}-linux-{arch}-musl.tar.gz    (musl 动态链接)
+	candidates := i.buildDownloadCandidates(platform, version)
+
+	log.Printf("[SingBox] 候选下载列表 (%d 个):", len(candidates))
+	for idx, c := range candidates {
+		log.Printf("[SingBox]   #%d: %s (archSuffix=%s)", idx+1, c.url, c.archSuffix)
+	}
+
+	// 依次尝试每个候选
+	var lastErr error
+	for idx, candidate := range candidates {
+		log.Printf("[SingBox] 尝试 #%d: 下载 %s", idx+1, candidate.url)
+
+		err := i.downloadAndInstall(ctx, candidate.url, version, candidate.archSuffix)
+		if err != nil {
+			log.Printf("[SingBox] 候选 #%d 失败: %v", idx+1, err)
+			lastErr = err
+			// 清理可能残留的文件
+			os.Remove(i.binaryPath)
+			continue
+		}
+
+		// 下载成功，验证二进制是否可运行
+		if err := i.verifyBinaryRunnable(); err != nil {
+			log.Printf("[SingBox] 候选 #%d 二进制验证失败: %v", idx+1, err)
+			log.Printf("[SingBox] 平台信息: %s", platform.String())
+			lastErr = fmt.Errorf("sing-box 二进制无法在当前系统运行: %w", err)
+			os.Remove(i.binaryPath)
+			continue
+		}
+
+		log.Printf("[SingBox] sing-box v%s 安装完成 (候选 #%d): %s", version, idx+1, i.binaryPath)
+		return nil
+	}
+
+	return fmt.Errorf("所有候选下载均失败（平台: %s）: %w", platform.String(), lastErr)
+}
+
+// downloadCandidate 下载候选项
+type downloadCandidate struct {
+	url        string // 下载 URL
+	archSuffix string // 用于解压时定位文件
+}
+
+// buildDownloadCandidates 构建候选下载列表（按优先级排序）
+// musl 系统:  musl 版本 → 通用版本
+// glibc 系统: glibc 版本 → 通用版本
+// 未知 libc:  通用版本 → musl 版本（因为 musl 版本兼容性更好）
+func (i *Installer) buildDownloadCandidates(platform *platformInfo, version string) []downloadCandidate {
+	var candidates []downloadCandidate
+
+	buildURL := func(archSuffix string) downloadCandidate {
+		filename := fmt.Sprintf("sing-box-%s-linux-%s.tar.gz", version, archSuffix)
+		url := fmt.Sprintf("%s/download/v%s/%s", SingBoxGitHubRepo, version, filename)
+		return downloadCandidate{url: url, archSuffix: archSuffix}
+	}
+
+	primarySuffix := platform.archSuffix()
+	fallbackSuffix := platform.archSuffixFallback()
+
+	// 添加首选版本
+	candidates = append(candidates, buildURL(primarySuffix))
+
+	// 如果首选版本带有 libc 后缀，添加通用版本作为回退
+	if primarySuffix != fallbackSuffix {
+		candidates = append(candidates, buildURL(fallbackSuffix))
+	}
+
+	// 如果首选不是 musl，但也不是通用版本，再添加 musl 作为最后回退
+	// （musl 静态链接版本通常在任何 Linux 上都能运行）
+	muslSuffix := platform.Arch + "-musl"
+	if primarySuffix != muslSuffix && fallbackSuffix != muslSuffix {
+		candidates = append(candidates, buildURL(muslSuffix))
+	}
+
+	return candidates
+}
+
+// downloadAndInstall 下载并安装单个候选版本
+func (i *Installer) downloadAndInstall(ctx context.Context, downloadURL, version, archSuffix string) error {
 	// 下载到临时文件
 	tmpFile, err := os.CreateTemp("", "sing-box-*.tar.gz")
 	if err != nil {
@@ -177,7 +268,7 @@ func (i *Installer) Download(ctx context.Context) error {
 	if err := downloadFile(ctx, downloadURL, tmpFile); err != nil {
 		tmpFile.Close()
 		os.Remove(tmpFilePath)
-		return fmt.Errorf("下载 sing-box 失败: %w", err)
+		return fmt.Errorf("下载失败: %w", err)
 	}
 
 	// 关闭文件以确保所有数据写入磁盘
@@ -197,7 +288,7 @@ func (i *Installer) Download(ctx context.Context) error {
 
 	// 从 tar.gz 中提取 sing-box 二进制
 	if err := extractSingBox(tmpFile, i.binaryPath, version, archSuffix); err != nil {
-		return fmt.Errorf("解压 sing-box 失败: %w", err)
+		return fmt.Errorf("解压失败: %w", err)
 	}
 
 	// 确保文件同步到磁盘
@@ -210,25 +301,16 @@ func (i *Installer) Download(ctx context.Context) error {
 		return fmt.Errorf("设置执行权限失败: %w", err)
 	}
 
-	// 验证文件
+	// 验证文件存在且非空
 	info, err := os.Stat(i.binaryPath)
 	if err != nil {
 		return fmt.Errorf("验证文件失败: %w", err)
 	}
+	if info.Size() == 0 {
+		return fmt.Errorf("文件大小为 0")
+	}
 	log.Printf("[SingBox] 文件大小: %d bytes, 模式: %04o", info.Size(), info.Mode())
 
-	// 安装后立即验证二进制是否可运行
-	if err := i.verifyBinaryRunnable(); err != nil {
-		// 如果是 musl 环境下载了 glibc 版本，或反过来，给出明确提示
-		log.Printf("[SingBox] 警告: 二进制验证失败: %v", err)
-		log.Printf("[SingBox] 平台信息: %s", platform.String())
-
-		// 清理无法运行的二进制文件
-		os.Remove(i.binaryPath)
-		return fmt.Errorf("sing-box 二进制无法在当前系统运行（平台: %s）: %w", platform.String(), err)
-	}
-
-	log.Printf("[SingBox] sing-box v%s 安装完成: %s", version, i.binaryPath)
 	return nil
 }
 
@@ -367,7 +449,7 @@ func detectDistro() string {
 }
 
 // detectLibC 检测系统使用的 C 标准库类型（glibc 或 musl）
-// 使用多种方法确保准确检测
+// 使用多种方法确保准确检测，特别是在 Go 静态链接二进制的场景下
 func detectLibC() string {
 	// 方法1: 检查 ldd 版本输出（最可靠）
 	if libc := detectLibCByLdd(); libc != "" {
@@ -379,12 +461,24 @@ func detectLibC() string {
 		return libc
 	}
 
-	// 方法3: 通过 /proc/self/maps 检查加载的库
+	// 方法3: 检查系统包管理器和发行版特征文件
+	// 这在 Go 静态链接二进制中也能工作（不依赖 /proc/self/maps）
+	if libc := detectLibCByPackageManager(); libc != "" {
+		return libc
+	}
+
+	// 方法4: 通过 /proc/self/maps 检查加载的库
+	// 注意: Go 静态链接二进制可能不加载任何 libc，此方法可能无效
 	if libc := detectLibCByProcMaps(); libc != "" {
 		return libc
 	}
 
-	// 方法4: 基于发行版推断（作为最后手段）
+	// 方法5: 检查系统中已安装的 libc 共享库文件
+	if libc := detectLibCBySharedLibs(); libc != "" {
+		return libc
+	}
+
+	// 方法6: 基于发行版推断（作为最后手段）
 	if libc := detectLibCByDistro(); libc != "" {
 		return libc
 	}
@@ -457,7 +551,46 @@ func detectLibCByMuslLinker() string {
 	return ""
 }
 
+// detectLibCByPackageManager 通过系统包管理器和发行版特征检测 libc 类型
+// 这种方法不依赖当前进程的动态链接状态，即使 Go 二进制是静态编译的也能正确检测
+func detectLibCByPackageManager() string {
+	// 检查 apk（Alpine 的包管理器）
+	if apkPath, err := exec.LookPath("apk"); err == nil {
+		log.Printf("[SingBox] 检测到 apk 包管理器: %s，推断为 musl", apkPath)
+		return "musl"
+	}
+
+	// 检查 /etc/apk 目录存在（即使 apk 不在 PATH 中）
+	if _, err := os.Stat("/etc/apk"); err == nil {
+		log.Printf("[SingBox] 检测到 /etc/apk 目录，推断为 musl")
+		return "musl"
+	}
+
+	// 检查 /etc/alpine-release 文件
+	if _, err := os.Stat("/etc/alpine-release"); err == nil {
+		log.Printf("[SingBox] 检测到 /etc/alpine-release，推断为 musl")
+		return "musl"
+	}
+
+	// 通过 getconf 检测 GNU_LIBC_VERSION（glibc 特有）
+	if getconfPath, err := exec.LookPath("getconf"); err == nil {
+		cmd := exec.Command(getconfPath, "GNU_LIBC_VERSION")
+		output, err := cmd.Output()
+		if err == nil && strings.Contains(strings.ToLower(string(output)), "glibc") {
+			log.Printf("[SingBox] getconf 检测到 glibc: %s", strings.TrimSpace(string(output)))
+			return "glibc"
+		}
+		// getconf GNU_LIBC_VERSION 失败通常意味着不是 glibc 系统
+		if err != nil {
+			log.Printf("[SingBox] getconf GNU_LIBC_VERSION 失败，可能非 glibc 系统")
+		}
+	}
+
+	return ""
+}
+
 // detectLibCByProcMaps 通过 /proc/self/maps 检查当前进程加载的库
+// 注意: 如果当前进程是 Go 静态链接二进制（CGO_ENABLED=0），此方法可能无法检测到任何 libc
 func detectLibCByProcMaps() string {
 	data, err := os.ReadFile("/proc/self/maps")
 	if err != nil {
@@ -473,6 +606,47 @@ func detectLibCByProcMaps() string {
 		// libc.so 通常表示 glibc
 		log.Printf("[SingBox] /proc/self/maps 检测到 glibc (libc.so)")
 		return "glibc"
+	}
+
+	return ""
+}
+
+// detectLibCBySharedLibs 通过检查系统中已安装的 libc 共享库文件判断
+// 即使当前进程是静态链接的，系统上安装的共享库仍然存在
+func detectLibCBySharedLibs() string {
+	// 检查 musl libc 共享库
+	muslLibPaths := []string{
+		"/lib/libc.musl-x86_64.so.1",
+		"/lib/libc.musl-aarch64.so.1",
+		"/lib/libc.musl-armhf.so.1",
+		"/lib/libc.musl-i386.so.1",
+	}
+	for _, path := range muslLibPaths {
+		if _, err := os.Stat(path); err == nil {
+			log.Printf("[SingBox] 检测到 musl 共享库: %s", path)
+			return "musl"
+		}
+	}
+	// 通配模式检测 musl
+	muslMatches, _ := filepath.Glob("/lib/libc.musl-*.so.*")
+	if len(muslMatches) > 0 {
+		log.Printf("[SingBox] 检测到 musl 共享库 (glob): %s", muslMatches[0])
+		return "musl"
+	}
+
+	// 检查 glibc 共享库（通常在 /lib 或 /lib64 下）
+	glibcPatterns := []string{
+		"/lib/x86_64-linux-gnu/libc.so.*",
+		"/lib/aarch64-linux-gnu/libc.so.*",
+		"/lib64/libc.so.*",
+		"/lib/libc.so.*",
+	}
+	for _, pattern := range glibcPatterns {
+		matches, _ := filepath.Glob(pattern)
+		if len(matches) > 0 {
+			log.Printf("[SingBox] 检测到 glibc 共享库 (glob): %s", matches[0])
+			return "glibc"
+		}
 	}
 
 	return ""
