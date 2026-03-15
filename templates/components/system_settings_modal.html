@@ -436,9 +436,6 @@
         width: auto;
     }
 
-    .sys-offline-col-status {
-        width: 66px;
-    }
 
     .sys-offline-col-records {
         width: 56px;
@@ -493,11 +490,9 @@
         word-break: break-word;
     }
 
-    .sys-offline-th-status,
     .sys-offline-th-records,
     .sys-offline-th-grace,
     .sys-offline-th-threshold,
-    .sys-offline-td-status,
     .sys-offline-td-records,
     .sys-offline-td-grace,
     .sys-offline-td-threshold {
@@ -540,17 +535,6 @@
         border-color: #e5e7eb;
         cursor: default;
         font-family: inherit;
-    }
-
-    .sys-offline-status-badge {
-        display: inline-block;
-        min-width: 48px;
-        padding: 4px 8px;
-        border-radius: 999px;
-        font-weight: 600;
-        cursor: pointer;
-        user-select: none;
-        font-size: 12px;
     }
 
     .sys-offline-grace-input {
@@ -720,7 +704,6 @@
             width: 24px;
         }
 
-        .sys-offline-col-status,
         .sys-offline-col-records,
         .sys-offline-col-grace,
         .sys-offline-col-threshold {
@@ -741,11 +724,9 @@
             padding-left: 4px;
         }
 
-        .sys-offline-th-status,
         .sys-offline-th-records,
         .sys-offline-th-grace,
         .sys-offline-th-threshold,
-        .sys-offline-td-status,
         .sys-offline-td-records,
         .sys-offline-td-grace,
         .sys-offline-td-threshold {
@@ -757,12 +738,6 @@
             min-width: 28px;
             padding: 2px 5px;
             font-size: 10px;
-        }
-
-        .sys-offline-status-badge {
-            min-width: 42px;
-            padding: 4px 6px;
-            font-size: 11px;
         }
 
         .sys-offline-grace-input {
@@ -2877,17 +2852,17 @@
                                                 margin: 0;
                                                 padding-bottom: 4px;
                                             ">
-                                            •
-                                            <b>总开关:</b>
-                                            状态栏统一控制离线通知与阈值停机。
+                                            • <b>宽限期:</b> 设为 0
+                                            表示不发送离线通知；大于 0
+                                            表示节点离线超过该秒数后发送通知。
                                         </p>
                                         <p style="
                                                 margin: 0;
                                                 padding-bottom: 4px;
                                             ">
-                                            • <b>分开关:</b> 宽限期=0
-                                            表示不发送离线通知；阈值=0
-                                            表示不启用阈值停机。
+                                            • <b>阈值:</b> 设为 0
+                                            表示不启用阈值停机；大于 0
+                                            表示流量达到该百分比后触发停机。
                                         </p>
                                         <p style="margin: 0">
                                             •
@@ -2899,13 +2874,6 @@
                             </label>
                             <div class="sys-batch-inline-wrap">
                                 <div class="sys-batch-inline-controls" id="sysBatchInlineControls">
-                                    <div class="sys-batch-inline-item">
-                                        <label>状态</label>
-                                        <select id="sysBatchOfflineNotifyEnabled" class="sys-batch-inline-select">
-                                            <option value="1">启用</option>
-                                            <option value="0">禁用</option>
-                                        </select>
-                                    </div>
                                     <div class="sys-batch-inline-item">
                                         <label>宽限</label>
                                         <input type="number" id="sysBatchOfflineNotifyGrace"
@@ -2942,7 +2910,6 @@
                                 <colgroup>
                                     <col class="sys-offline-col-select" />
                                     <col class="sys-offline-col-name" />
-                                    <col class="sys-offline-col-status" />
                                     <col class="sys-offline-col-records" />
                                     <col class="sys-offline-col-grace" />
                                     <col class="sys-offline-col-threshold" />
@@ -2959,9 +2926,6 @@
                                         <th class="sys-offline-th-name">
                                             服务器
                                         </th>
-                                        <th class="sys-offline-th-status">
-                                            状态
-                                        </th>
                                         <th class="sys-offline-th-records">
                                             记录
                                         </th>
@@ -2975,7 +2939,7 @@
                                 </thead>
                                 <tbody id="sysOfflineNotifyTableBody">
                                     <tr>
-                                        <td colspan="6" style="
+                                        <td colspan="5" style="
                                                 padding: 16px;
                                                 text-align: center;
                                                 color: #999;
@@ -4258,7 +4222,7 @@
         const searchInput = document.getElementById("sysOfflineNodeSearch");
         if (searchInput) searchInput.value = "";
 
-        tbody.innerHTML = `<tr><td colspan="6" style="padding: 16px; text-align: center; color: #999;">加载中...</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="5" style="padding: 16px; text-align: center; color: #999;">加载中...</td></tr>`;
         try {
             const res = await fetch("/api/offline-notify/settings");
             const result = await res.json();
@@ -4271,7 +4235,6 @@
             offlineNotifyRows = nodes
                 .map((n) => ({
                     uuid: String(n.uuid || ""),
-                    enabled: !!n.offline_notify_enabled,
                     grace: Number(n.offline_notify_grace_sec ?? 180),
                     threshold: Number(n.traffic_threshold_percent || 0),
                 }))
@@ -4285,7 +4248,7 @@
 
             renderOfflineNotifyNodes(nodes);
         } catch (e) {
-            tbody.innerHTML = `<tr><td colspan="6" style="padding: 16px; text-align: center; color: #d74242;">加载失败，请稍后重试</td></tr>`;
+            tbody.innerHTML = `<tr><td colspan="5" style="padding: 16px; text-align: center; color: #d74242;">加载失败，请稍后重试</td></tr>`;
             updateOfflineNotifySelectAllState();
         }
     }
@@ -4295,7 +4258,7 @@
         if (!tbody) return;
 
         if (!nodes || nodes.length === 0) {
-            tbody.innerHTML = `<tr><td colspan="6" style="padding: 16px; text-align: center; color: #999;">暂无节点</td></tr>`;
+            tbody.innerHTML = `<tr><td colspan="5" style="padding: 16px; text-align: center; color: #999;">暂无节点</td></tr>`;
             updateOfflineNotifySelectAllState();
             return;
         }
@@ -4307,7 +4270,7 @@
 
         function buildGroupHeader(label, color, count) {
             return `<tr class="sys-offline-group-header" style="border-top:none;">
-                <td colspan="6" style="padding:6px 10px;background:#fafbfc;font-size:12px;font-weight:600;color:${color};border-bottom:1px solid #eef1f5;">
+                <td colspan="5" style="padding:6px 10px;background:#fafbfc;font-size:12px;font-weight:600;color:${color};border-bottom:1px solid #eef1f5;">
                     <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${color};margin-right:6px;vertical-align:middle;"></span>
                     ${label} <span style="font-weight:400;color:#999;">(${count})</span>
                 </td>
@@ -4338,16 +4301,11 @@
     function buildOfflineNotifyNodeRow(n) {
         const name = escapeHtml(n.name || "-");
         const uuid = escapeHtml(n.uuid || "");
-        const enabled = !!n.offline_notify_enabled;
         const grace = Number(n.offline_notify_grace_sec ?? 180);
         const threshold = Number(n.traffic_threshold_percent || 0);
         const regionCode = n.region || n.country_code || n.country || "";
         const flagHtml = sysBuildServerFlagHtml(regionCode);
         const checked = offlineNotifySelectedUUIDs.has(String(n.uuid || ""));
-        const statusText = enabled ? "启用" : "禁用";
-        const statusStyle = enabled
-            ? "color:#1f8f4a;background:#e8f7ed;border:1px solid #c9ebd6;"
-            : "color:#b05700;background:#fff3e6;border:1px solid #ffd7b0;";
 
         // 历史流量记录条数：-1 表示需要懒加载
         const historyCount = Number(n.traffic_history_count ?? -1);
@@ -4371,14 +4329,6 @@
                         ${flagHtml}
                         <div class="sys-offline-name-text">${name}</div>
                     </div>
-                </td>
-                <td class="sys-offline-td-status">
-                    <span
-                        onclick="toggleOfflineNotifyEnabled('${uuid}', ${enabled ? "true" : "false"})"
-                        class="sys-offline-status-badge"
-                        style="${statusStyle}">
-                        ${statusText}
-                    </span>
                 </td>
                 <td class="sys-offline-td-records">
                     ${recordsBadgeHtml}
@@ -4572,41 +4522,6 @@
         return offlineNotifyRows.find((n) => n.uuid === uuid) || null;
     }
 
-    async function toggleOfflineNotifyEnabled(uuid, currentEnabled) {
-        const row = getOfflineNotifyRowByUUID(uuid);
-        const nextEnabled = !currentEnabled;
-        const thresholdInput = document.getElementById(
-            "offline_threshold_" + uuid,
-        );
-        let threshold = row ? Number(row.threshold || 0) : 0;
-        if (thresholdInput) {
-            const parsed = parseInt(thresholdInput.value, 10);
-            if (!Number.isNaN(parsed)) threshold = parsed;
-        }
-        if (Number.isNaN(threshold) || threshold < 0) threshold = 0;
-        if (threshold > 100) threshold = 100;
-
-        showOfflineNotifySaving();
-        try {
-            const res = await fetch("/api/offline-notify/update", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                    uuid,
-                    offline_notify_enabled: nextEnabled,
-                    traffic_threshold_enabled: nextEnabled && threshold > 0,
-                }),
-            });
-            const result = await res.json();
-            if (result.status !== "success")
-                throw new Error(result.message || "save failed");
-            showOfflineNotifySaved();
-            await loadOfflineNotifySettings();
-        } catch (e) {
-            showOfflineNotifySaveFailed();
-            await loadOfflineNotifySettings();
-        }
-    }
 
     function queueOfflineNotifyGraceSave(uuid) {
         const input = document.getElementById("offline_grace_" + uuid);
@@ -4666,16 +4581,12 @@
         if (threshold > 100) threshold = 100;
         input.value = String(threshold);
 
-        const row = getOfflineNotifyRowByUUID(uuid);
-        const enabled = !!(row && row.enabled);
-
         try {
             const res = await fetch("/api/offline-notify/update", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
                     uuid,
-                    traffic_threshold_enabled: enabled && threshold > 0,
                     traffic_threshold_percent: threshold,
                 }),
             });
@@ -4704,9 +4615,6 @@
                 alert("未找到已选节点，请刷新后重试");
                 return;
             }
-            const allEnabled = selected.every((n) => n.enabled);
-            document.getElementById("sysBatchOfflineNotifyEnabled").value =
-                allEnabled ? "1" : "0";
             document.getElementById("sysBatchOfflineNotifyGrace").value =
                 String(selected[0].grace ?? 180);
             document.getElementById("sysBatchTrafficThresholdPercent").value =
@@ -4742,9 +4650,6 @@
     }
 
     async function saveBatchInline() {
-        const enabled =
-            document.getElementById("sysBatchOfflineNotifyEnabled").value ===
-            "1";
         let grace = parseInt(
             document.getElementById("sysBatchOfflineNotifyGrace").value,
             10,
@@ -4779,9 +4684,7 @@
                         headers: { "Content-Type": "application/json" },
                         body: JSON.stringify({
                             uuid,
-                            offline_notify_enabled: enabled,
                             offline_notify_grace_sec: grace,
-                            traffic_threshold_enabled: enabled && threshold > 0,
                             traffic_threshold_percent: threshold,
                         }),
                     })

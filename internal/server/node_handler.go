@@ -556,9 +556,7 @@ func apiGetOfflineNotifySettings(w http.ResponseWriter, r *http.Request) {
 			"name":                      n.Name,
 			"region":                    n.Region,
 			"routing_type":              n.RoutingType,
-			"offline_notify_enabled":    n.OfflineNotifyEnabled,
 			"offline_notify_grace_sec":  grace,
-			"traffic_threshold_enabled": n.TrafficThresholdEnabled,
 			"traffic_threshold_percent": service.NormalizeTrafficThresholdPercent(n.TrafficThresholdPercent),
 			"traffic_threshold_reached": n.TrafficThresholdReached,
 			"online":                    service.IsNodeOnline(n.InstallID),
@@ -589,9 +587,7 @@ func apiUpdateOfflineNotifySetting(w http.ResponseWriter, r *http.Request) {
 
 	var req struct {
 		UUID                    string `json:"uuid"`
-		OfflineNotifyEnabled    *bool  `json:"offline_notify_enabled"`
 		OfflineNotifyGraceSec   *int   `json:"offline_notify_grace_sec"`
-		TrafficThresholdEnabled *bool  `json:"traffic_threshold_enabled"`
 		TrafficThresholdPercent *int   `json:"traffic_threshold_percent"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -605,47 +601,24 @@ func apiUpdateOfflineNotifySetting(w http.ResponseWriter, r *http.Request) {
 	}
 
 	updates := map[string]interface{}{}
-	masterTouched := false
-	thresholdTouched := false
-	finalOfflineEnabled := false
-	finalThresholdEnabled := false
-	finalThresholdPercent := 0
-	if req.OfflineNotifyEnabled != nil || req.TrafficThresholdEnabled != nil || req.TrafficThresholdPercent != nil {
-		var old database.NodePool
-		if err := database.DB.Select("offline_notify_enabled", "traffic_threshold_enabled", "traffic_threshold_percent").Where("uuid = ?", req.UUID).First(&old).Error; err != nil {
-			sendJSON(w, "error", "节点不存在")
-			return
-		}
-		finalOfflineEnabled = old.OfflineNotifyEnabled
-		finalThresholdEnabled = old.TrafficThresholdEnabled
-		finalThresholdPercent = service.NormalizeTrafficThresholdPercent(old.TrafficThresholdPercent)
-	}
-	if req.OfflineNotifyEnabled != nil {
-		v := *req.OfflineNotifyEnabled
-		updates["offline_notify_enabled"] = v
-		finalOfflineEnabled = v
-		masterTouched = true
-	}
+
+	// 宽限期：大于0自动启用离线通知，等于0自动禁用
 	if req.OfflineNotifyGraceSec != nil {
-		updates["offline_notify_grace_sec"] = service.NormalizeNodeOfflineGraceSec(*req.OfflineNotifyGraceSec)
+		grace := service.NormalizeNodeOfflineGraceSec(*req.OfflineNotifyGraceSec)
+		updates["offline_notify_grace_sec"] = grace
+		updates["offline_notify_enabled"] = grace > 0
 	}
-	if req.TrafficThresholdEnabled != nil {
-		finalThresholdEnabled = *req.TrafficThresholdEnabled
-		thresholdTouched = true
-	}
+
+	// 阈值：大于0自动启用阈值停机，等于0自动禁用
 	if req.TrafficThresholdPercent != nil {
 		v := service.NormalizeTrafficThresholdPercent(*req.TrafficThresholdPercent)
 		updates["traffic_threshold_percent"] = v
-		finalThresholdPercent = v
-		thresholdTouched = true
+		updates["traffic_threshold_enabled"] = v > 0
+		if v <= 0 {
+			updates["traffic_threshold_reached"] = false
+		}
 	}
-	if masterTouched || thresholdTouched {
-		finalThresholdEnabled = finalOfflineEnabled && finalThresholdEnabled && finalThresholdPercent > 0
-		updates["traffic_threshold_enabled"] = finalThresholdEnabled
-	}
-	if (masterTouched || thresholdTouched) && (!finalThresholdEnabled || finalThresholdPercent <= 0) {
-		updates["traffic_threshold_reached"] = false
-	}
+
 	if len(updates) == 0 {
 		sendJSON(w, "error", "没有可更新的字段")
 		return
@@ -671,7 +644,7 @@ func apiUpdateOfflineNotifySetting(w http.ResponseWriter, r *http.Request) {
 		service.UpdateNodeTrafficThresholdConfigFromNode(node)
 	}
 
-	if req.OfflineNotifyEnabled != nil {
+	if req.OfflineNotifyGraceSec != nil {
 		if queryErr == nil {
 			service.OnNodeConnectionStatusChanged(node.InstallID, service.IsNodeOnline(node.InstallID))
 		}
