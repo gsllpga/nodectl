@@ -1562,11 +1562,34 @@
         }
     }
 
+    async function checkMihomoCoreReady() {
+        try {
+            const res = await fetch('/api/mihomo/status');
+            const data = await res.json();
+            if (data.status === 'success' && data.data && data.data.state !== 'not_found') {
+                return true;
+            }
+            return false;
+        } catch (_) {
+            return false;
+        }
+    }
+
+    function showMihomoCoreNotReadyTip() {
+        showAirSaveStatus('⚠️ 请先在系统设置中下载 Mihomo 测速内核', true);
+    }
+
     async function startCurrentSubBackgroundTest(mode, event) {
         if (event) event.stopPropagation();
         if (!airState.currentSubId) return;
         closeAirSpeedModePanel();
         const selectedMode = normalizeAirSpeedTestMode(mode);
+
+        // 检查 Mihomo 核心是否已下载
+        if (!await checkMihomoCoreReady()) {
+            showMihomoCoreNotReadyTip();
+            return;
+        }
         if (!airState.isHistoryMode) {
             airState.nodes.forEach(n => {
                 const el = document.getElementById(`speed-tags-${n.id}`);
@@ -2226,7 +2249,11 @@
             const data = JSON.parse(event.data);
 
             if (data.node_id === 'all') {
-                alert("引擎异常: " + data.text);
+                if (data.text && data.text.includes('Mihomo')) {
+                    showMihomoCoreNotReadyTip();
+                } else {
+                    showAirSaveStatus("引擎异常: " + data.text, true);
+                }
                 stopSpeedTest(); // 遇错直接停止重置
                 return;
             }
@@ -2259,8 +2286,16 @@
         };
     }
 
-    function testSingleAirNode(nodeId, mode, event) {
+    async function testSingleAirNode(nodeId, mode, event) {
         if (event) event.stopPropagation();
+
+        // 检查 Mihomo 核心是否已下载
+        if (!await checkMihomoCoreReady()) {
+            showMihomoCoreNotReadyTip();
+            closeAirSpeedModePanel();
+            return;
+        }
+
         // ✨ 取消在这里提前渲染 HTML，移交到 startSpeedTestStream 中去统一排队执行
         const selectedMode = normalizeAirSpeedTestMode(mode);
         closeAirSpeedModePanel();
