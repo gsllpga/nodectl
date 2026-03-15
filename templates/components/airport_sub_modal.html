@@ -1564,7 +1564,7 @@
 
     async function checkMihomoCoreReady() {
         try {
-            const res = await fetch('/api/mihomo/status');
+            const res = await fetch('/api/get-mihomo-status');
             const data = await res.json();
             if (data.status === 'success' && data.data && data.data.state !== 'not_found') {
                 return true;

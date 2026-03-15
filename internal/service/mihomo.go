@@ -170,8 +170,11 @@ func (s *MihomoService) ForceUpdate() error {
 		return fmt.Errorf("替换文件失败: %w", err)
 	}
 
-	// 写入数据库
-	database.DB.Model(&database.SysConfig{}).Where("key = ?", MihomoDBConfigKey).Update("value", version)
+	// 写入数据库 (使用 FirstOrCreate 确保记录存在)
+	config := database.SysConfig{Key: MihomoDBConfigKey}
+	database.DB.Where(database.SysConfig{Key: MihomoDBConfigKey}).
+		Assign(database.SysConfig{Value: version, Description: "Mihomo 核心版本号"}).
+		FirstOrCreate(&config)
 
 	logger.Log.Info("Mihomo 核心更新成功", "version", version)
 	return nil

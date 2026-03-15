@@ -395,12 +395,16 @@ func apiGetMihomoStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	isReady := service.GlobalMihomo.IsCoreReady()
 	localVersion := service.GlobalMihomo.GetLocalVersion()
 	remoteVersion, _, _, errRemote := service.GlobalMihomo.GetRemoteVersion()
 
 	status := "unknown"
-	if localVersion == "" {
+	if !isReady {
 		status = "not_found"
+	} else if localVersion == "" {
+		// 文件存在但版本号未记录，视为已安装但版本未知
+		status = "installed"
 	} else if errRemote == nil && remoteVersion != "" && remoteVersion != localVersion {
 		status = "update_available"
 	} else if errRemote == nil && remoteVersion == localVersion {
