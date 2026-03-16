@@ -672,3 +672,43 @@ func apiCFIPOptManualPriority(w http.ResponseWriter, r *http.Request) {
 	logger.Log.Info("设置手动优选IP优先级", "ip", getClientIP(r), "priority", req.Priority)
 	sendJSON(w, "success", "设置成功")
 }
+
+// ===================== CloudflareST 版本检查与更新 API =====================
+
+// apiCFIPOptVersionStatus GET /api/cf/ipopt/version-status
+// 获取 CloudflareST 版本状态（本地版本、远程版本、是否需要更新）
+func apiCFIPOptVersionStatus(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	localVer, remoteVer, state := service.GetCFIPOptVersionStatus()
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"status": "success",
+		"data": map[string]interface{}{
+			"local_version":  localVer,
+			"remote_version": remoteVer,
+			"state":          state,
+		},
+	})
+}
+
+// apiCFIPOptForceUpdate POST /api/cf/ipopt/force-update
+// 强制更新 CloudflareST 到最新版本
+func apiCFIPOptForceUpdate(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	go func() {
+		if err := service.ForceUpdateCFIPOpt(); err != nil {
+			logger.Log.Error("CloudflareST 手动更新失败", "error", err)
+		}
+	}()
+
+	logger.Log.Info("CloudflareST 手动更新已触发", "ip", getClientIP(r))
+	sendJSON(w, "success", "已开始更新 CloudflareST")
+}

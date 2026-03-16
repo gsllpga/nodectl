@@ -523,6 +523,34 @@
         color: #15803d;
     }
 
+    /* 协议端口输入框 */
+    .proto-port-input {
+        width: 68px;
+        padding: 9px 8px;
+        font-size: 12px;
+        font-weight: 600;
+        font-family: monospace;
+        border: 1px solid #d1d1d6;
+        border-radius: 5px;
+        outline: none;
+        text-align: center;
+        color: #333;
+        background: #fafbfc;
+        transition: border 0.2s;
+        box-sizing: border-box;
+    }
+
+    .proto-port-input:focus {
+        border-color: #007aff;
+        background: #fff;
+        box-shadow: 0 0 0 2px rgba(0, 122, 255, 0.1);
+    }
+
+    .proto-port-input::placeholder {
+        color: #bbb;
+        font-weight: 400;
+    }
+
     /* 小号开关 */
     .switch-sm {
         position: relative;
@@ -688,18 +716,21 @@
         justify-content: flex-end;
         gap: 12px;
         z-index: 5;
+        flex-wrap: nowrap;
     }
 
     .btn-footer-close {
         background: #f5f5f7;
         border: none;
         color: #333;
-        padding: 9px 25px;
+        padding: 9px 14px;
         border-radius: 8px;
         font-size: 13px;
         font-weight: 600;
         cursor: pointer;
         transition: 0.2s;
+        white-space: nowrap;
+        flex-shrink: 0;
     }
 
     .btn-footer-close:hover {
@@ -742,6 +773,16 @@
         #protocolListContainer {
             flex: none;
             overflow-y: visible;
+        }
+
+        .edit-footer {
+            padding: 12px 12px;
+            gap: 8px;
+        }
+
+        .btn-footer-close {
+            padding: 8px 10px;
+            font-size: 12px;
         }
     }
 
@@ -803,6 +844,10 @@
     .cmd-log-body .line { padding: 1px 0; }
     .cmd-log-body .line.result-ok { color: #a6e3a1; font-weight: 600; }
     .cmd-log-body .line.result-error { color: #f38ba8; font-weight: 600; }
+    .cmd-log-body .line.warn { color: #fab387; font-weight: 600; }
+    .cmd-log-body .line.error-detail { color: #f38ba8; padding: 2px 0; }
+    .cmd-log-body .line.success { color: #a6e3a1; }
+    .cmd-log-body .line.info-highlight { color: #89b4fa; }
 </style>
 
 <div class="edit-modal-overlay" id="editNodeModal">
@@ -832,17 +877,6 @@
                             style="margin-bottom: 0; white-space: nowrap; width: 70px;">节点名称</label>
                         <input type="text" id="editNodeName" class="title-input" placeholder="例如：HK-CN2"
                             oninput="triggerNodeAutoSave()" style="flex: 1;">
-                        <button type="button" id="btnResetNodeLinks" title="重置链接"
-                            onclick="confirmResetNodeLinks()"
-                            style="flex-shrink:0; width:32px; height:32px; border:none; background:#fff0f0; border-radius:8px; cursor:pointer; display:flex; align-items:center; justify-content:center; transition: all .2s;"
-                            onmouseover="this.style.background='#ffe0e0'; this.style.boxShadow='0 2px 8px rgba(255,77,79,0.2)'"
-                            onmouseout="this.style.background='#fff0f0'; this.style.boxShadow='none'">
-                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#ff4d4f" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                                <polyline points="1 4 1 10 7 10"></polyline>
-                                <polyline points="23 20 23 14 17 14"></polyline>
-                                <path d="M20.49 9A9 9 0 0 0 5.64 5.64L1 10m22 4l-4.64 4.36A9 9 0 0 1 3.51 15"></path>
-                            </svg>
-                        </button>
                     </div>
 
                     <div class="edit-section" id="editNodeIPModeSection">
@@ -963,6 +997,21 @@
 
             <div class="edit-footer">
                 <button type="button" class="btn-footer-close" onclick="closeEditModal()">关闭</button>
+                <button type="button" class="btn-footer-close" id="btnResetNodeLinks" style="background:#ff3b30; color:#fff; display:flex; align-items:center; gap:5px; transition: all 0.2s;" onclick="handleResetLinksClick()" title="远程重置节点协议链接，将重写 sing-box 配置并重启服务">
+                    <svg id="btnResetLinksIcon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <polyline points="1 4 1 10 7 10"></polyline>
+                        <polyline points="23 20 23 14 17 14"></polyline>
+                        <path d="M20.49 9A9 9 0 0 0 5.64 5.64L1 10m22 4l-4.64 4.36A9 9 0 0 1 3.51 15"></path>
+                    </svg>
+                    <span id="btnResetLinksText">重置链接</span>
+                </button>
+                <button type="button" class="btn-footer-close" id="btnPushConfig" style="background:#007aff; color:#fff; display:flex; align-items:center; gap:5px; transition: all 0.2s;" onclick="handlePushConfigClick()" title="推送当前启用的协议及端口配置给 Agent，Agent 将重新配置 sing-box">
+                    <svg id="btnPushConfigIcon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M22 2L11 13"></path>
+                        <path d="M22 2L15 22L11 13L2 9L22 2Z"></path>
+                    </svg>
+                    <span id="btnPushConfigText">推送配置</span>
+                </button>
             </div>
         </div>
     </div>
@@ -986,6 +1035,16 @@
 
     const editModalEl = document.getElementById('editNodeModal');
     const editModalCard = document.getElementById('editModalCard');
+
+    // 点击遮罩层关闭
+    editModalEl.addEventListener('click', function(e) {
+        if (e.target === editModalEl) closeEditModal();
+    });
+
+    // ESC 键关闭
+    document.addEventListener('keydown', function(e) {
+        if (e.key === 'Escape' && editModalEl.classList.contains('active')) closeEditModal();
+    });
 
     let originalRoutingType = 1;
     let isInitializingEdit = false;
@@ -1026,8 +1085,25 @@
         el.value = formatTrafficLimitBytes(bytes);
     }
 
-    function openEditModal(uuid) {
+    async function openEditModal(uuid) {
         isInitializingEdit = true;
+
+        // 静默刷新节点数据，确保打开弹窗时数据是最新的
+        try {
+            const resp = await fetch('/api/get-nodes');
+            const result = await resp.json();
+            if (result.status === 'success') {
+                window.allNodesData = {};
+                const cacheNodes = (nodes) => {
+                    if (nodes) nodes.forEach(n => (window.allNodesData[n.uuid] = n));
+                };
+                cacheNodes(result.data.direct_nodes);
+                cacheNodes(result.data.land_nodes);
+            }
+        } catch (e) {
+            console.warn('静默刷新节点数据失败:', e);
+        }
+
         const node = window.allNodesData[uuid];
         if (!node) { alert('数据加载异常，请刷新'); return; }
 
@@ -1131,13 +1207,14 @@
                 const link = node.links[proto];
                 const isEnabled = !disabledSet.has(proto);
                 const protoIPMode = node.link_ip_modes && node.link_ip_modes[proto] ? node.link_ip_modes[proto] : 3;
+                // 从 link_ports 读取节点个性化端口（创建时从 SysConfig 导入的默认端口，或用户后续修改的值）
+                const protoPort = node.link_ports && node.link_ports[proto] ? node.link_ports[proto] : 0;
                 // 核心：传入 isLinksLocked 状态
-                renderProtocolCard(proto, link, isEnabled, false, isLinksLocked, protoIPMode);
+                renderProtocolCard(proto, link, isEnabled, false, isLinksLocked, protoIPMode, protoPort);
             }
         } else if (!isLinksLocked) {
-            // 如果不是锁定模式且无数据，显示提示
-            // (锁定模式下已经有警告条了，不需要这个提示)
-            container.innerHTML += `<div style="text-align:center; color:#999; padding:20px; font-size:12px;">暂无协议节点</div>`;
+            // 无协议时显示引导提示（新版 Agent 会自动上报协议）
+            container.innerHTML += `<div style="text-align:center; color:#999; padding:20px; font-size:12px;">暂无协议配置，部署 Agent 后将自动上报</div>`;
         }
 
         updateLayoutState();
@@ -1148,7 +1225,7 @@
     }
 
     // 渲染多行协议卡片 (支持折叠)
-    function renderProtocolCard(proto, link, isEnabled, isNew, isLocked = false, protoIPMode = 3) {
+    function renderProtocolCard(proto, link, isEnabled, isNew, isLocked = false, protoIPMode = 3, protoPort = 0) {
         const div = document.createElement('div');
         div.className = 'protocol-card';
         if (isNew) div.classList.add('expanded'); // 新增的协议默认展开
@@ -1158,6 +1235,9 @@
 
         // 开关状态
         const checkedState = isEnabled ? 'checked' : '';
+
+        // 端口值
+        const portValue = protoPort > 0 ? protoPort : '';
 
         // 协议徽章颜色
         let badgeColor = '#666';
@@ -1184,6 +1264,7 @@
                         <button type="button" class="proto-ipmode-item ${protoIPMode === 2 ? 'active' : ''}" data-val="2" onclick="selectProtoIPMode(this, 2, event)">仅IPv6</button>
                         <button type="button" class="proto-ipmode-item ${protoIPMode === 3 ? 'active' : ''}" data-val="3" onclick="selectProtoIPMode(this, 3, event)">双栈</button>
                     </div>
+                    <input type="number" class="proto-port-input" placeholder="端口" value="${portValue}" min="1" max="65535" title="协议端口" oninput="markAsModified()" onclick="event.stopPropagation()">
                     <label class="switch-sm">
                         <input type="checkbox" class="proto-switch" ${checkedState} onchange="toggleProtocol(this)">
                         <span class="slider-sm"></span>
@@ -1344,15 +1425,31 @@
         document.getElementById('editModalCard').classList.add('has-content');
     }
 
+    // classifyLogLine 根据日志内容自动分类样式
+    function classifyLogLine(text) {
+        if (!text) return '';
+        // 错误/失败关键词
+        if (/❌|失败|错误|error|fail|fatal|refused|denied|占用/i.test(text)) return 'error-detail';
+        // 警告/冲突关键词
+        if (/⚠️|警告|warn|冲突|conflict|端口.*被|port.*in use|address already in use/i.test(text)) return 'warn';
+        // 成功关键词
+        if (/✅|成功|完成|ok|running|started|通过/i.test(text)) return 'success';
+        // 提示信息
+        if (/提示|hint|tip|建议|请检查|请修改/i.test(text)) return 'info-highlight';
+        return '';
+    }
+
     function appendCmdLog(entry) {
         const body = document.getElementById('cmdLogBody');
         const dot = document.getElementById('cmdLogDot');
         const titleEl = document.getElementById('cmdLogTitle');
 
         if (entry.type === 'progress') {
+            const text = (entry.message || '').replace(/\x1b\[[0-9;]*m/g, '');
             const line = document.createElement('div');
-            line.className = 'line';
-            line.textContent = (entry.message || '').replace(/\x1b\[[0-9;]*m/g, '');
+            const extraClass = classifyLogLine(text);
+            line.className = 'line' + (extraClass ? ' ' + extraClass : '');
+            line.textContent = text;
             body.appendChild(line);
         } else if (entry.type === 'result') {
             const line = document.createElement('div');
@@ -1424,32 +1521,82 @@
         };
     }
 
-    // 远程重置节点链接（流式输出 - 内嵌右栏）
+    // 重置链接按钮二次确认逻辑
+    let _resetLinksConfirmTimer = null;
+    let _resetLinksInConfirm = false;
+
+    function handleResetLinksClick() {
+        const btn = document.getElementById('btnResetNodeLinks');
+        const textEl = document.getElementById('btnResetLinksText');
+        if (!btn || !textEl) return;
+
+        if (_resetLinksInConfirm) {
+            // 第二次点击：执行重置
+            _resetLinksInConfirm = false;
+            clearTimeout(_resetLinksConfirmTimer);
+            resetResetLinksBtn();
+            confirmResetNodeLinks();
+        } else {
+            // 第一次点击：进入确认状态
+            _resetLinksInConfirm = true;
+            btn.style.background = '#cc0000';
+            textEl.textContent = '确认重置';
+            // 3秒后自动恢复
+            _resetLinksConfirmTimer = setTimeout(() => {
+                resetResetLinksBtn();
+            }, 3000);
+        }
+    }
+
+    function resetResetLinksBtn() {
+        _resetLinksInConfirm = false;
+        const btn = document.getElementById('btnResetNodeLinks');
+        const textEl = document.getElementById('btnResetLinksText');
+        if (btn) btn.style.background = '#ff3b30';
+        if (textEl) textEl.textContent = '重置链接';
+    }
+
+    // 远程重置节点协议（流式输出 - 内嵌右栏，调用新版 reset-protocol 接口）
     function confirmResetNodeLinks() {
         const uuid = document.getElementById('editNodeUUID').value;
         const name = document.getElementById('editNodeName').value || uuid;
         if (!uuid) return;
 
-        if (!confirm('确定要远程重置「' + name + '」的链接？\n此操作将重写节点 sing-box 配置并重启服务。')) {
+        // 从内存数据中获取 install_id 和协议列表
+        const node = window.allNodesData && window.allNodesData[uuid];
+        if (!node || !node.install_id) {
+            alert('无法获取节点安装信息，请刷新页面后重试。');
+            return;
+        }
+
+        const protocols = node.links ? Object.keys(node.links) : [];
+        if (protocols.length === 0) {
+            alert('该节点没有已知协议信息，无法重置。');
             return;
         }
 
         const btn = document.getElementById('btnResetNodeLinks');
         if (btn) { btn.disabled = true; btn.style.opacity = '0.5'; }
 
-        showCmdLogPanel('重置链接');
+        showCmdLogPanel('重置协议');
 
-        fetch('/api/node/control/reset-links', {
+        fetch('/api/callback/reset-protocol', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ uuid: uuid })
+            body: JSON.stringify({
+                install_id: node.install_id,
+                protocols: protocols,
+                action: 'reset'
+            })
         })
         .then(res => res.json())
         .then(data => {
             if (data.status === 'success' && data.command_id) {
                 streamCommandLog(data.command_id);
+            } else if (data.status === 'success' && data.data && data.data.command_id) {
+                streamCommandLog(data.data.command_id);
             } else {
-                appendCmdLog({ type: 'error', message: data.message || '命令下发失败' });
+                appendCmdLog({ type: 'error', message: data.message || (data.data && typeof data.data === 'string' ? data.data : '命令下发失败') });
             }
         })
         .catch(err => {
@@ -1545,6 +1692,16 @@
             const links = {};
             const disabledLinks = [];
             const linkIPModes = {};
+            const linkPorts = {};
+
+            // 从内存中获取节点原始数据，用于保留未在卡片中显示的端口
+            const nodeOriginal = window.allNodesData && window.allNodesData[uuid];
+            const originalLinkPorts = (nodeOriginal && nodeOriginal.link_ports) ? nodeOriginal.link_ports : {};
+
+            // 先将原始端口全部拷贝，后续卡片中的值会覆盖对应协议
+            for (const [origProto, origPort] of Object.entries(originalLinkPorts)) {
+                if (origPort > 0) linkPorts[origProto] = origPort;
+            }
 
             const listContainer = document.getElementById('protocolListContainer');
             const cards = listContainer.querySelectorAll('.protocol-card');
@@ -1565,17 +1722,32 @@
                     }
                 }
 
+                // Get proto-level port
+                const portInput = card.querySelector('.proto-port-input');
+                let pPort = 0;
+                if (portInput && portInput.value) {
+                    pPort = parseInt(portInput.value) || 0;
+                }
+
                 // 只要开关存在，就说明协议卡片存在
                 if (toggle) { // 只要开关存在，说明卡片未被删除
                     linkIPModes[proto] = pIpMode;
+                    // 卡片中的端口值覆盖原始值：用户输入了则用用户值，清空则保留原始默认端口
+                    if (pPort > 0) {
+                        linkPorts[proto] = pPort;
+                    }
+                    // 如果用户清空了端口输入框，不删除原始值（已在上面从 originalLinkPorts 拷贝）
                     if (input) {
                         // 1. 如果有输入框 (HTTPS模式 或 新添加的协议)，正常取值
                         const linkVal = input.value.trim();
                         if (linkVal && !linkVal.includes('🔒')) {
                             links[proto] = linkVal;
+                        } else if (!linkVal) {
+                            // 2. [Agent适配] 允许保存空链接协议，配合 Agent 部署后自动上报填充
+                            links[proto] = "";
                         }
                     } else {
-                        // 2. [关键修改] HTTP模式下的旧协议没有输入框
+                        // 3. [关键修改] HTTP模式下的旧协议没有输入框
                         // 我们传入一个特殊标记，告诉后端保留数据库里的原值
                         links[proto] = "__KEEP_EXISTING__";
                     }
@@ -1583,6 +1755,10 @@
                     if (!toggle.checked) disabledLinks.push(proto);
                 }
             });
+
+            // linkPorts 中的端口信息永远不删除，只做修改。
+            // 即使用户删除了协议卡片（从 links 移除），link_ports 中的端口配置仍然保留，
+            // 以便该协议将来重新添加时能继续使用之前的端口。
 
             try {
                 const response = await fetch('/api/update-node', {
@@ -1597,6 +1773,7 @@
                         ipv4, ipv6,
                         ip_mode: ipMode,
                         link_ip_modes: linkIPModes,
+                        link_ports: linkPorts,
                         reset_day: resetDay,
                         traffic_limit: trafficLimit,
                         traffic_limit_raw: trafficLimitRaw,
@@ -1748,9 +1925,133 @@
     }
 
     function insertProtocolCard(proto) {
-        renderProtocolCard(proto, '', true, true);
+        // 新增协议时，从节点的 link_ports 中读取该协议的默认端口
+        const uuid = document.getElementById('editNodeUUID').value;
+        const node = window.allNodesData && window.allNodesData[uuid];
+        let defaultPort = 0;
+        if (node && node.link_ports && node.link_ports[proto]) {
+            defaultPort = node.link_ports[proto];
+        }
+        renderProtocolCard(proto, '', true, true, false, 3, defaultPort);
         updateLayoutState();
         triggerNodeAutoSave();
+    }
+
+    // 推送配置按钮二次确认逻辑
+    let _pushConfigConfirmTimer = null;
+    let _pushConfigInConfirm = false;
+
+    function handlePushConfigClick() {
+        const btn = document.getElementById('btnPushConfig');
+        const textEl = document.getElementById('btnPushConfigText');
+        if (!btn || !textEl) return;
+
+        if (_pushConfigInConfirm) {
+            // 第二次点击：执行推送
+            _pushConfigInConfirm = false;
+            clearTimeout(_pushConfigConfirmTimer);
+            resetPushConfigBtn();
+            pushConfigToAgent();
+        } else {
+            // 第一次点击：进入确认状态
+            _pushConfigInConfirm = true;
+            btn.style.background = '#ff9500';
+            textEl.textContent = '确定推送';
+            // 3秒后自动恢复
+            _pushConfigConfirmTimer = setTimeout(() => {
+                resetPushConfigBtn();
+            }, 3000);
+        }
+    }
+
+    function resetPushConfigBtn() {
+        _pushConfigInConfirm = false;
+        const btn = document.getElementById('btnPushConfig');
+        const textEl = document.getElementById('btnPushConfigText');
+        if (btn) btn.style.background = '#007aff';
+        if (textEl) textEl.textContent = '推送配置';
+    }
+
+    // 推送当前启用的协议及端口配置给 Agent
+    function pushConfigToAgent() {
+        const uuid = document.getElementById('editNodeUUID').value;
+        const name = document.getElementById('editNodeName').value || uuid;
+        if (!uuid) return;
+
+        // 收集当前启用的协议和端口
+        const enabledProtocols = [];
+        const protocolPorts = {};
+        const listContainer = document.getElementById('protocolListContainer');
+        const cards = listContainer.querySelectorAll('.protocol-card');
+
+        cards.forEach(card => {
+            const proto = card.getAttribute('data-proto');
+            const toggle = card.querySelector('.proto-switch');
+            const portInput = card.querySelector('.proto-port-input');
+
+            if (toggle && toggle.checked) {
+                enabledProtocols.push(proto);
+                if (portInput && portInput.value) {
+                    const port = parseInt(portInput.value);
+                    if (port > 0 && port <= 65535) {
+                        protocolPorts[proto] = port;
+                    }
+                }
+            }
+        });
+
+        if (enabledProtocols.length === 0) {
+            alert('没有启用的协议，无法推送配置。');
+            return;
+        }
+
+        // 🆕 前端侧端口重复预检测
+        const portToProtos = {};
+        for (const [proto, port] of Object.entries(protocolPorts)) {
+            if (!portToProtos[port]) portToProtos[port] = [];
+            portToProtos[port].push(proto);
+        }
+        const duplicates = [];
+        for (const [port, protos] of Object.entries(portToProtos)) {
+            if (protos.length > 1) {
+                duplicates.push(`端口 ${port} 被 ${protos.map(p => p.toUpperCase()).join(', ')} 共用`);
+            }
+        }
+        if (duplicates.length > 0) {
+            alert('⚠️ 检测到端口冲突，请先修改：\n\n' + duplicates.join('\n'));
+            return;
+        }
+
+        const btn = document.getElementById('btnPushConfig');
+        if (btn) { btn.disabled = true; btn.style.opacity = '0.5'; }
+
+        showCmdLogPanel('推送配置');
+
+        fetch('/api/node/control/push-config', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                uuid: uuid,
+                protocols: enabledProtocols,
+                ports: protocolPorts
+            })
+        })
+        .then(res => res.json())
+        .then(data => {
+            if (data.status === 'success' && data.command_id) {
+                streamCommandLog(data.command_id);
+            } else if (data.status === 'success' && data.data && data.data.command_id) {
+                streamCommandLog(data.data.command_id);
+            } else {
+                appendCmdLog({ type: 'error', message: data.message || data.data || '命令下发失败' });
+            }
+        })
+        .catch(err => {
+            appendCmdLog({ type: 'error', message: '网络错误: ' + err.message });
+        })
+        .finally(() => {
+            if (btn) { btn.disabled = false; btn.style.opacity = '1'; }
+        });
     }
 </script>
 {{end}}

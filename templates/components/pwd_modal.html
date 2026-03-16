@@ -134,6 +134,11 @@
         if (e.target === pwdModalEl) closePwdModal();
     });
 
+    // ESC 键关闭
+    document.addEventListener('keydown', function(e) {
+        if (e.key === 'Escape' && pwdModalEl.classList.contains('active')) closePwdModal();
+    });
+
     function openPwdModal() {
         pwdModalEl.classList.add('active');
         document.getElementById('pwdForm').reset();

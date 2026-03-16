@@ -52,13 +52,19 @@ func GenerateRawNodesYAML(routingType int, useFlag bool) (string, error) {
 			continue
 		}
 		enabledProtocolCount := 0
-		for p := range node.Links {
+		for p, l := range node.Links {
+			if strings.TrimSpace(l) == "" {
+				continue
+			}
 			if !contains(node.DisabledLinks, p) && shouldIncludeProtocolInSubscription(*node, p) {
 				enabledProtocolCount++
 			}
 		}
 
 		for proto, link := range node.Links {
+			if strings.TrimSpace(link) == "" {
+				continue // Agent 尚未上报该协议链接，跳过
+			}
 			if contains(node.DisabledLinks, proto) {
 				continue
 			}
@@ -120,6 +126,24 @@ func GenerateRawNodesYAML(routingType int, useFlag bool) (string, error) {
 				proxyNode.Name = anode.Name
 
 				// 机场节点通常自带 IP 或域名，直接加入列表
+				proxyList = append(proxyList, proxyNode)
+			}
+		}
+	}
+
+	// 注入自定义节点 (Custom Nodes)
+	var customNodes []database.CustomNode
+	// routingType: 1=直连, 2=落地; 屏蔽(0)的不加入订阅
+	if err := database.DB.Where("routing_type = ?", routingType).
+		Order("created_at ASC").Find(&customNodes).Error; err == nil {
+
+		for _, cnode := range customNodes {
+			proxyNode := ParseLinkToClashNode(cnode.Link, "")
+			if proxyNode != nil {
+				// 使用链接中解析出的原始名称（不做转化）
+				if cnode.Name != "" && cnode.Name != "自定义节点" {
+					proxyNode.Name = cnode.Name
+				}
 				proxyList = append(proxyList, proxyNode)
 			}
 		}
@@ -208,13 +232,19 @@ func GenerateV2RaySubBase64(useFlag bool) (string, error) {
 			continue
 		}
 		enabledProtocolCount := 0
-		for p := range node.Links {
+		for p, l := range node.Links {
+			if strings.TrimSpace(l) == "" {
+				continue
+			}
 			if !contains(node.DisabledLinks, p) && shouldIncludeProtocolInSubscription(*node, p) {
 				enabledProtocolCount++
 			}
 		}
 
 		for proto, link := range node.Links {
+			if strings.TrimSpace(link) == "" {
+				continue // Agent 尚未上报该协议链接，跳过
+			}
 			if contains(node.DisabledLinks, proto) {
 				continue
 			}
@@ -284,6 +314,17 @@ func GenerateV2RaySubBase64(useFlag bool) (string, error) {
 
 			// 追加到订阅列表
 			lines = append(lines, finalLink)
+		}
+	}
+
+	// 注入自定义节点 (Custom Nodes) - V2Ray 订阅中，只要不是屏蔽(0)的都加入
+	var customNodes []database.CustomNode
+	if err := database.DB.Where("routing_type IN ?", []int{1, 2}).
+		Order("created_at ASC").Find(&customNodes).Error; err == nil {
+
+		for _, cnode := range customNodes {
+			// 直接使用原始链接，保留链接中的名称
+			lines = append(lines, strings.TrimSpace(cnode.Link))
 		}
 	}
 

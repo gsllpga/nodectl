@@ -209,6 +209,9 @@ func GetTrafficHub() *TrafficHub {
 }
 
 func normalizeTrafficPersistIntervalSec(v int) int {
+	if v == 0 {
+		return 0 // 0 表示关闭历史点落库
+	}
 	if v < 10 {
 		return 10
 	}
@@ -232,11 +235,11 @@ func loadTrafficTotalPersistIntervalSec() int {
 func loadTrafficPointPersistIntervalSec() int {
 	var cfg database.SysConfig
 	if err := database.DB.Where("key = ?", "pref_traffic_point_persist_interval_sec").First(&cfg).Error; err != nil {
-		return 600
+		return 0 // 默认关闭
 	}
 	parsed, err := strconv.Atoi(strings.TrimSpace(cfg.Value))
 	if err != nil {
-		return 600
+		return 0 // 默认关闭
 	}
 	return normalizeTrafficPersistIntervalSec(parsed)
 }
@@ -267,6 +270,11 @@ func (h *TrafficHub) runTotalPersistLoop() {
 func (h *TrafficHub) runPointPersistLoop() {
 	for {
 		interval := loadTrafficPointPersistIntervalSec()
+		if interval == 0 {
+			// 落库已关闭，每 30 秒重新检查配置是否变更
+			time.Sleep(30 * time.Second)
+			continue
+		}
 		now := time.Now()
 		intervalDur := time.Duration(interval) * time.Second
 		next := now.Truncate(intervalDur).Add(intervalDur)
@@ -491,7 +499,13 @@ func HandleAgentWS(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 
-		// 否则按流量上报处理
+		// 🆕 处理新增的消息类型（node_online / links_update）
+		if peek.Type == "node_online" || peek.Type == "links_update" || peek.Type == "protocol_change" {
+			hub.handleNewMessageType(data, peek.Type, clientIP, &agentInstallID, conn)
+			continue
+		}
+
+		// 否则按流量上报处理（原有 flat 结构，保持兼容）
 		var msg AgentTrafficMsg
 		if err := json.Unmarshal(data, &msg); err != nil {
 			logger.Log.Warn("Agent WS 流量消息解析失败", "error", err, "ip", clientIP)
@@ -556,23 +570,65 @@ func HandleAgentWS(w http.ResponseWriter, r *http.Request) {
 			currRX := msg.CounterRX
 			currTX := msg.CounterTX
 			if !state.CounterSeen {
+				// 首次收到该节点的计数器数据：仅建立基线，不产生增量
 				state.LastCounterRX = currRX
 				state.LastCounterTX = currTX
 				state.CounterBootID = msg.BootID
 				state.CounterSeen = true
+			} else if state.CounterBootID != msg.BootID {
+				// BootID 变更（机器重启 / Agent 重启导致 boot_id 变化）：
+				// 仅重置基线，不产生增量。
+				// 修复：旧逻辑将整个计数器值当作增量，导致一次性加入几百GB~几TB。
+				logger.Log.Info("Agent BootID 变更，重置计数器基线（不计入增量）",
+					"install_id", installID,
+					"old_boot_id", state.CounterBootID,
+					"new_boot_id", msg.BootID,
+					"old_counter_rx", state.LastCounterRX,
+					"old_counter_tx", state.LastCounterTX,
+					"new_counter_rx", currRX,
+					"new_counter_tx", currTX,
+				)
+				state.LastCounterRX = currRX
+				state.LastCounterTX = currTX
+				state.CounterBootID = msg.BootID
 			} else {
-				deltaRX := currRX
-				deltaTX := currTX
-				if state.CounterBootID == msg.BootID {
-					deltaRX = currRX - state.LastCounterRX
-					deltaTX = currTX - state.LastCounterTX
-					if deltaRX < 0 {
-						deltaRX = currRX
-					}
-					if deltaTX < 0 {
-						deltaTX = currTX
-					}
+				// 同一 BootID 下的正常增量计算
+				deltaRX := currRX - state.LastCounterRX
+				deltaTX := currTX - state.LastCounterTX
+
+				// 计数器回绕/重置检测：当前值 < 上次值，跳过本次增量（仅更新基线）
+				if deltaRX < 0 || deltaTX < 0 {
+					logger.Log.Warn("Agent 计数器回绕/重置，跳过本次增量",
+						"install_id", installID,
+						"delta_rx", deltaRX,
+						"delta_tx", deltaTX,
+						"counter_rx", currRX,
+						"counter_tx", currTX,
+						"last_counter_rx", state.LastCounterRX,
+						"last_counter_tx", state.LastCounterTX,
+					)
+					deltaRX = 0
+					deltaTX = 0
 				}
+
+				// 单次增量合理性检测：单次增量超过 100GB 视为异常，跳过并告警
+				// 即使网卡速率 100Gbps，5秒间隔最多约 62.5GB，100GB 已是极端上限
+				const maxSingleDelta = 100 * 1024 * 1024 * 1024 // 100 GB
+				if deltaRX > maxSingleDelta || deltaTX > maxSingleDelta {
+					logger.Log.Warn("Agent 单次流量增量异常过大，已丢弃",
+						"install_id", installID,
+						"delta_rx_bytes", deltaRX,
+						"delta_tx_bytes", deltaTX,
+						"counter_rx", currRX,
+						"counter_tx", currTX,
+						"last_counter_rx", state.LastCounterRX,
+						"last_counter_tx", state.LastCounterTX,
+						"boot_id", msg.BootID,
+					)
+					deltaRX = 0
+					deltaTX = 0
+				}
+
 				if deltaRX > 0 || deltaTX > 0 {
 					state.TotalRXBytes += deltaRX
 					state.TotalTXBytes += deltaTX
@@ -580,7 +636,6 @@ func HandleAgentWS(w http.ResponseWriter, r *http.Request) {
 				}
 				state.LastCounterRX = currRX
 				state.LastCounterTX = currTX
-				state.CounterBootID = msg.BootID
 			}
 		} else {
 			logger.Log.Warn("Agent WS 消息缺少 boot_id，忽略累计", "install_id", installID)
@@ -1078,4 +1133,274 @@ func SubscribeCommandLog(commandID string) ([]CommandLogEntry, chan CommandLogEn
 	}
 
 	return history, ch, done, unsub
+}
+
+// ============================================================
+//  🆕 新增消息类型处理（WebSocket 通道复用）
+// ============================================================
+
+// wsMessage 🆕 统一消息结构（用于解析 node_online / links_update 等新消息）
+type wsMessage struct {
+	Type      string          `json:"type"`
+	InstallID string          `json:"install_id"`
+	Timestamp int64           `json:"timestamp"`
+	Payload   json.RawMessage `json:"payload"`
+}
+
+// wsNodeOnlinePayload 节点上线载荷
+type wsNodeOnlinePayload struct {
+	Hostname  string            `json:"hostname"`
+	IPv4      string            `json:"ipv4,omitempty"`
+	IPv6      string            `json:"ipv6,omitempty"`
+	Protocols []string          `json:"protocols"`
+	Links     map[string]string `json:"links"`
+	AgentVer  string            `json:"agent_version"`
+	SBVersion string            `json:"singbox_version,omitempty"`
+}
+
+// wsLinksUpdatePayload 链接更新载荷
+type wsLinksUpdatePayload struct {
+	Action    string            `json:"action"` // reset / add / remove / reinstall
+	Protocols []string          `json:"protocols"`
+	Links     map[string]string `json:"links"`
+	IPv4      string            `json:"ipv4,omitempty"`
+	IPv6      string            `json:"ipv6,omitempty"`
+}
+
+// handleNewMessageType 🆕 处理新增的 WebSocket 消息类型
+func (h *TrafficHub) handleNewMessageType(data []byte, msgType string, clientIP string, agentInstallID *string, conn *websocket.Conn) {
+	var msg wsMessage
+	if err := json.Unmarshal(data, &msg); err != nil {
+		logger.Log.Warn("WS 新消息解析失败", "error", err, "type", msgType, "ip", clientIP)
+		return
+	}
+
+	installID := strings.TrimSpace(msg.InstallID)
+	if installID == "" {
+		logger.Log.Warn("WS 新消息缺少 install_id", "type", msgType, "ip", clientIP)
+		return
+	}
+
+	// 安全检查：验证 install_id 是否有效
+	if !IsValidInstallID(installID) {
+		logger.Log.Warn("WS 新消息 install_id 无效", "type", msgType, "install_id", installID, "ip", clientIP)
+		return
+	}
+
+	// 首次识别到 install_id 时注册连接
+	if *agentInstallID == "" {
+		*agentInstallID = installID
+		h.agentMu.Lock()
+		h.agentConns[installID] = conn
+		h.agentMu.Unlock()
+		OnNodeConnectionStatusChanged(installID, true)
+
+		nodeName := h.resolveNodeNameByInstallID(installID)
+		if nodeName == "" {
+			nodeName = h.resolveNodeNameByIP(clientIP)
+		}
+		logger.Log.Info("Agent WS 已连接",
+			"ip", clientIP,
+			"install_id", installID,
+			"node_name", nodeName,
+		)
+	}
+
+	// 根据消息类型分发处理
+	switch msgType {
+	case "node_online":
+		h.handleNodeOnline(msg, clientIP)
+	case "links_update":
+		h.handleLinksUpdate(msg, clientIP)
+	case "protocol_change":
+		logger.Log.Info("收到协议状态变更消息", "install_id", installID, "ip", clientIP)
+		// TODO: 后续实现协议变更处理
+	default:
+		logger.Log.Warn("未知的 WS 消息类型", "type", msgType, "install_id", installID, "ip", clientIP)
+	}
+}
+
+// handleNodeOnline 🆕 处理节点上线消息
+// 更新数据库中的节点 IP（IPv4+IPv6）、地区（Region）、协议列表、链接、版本等信息
+func (h *TrafficHub) handleNodeOnline(msg wsMessage, clientIP string) {
+	var payload wsNodeOnlinePayload
+	if err := json.Unmarshal(msg.Payload, &payload); err != nil {
+		logger.Log.Warn("解析 node_online 载荷失败", "error", err, "install_id", msg.InstallID)
+		return
+	}
+
+	installID := msg.InstallID
+
+	// 获取节点记录
+	var node database.NodePool
+	if err := database.DB.Where("install_id = ?", installID).First(&node).Error; err != nil {
+		logger.Log.Warn("node_online: 节点不存在", "install_id", installID)
+		return
+	}
+
+	// 更新节点信息
+	updates := map[string]interface{}{}
+
+	// 更新 IPv4（去除多余空白和方括号）
+	ipv4 := strings.TrimSpace(strings.Trim(payload.IPv4, "[]"))
+	if ipv4 != "" && ipv4 != node.IPV4 {
+		updates["ipv4"] = ipv4
+	}
+	// 更新 IPv6（去除多余空白和方括号，防止超长写入）
+	ipv6 := strings.TrimSpace(strings.Trim(payload.IPv6, "[]"))
+	if len(ipv6) > 45 { // IPv6 最长 45 字符（包含冒号和可能的压缩符号）
+		logger.Log.Warn("node_online: IPv6 地址过长，已截断", "install_id", installID, "raw_ipv6_len", len(ipv6))
+		ipv6 = ipv6[:45]
+	}
+	if ipv6 != "" && ipv6 != node.IPV6 {
+		updates["ipv6"] = ipv6
+	}
+
+	// 使用 GeoIP 解析 Region（国家 ISO Code，如 US、CN）
+	// 优先使用 IPv4 查询地区，IPv4 为空时使用 IPv6
+	newRegion := ""
+	if GlobalGeoIP != nil {
+		checkIP := ipv4
+		if checkIP == "" {
+			checkIP = ipv6
+		}
+		if checkIP != "" {
+			newRegion = GlobalGeoIP.GetCountryIsoCode(checkIP)
+		}
+	}
+	if newRegion != "" && newRegion != node.Region {
+		updates["region"] = newRegion
+	}
+
+	// 更新 Agent 版本
+	if payload.AgentVer != "" && payload.AgentVer != node.AgentVersion {
+		updates["agent_version"] = payload.AgentVer
+	}
+
+	// 更新链接
+	if len(payload.Links) > 0 {
+		if node.Links == nil {
+			node.Links = make(map[string]string)
+		}
+		changed := false
+		for proto, link := range payload.Links {
+			if strings.TrimSpace(link) == "" {
+				continue // 跳过空链接
+			}
+			if node.Links[proto] != link {
+				node.Links[proto] = link
+				changed = true
+			}
+		}
+		if changed {
+			// GORM .Updates(map) 会跳过模型 serializer，需手动序列化为 JSON 字符串
+			linksJSON, err := json.Marshal(node.Links)
+			if err == nil {
+				updates["links"] = string(linksJSON)
+			} else {
+				logger.Log.Warn("node_online: 序列化 links 失败", "error", err, "install_id", installID)
+			}
+		}
+	}
+
+	// 批量更新
+	if len(updates) > 0 {
+		if err := database.DB.Model(&database.NodePool{}).Where("install_id = ?", installID).Updates(updates).Error; err != nil {
+			logger.Log.Error("node_online: 更新节点信息失败", "error", err, "install_id", installID)
+		} else {
+			nodeName := strings.TrimSpace(node.Name)
+			if nodeName == "" {
+				nodeName = installID
+			}
+		}
+	}
+}
+
+// handleLinksUpdate 🆕 处理链接更新消息
+// 更新数据库中的节点链接，同时更新 IP 和 Region
+func (h *TrafficHub) handleLinksUpdate(msg wsMessage, clientIP string) {
+	var payload wsLinksUpdatePayload
+	if err := json.Unmarshal(msg.Payload, &payload); err != nil {
+		logger.Log.Warn("解析 links_update 载荷失败", "error", err, "install_id", msg.InstallID)
+		return
+	}
+
+	installID := msg.InstallID
+
+	// 获取节点记录
+	var node database.NodePool
+	if err := database.DB.Where("install_id = ?", installID).First(&node).Error; err != nil {
+		logger.Log.Warn("links_update: 节点不存在", "install_id", installID)
+		return
+	}
+
+	updates := map[string]interface{}{}
+
+	// 更新 IPv4 和 IPv6（links_update 也可能携带最新 IP，去除多余空白和方括号）
+	luIPv4 := strings.TrimSpace(strings.Trim(payload.IPv4, "[]"))
+	if luIPv4 != "" && luIPv4 != node.IPV4 {
+		updates["ipv4"] = luIPv4
+	}
+	luIPv6 := strings.TrimSpace(strings.Trim(payload.IPv6, "[]"))
+	if len(luIPv6) > 45 {
+		logger.Log.Warn("links_update: IPv6 地址过长，已截断", "install_id", installID, "raw_ipv6_len", len(luIPv6))
+		luIPv6 = luIPv6[:45]
+	}
+	if luIPv6 != "" && luIPv6 != node.IPV6 {
+		updates["ipv6"] = luIPv6
+	}
+
+	// 使用 GeoIP 解析 Region（国家 ISO Code，如 US、CN）
+	if GlobalGeoIP != nil {
+		checkIP := luIPv4
+		if checkIP == "" {
+			checkIP = luIPv6
+		}
+		if checkIP != "" {
+			newRegion := GlobalGeoIP.GetCountryIsoCode(checkIP)
+			if newRegion != "" && newRegion != node.Region {
+				updates["region"] = newRegion
+			}
+		}
+	}
+
+	// 更新链接
+	if len(payload.Links) > 0 {
+		if node.Links == nil {
+			node.Links = make(map[string]string)
+		}
+		for proto, link := range payload.Links {
+			if strings.TrimSpace(link) == "" {
+				continue // 跳过空链接
+			}
+			node.Links[proto] = link
+		}
+
+		// GORM .Update() 对 map 类型不会自动调用 serializer，需手动序列化为 JSON 字符串
+		linksJSON, err := json.Marshal(node.Links)
+		if err != nil {
+			logger.Log.Error("links_update: 序列化 links 失败", "error", err, "install_id", installID)
+			return
+		}
+		updates["links"] = string(linksJSON)
+	}
+
+	// 批量更新
+	if len(updates) > 0 {
+		if err := database.DB.Model(&database.NodePool{}).Where("install_id = ?", installID).Updates(updates).Error; err != nil {
+			logger.Log.Error("links_update: 更新失败", "error", err, "install_id", installID)
+		} else {
+			nodeName := strings.TrimSpace(node.Name)
+			if nodeName == "" {
+				nodeName = installID
+			}
+			logger.Log.Info("节点链接已更新",
+				"install_id", installID,
+				"node_name", nodeName,
+				"action", payload.Action,
+				"protocols", payload.Protocols,
+				"link_count", len(payload.Links),
+			)
+		}
+	}
 }

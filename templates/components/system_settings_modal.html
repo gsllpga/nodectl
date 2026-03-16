@@ -436,8 +436,9 @@
         width: auto;
     }
 
-    .sys-offline-col-status {
-        width: 66px;
+
+    .sys-offline-col-records {
+        width: 56px;
     }
 
     .sys-offline-col-grace {
@@ -489,25 +490,51 @@
         word-break: break-word;
     }
 
-    .sys-offline-th-status,
+    .sys-offline-th-records,
     .sys-offline-th-grace,
     .sys-offline-th-threshold,
-    .sys-offline-td-status,
+    .sys-offline-td-records,
     .sys-offline-td-grace,
     .sys-offline-td-threshold {
         text-align: center;
         padding: 8px 4px;
     }
 
-    .sys-offline-status-badge {
+    .sys-offline-records-badge {
         display: inline-block;
-        min-width: 48px;
-        padding: 4px 8px;
+        min-width: 32px;
+        padding: 3px 7px;
         border-radius: 999px;
         font-weight: 600;
+        font-size: 11px;
+        font-family: monospace;
         cursor: pointer;
         user-select: none;
-        font-size: 12px;
+        transition: all 0.15s;
+        color: #0284c7;
+        background: #e0f2fe;
+        border: 1px solid #bae6fd;
+    }
+
+    .sys-offline-records-badge:hover {
+        background: #bae6fd;
+        border-color: #7dd3fc;
+        color: #0369a1;
+    }
+
+    .sys-offline-records-badge.zero {
+        color: #9ca3af;
+        background: #f3f4f6;
+        border-color: #e5e7eb;
+        cursor: default;
+    }
+
+    .sys-offline-records-badge.loading {
+        color: #9ca3af;
+        background: #f9fafb;
+        border-color: #e5e7eb;
+        cursor: default;
+        font-family: inherit;
     }
 
     .sys-offline-grace-input {
@@ -677,10 +704,14 @@
             width: 24px;
         }
 
-        .sys-offline-col-status,
+        .sys-offline-col-records,
         .sys-offline-col-grace,
         .sys-offline-col-threshold {
             width: 56px;
+        }
+
+        .sys-offline-col-records {
+            width: 48px;
         }
 
         .sys-offline-th-select,
@@ -693,20 +724,20 @@
             padding-left: 4px;
         }
 
-        .sys-offline-th-status,
+        .sys-offline-th-records,
         .sys-offline-th-grace,
         .sys-offline-th-threshold,
-        .sys-offline-td-status,
+        .sys-offline-td-records,
         .sys-offline-td-grace,
         .sys-offline-td-threshold {
             padding-left: 2px;
             padding-right: 2px;
         }
 
-        .sys-offline-status-badge {
-            min-width: 42px;
-            padding: 4px 6px;
-            font-size: 11px;
+        .sys-offline-records-badge {
+            min-width: 28px;
+            padding: 2px 5px;
+            font-size: 10px;
         }
 
         .sys-offline-grace-input {
@@ -2716,14 +2747,15 @@
                                         <p style="margin: 0">
                                             •
                                             <b>落库间隔:</b>
-                                            仅影响历史点采样密度，不影响累计值安全性，范围
-                                            10-3600 秒。
+                                            仅影响历史点采样密度，不影响累计值安全性。设为 0
+                                            表示关闭历史点落库（推荐 SQLite 用户），范围
+                                            0 或 10-3600 秒。
                                         </p>
                                     </div>
                                 </div>
                             </label>
                             <input type="number" id="sys_pref_traffic_point_persist_interval_sec" class="sys-input"
-                                placeholder="默认: 600" min="10" max="3600" oninput="triggerSysAutoSave()" />
+                                placeholder="默认: 0 (关闭)" min="0" max="3600" oninput="triggerSysAutoSave()" />
                         </div>
 
                         <div class="sys-field">
@@ -2820,17 +2852,17 @@
                                                 margin: 0;
                                                 padding-bottom: 4px;
                                             ">
-                                            •
-                                            <b>总开关:</b>
-                                            状态栏统一控制离线通知与阈值停机。
+                                            • <b>宽限期:</b> 设为 0
+                                            表示不发送离线通知；大于 0
+                                            表示节点离线超过该秒数后发送通知。
                                         </p>
                                         <p style="
                                                 margin: 0;
                                                 padding-bottom: 4px;
                                             ">
-                                            • <b>分开关:</b> 宽限期=0
-                                            表示不发送离线通知；阈值=0
-                                            表示不启用阈值停机。
+                                            • <b>阈值:</b> 设为 0
+                                            表示不启用阈值停机；大于 0
+                                            表示流量达到该百分比后触发停机。
                                         </p>
                                         <p style="margin: 0">
                                             •
@@ -2842,13 +2874,6 @@
                             </label>
                             <div class="sys-batch-inline-wrap">
                                 <div class="sys-batch-inline-controls" id="sysBatchInlineControls">
-                                    <div class="sys-batch-inline-item">
-                                        <label>状态</label>
-                                        <select id="sysBatchOfflineNotifyEnabled" class="sys-batch-inline-select">
-                                            <option value="1">启用</option>
-                                            <option value="0">禁用</option>
-                                        </select>
-                                    </div>
                                     <div class="sys-batch-inline-item">
                                         <label>宽限</label>
                                         <input type="number" id="sysBatchOfflineNotifyGrace"
@@ -2885,7 +2910,7 @@
                                 <colgroup>
                                     <col class="sys-offline-col-select" />
                                     <col class="sys-offline-col-name" />
-                                    <col class="sys-offline-col-status" />
+                                    <col class="sys-offline-col-records" />
                                     <col class="sys-offline-col-grace" />
                                     <col class="sys-offline-col-threshold" />
                                 </colgroup>
@@ -2901,8 +2926,8 @@
                                         <th class="sys-offline-th-name">
                                             服务器
                                         </th>
-                                        <th class="sys-offline-th-status">
-                                            状态
+                                        <th class="sys-offline-th-records">
+                                            记录
                                         </th>
                                         <th class="sys-offline-th-grace">
                                             宽限期
@@ -3508,6 +3533,37 @@
                             ↩️ 切换回 SQLite
                         </button>
                     </div>
+
+                    <!-- ====== PostgreSQL 空间回收 (仅当前引擎为 postgres 时显示) ====== -->
+                    <div id="dbVacuumSection" style="display: none; margin-bottom: 20px">
+                        <div class="sys-field">
+                            <label class="sys-label" style="display: flex; align-items: center; gap: 4px">
+                                🧹 数据库空间回收
+                                <div class="sys-info-tooltip-wrap" tabindex="0">
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                        stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                        <circle cx="12" cy="12" r="10"></circle>
+                                        <line x1="12" y1="8" x2="12" y2="12"></line>
+                                        <line x1="12" y1="16" x2="12.01" y2="16"></line>
+                                    </svg>
+                                    <div class="sys-tooltip-content">
+                                        <p style="margin: 0; padding-bottom: 4px; font-weight: 600; color: #fff;">为什么删除数据后空间不释放？</p>
+                                        <p style="margin: 0; padding-bottom: 4px">
+                                            PostgreSQL 使用 MVCC 机制，删除数据只是标记为"死元组"，磁盘空间不会自动释放。
+                                        </p>
+                                        <p style="margin: 0;">
+                                            点击此按钮执行 VACUUM 操作，回收已删除数据占用的磁盘空间。此操作不会影响正常使用。
+                                        </p>
+                                    </div>
+                                </div>
+                            </label>
+                            <button type="button" id="btnDBVacuum" class="btn-sys-geo-action btn-sys-geo-update"
+                                onclick="vacuumDatabaseAction()" style="font-size: 13px">
+                                🧹 执行空间回收 (VACUUM)
+                            </button>
+                            <div id="dbVacuumResult" style="margin-top: 8px; font-size: 12px; color: #666;"></div>
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>
@@ -3524,6 +3580,16 @@
     const sysModal = document.getElementById("systemSettingsModal");
     const sysModalCard = document.getElementById("sysModalCard");
     let hasCheckedGeo = false;
+
+    // 点击遮罩层关闭
+    sysModal.addEventListener('click', function(e) {
+        if (e.target === sysModal) closeSystemSettingsModal();
+    });
+
+    // ESC 键关闭
+    document.addEventListener('keydown', function(e) {
+        if (e.key === 'Escape' && sysModal.classList.contains('active')) closeSystemSettingsModal();
+    });
     let geoState = "checking";
     let hasCheckedMihomo = false;
     let mihomoState = "checking";
@@ -3648,16 +3714,70 @@
         triggerSysAutoSave();
     }
 
+    // ─── 协议分组定义（自包含，不再依赖 install_script_modal.html） ───
+    const SYS_INSTALL_PROTO_GROUPS = [
+        {
+            id: "vless",
+            name: "VLESS",
+            variants: [
+                { key: "reality", arg: "reality", label: "Reality" },
+                { key: "vless_wst", arg: "vless-wst", label: "WS-TLS" },
+                { key: "vless_hut", arg: "vless-hut", label: "HU-TLS" },
+            ],
+        },
+        {
+            id: "vmess",
+            name: "VMess",
+            variants: [
+                { key: "vmess_tcp", arg: "vmess-tcp", label: "TCP" },
+                { key: "vmess_ws", arg: "vmess-ws", label: "WS" },
+                { key: "vmess_http", arg: "vmess-http", label: "HTTP" },
+                { key: "vmess_quic", arg: "vmess-quic", label: "QUIC" },
+                { key: "vmess_wst", arg: "vmess-wst", label: "WS-TLS" },
+                { key: "vmess_hut", arg: "vmess-hut", label: "HU-TLS" },
+            ],
+        },
+        {
+            id: "ss",
+            name: "Shadowsocks",
+            variants: [{ key: "ss", arg: "shadowsocks", label: "Shadowsocks" }],
+        },
+        {
+            id: "hy2",
+            name: "Hysteria2",
+            variants: [{ key: "hy2", arg: "hysteria2", label: "Hysteria2" }],
+        },
+        {
+            id: "tuic",
+            name: "TUIC",
+            variants: [{ key: "tuic", arg: "tuic", label: "TUIC" }],
+        },
+        {
+            id: "socks5",
+            name: "Socks5",
+            variants: [{ key: "socks5", arg: "socks5", label: "Socks5" }],
+        },
+        {
+            id: "trojan",
+            name: "Trojan",
+            variants: [
+                { key: "trojan", arg: "trojan", label: "Trojan" },
+                { key: "trojan_wst", arg: "trojan-wst", label: "WS-TLS" },
+                { key: "trojan_hut", arg: "trojan-hut", label: "HU-TLS" },
+            ],
+        },
+        {
+            id: "anytls",
+            name: "AnyTLS",
+            variants: [{ key: "anytls", arg: "anytls", label: "AnyTLS" }],
+        },
+    ];
+
     function renderSysDefaultInstallProtocolGroups() {
         const wrap = document.getElementById("sysDefaultInstallProtocolGroups");
         if (!wrap) return;
 
-        const protoGroups = window.NODECTL_INSTALL_PROTO_GROUPS || [];
-        if (!Array.isArray(protoGroups) || protoGroups.length === 0) {
-            wrap.innerHTML =
-                '<div style="font-size:12px;color:#999;">协议定义尚未加载，请先刷新页面。</div>';
-            return;
-        }
+        const protoGroups = SYS_INSTALL_PROTO_GROUPS;
 
         const multiGroups = protoGroups.filter(
             (g) => (g.variants || []).length > 1,
@@ -3788,7 +3908,7 @@
 
                 document.getElementById(
                     "sys_pref_traffic_point_persist_interval_sec",
-                ).value = data.pref_traffic_point_persist_interval_sec || "600";
+                ).value = data.pref_traffic_point_persist_interval_sec || "0";
                 document.getElementById(
                     "sys_agent_ws_push_interval_sec",
                 ).value = data.agent_ws_push_interval_sec || "2";
@@ -4115,7 +4235,6 @@
             offlineNotifyRows = nodes
                 .map((n) => ({
                     uuid: String(n.uuid || ""),
-                    enabled: !!n.offline_notify_enabled,
                     grace: Number(n.offline_notify_grace_sec ?? 180),
                     threshold: Number(n.traffic_threshold_percent || 0),
                 }))
@@ -4174,21 +4293,31 @@
 
         tbody.innerHTML = html;
         updateOfflineNotifySelectAllState();
+
+        // 渲染完成后，异步加载计数为 -1（NULL）的节点的实际记录数
+        lazyLoadTrafficHistoryCounts(nodes);
     }
 
     function buildOfflineNotifyNodeRow(n) {
         const name = escapeHtml(n.name || "-");
         const uuid = escapeHtml(n.uuid || "");
-        const enabled = !!n.offline_notify_enabled;
         const grace = Number(n.offline_notify_grace_sec ?? 180);
         const threshold = Number(n.traffic_threshold_percent || 0);
         const regionCode = n.region || n.country_code || n.country || "";
         const flagHtml = sysBuildServerFlagHtml(regionCode);
         const checked = offlineNotifySelectedUUIDs.has(String(n.uuid || ""));
-        const statusText = enabled ? "启用" : "禁用";
-        const statusStyle = enabled
-            ? "color:#1f8f4a;background:#e8f7ed;border:1px solid #c9ebd6;"
-            : "color:#b05700;background:#fff3e6;border:1px solid #ffd7b0;";
+
+        // 历史流量记录条数：-1 表示需要懒加载
+        const historyCount = Number(n.traffic_history_count ?? -1);
+        let recordsBadgeHtml = '';
+        if (historyCount === -1) {
+            // 需要懒加载
+            recordsBadgeHtml = `<span id="records_badge_${uuid}" class="sys-offline-records-badge loading" title="加载中...">...</span>`;
+        } else if (historyCount === 0) {
+            recordsBadgeHtml = `<span id="records_badge_${uuid}" class="sys-offline-records-badge zero" title="无历史流量记录">0</span>`;
+        } else {
+            recordsBadgeHtml = `<span id="records_badge_${uuid}" class="sys-offline-records-badge" title="点击清除历史流量记录" onclick="confirmClearTrafficHistory('${uuid}', '${name}', ${historyCount})">${historyCount}</span>`;
+        }
 
         return `
             <tr style="border-top: 1px solid #f0f2f5;" data-node-name="${name.toLowerCase()}">
@@ -4201,13 +4330,8 @@
                         <div class="sys-offline-name-text">${name}</div>
                     </div>
                 </td>
-                <td class="sys-offline-td-status">
-                    <span
-                        onclick="toggleOfflineNotifyEnabled('${uuid}', ${enabled ? "true" : "false"})"
-                        class="sys-offline-status-badge"
-                        style="${statusStyle}">
-                        ${statusText}
-                    </span>
+                <td class="sys-offline-td-records">
+                    ${recordsBadgeHtml}
                 </td>
                 <td class="sys-offline-td-grace">
                     <input type="number" min="0" max="86400" value="${grace}" id="offline_grace_${uuid}" class="sys-input sys-offline-grace-input" oninput="queueOfflineNotifyGraceSave('${uuid}')">
@@ -4216,6 +4340,106 @@
                     <input type="number" min="0" max="100" value="${threshold}" id="offline_threshold_${uuid}" class="sys-input sys-offline-threshold-input" oninput="queueOfflineNotifyThresholdSave('${uuid}')">
                 </td>
             </tr>`;
+    }
+
+    // ================= 历史流量记录计数：懒加载 & 清除 =================
+
+    // 渲染完成后，为所有 count=-1（NULL）的节点异步加载实际条数
+    function lazyLoadTrafficHistoryCounts(nodes) {
+        if (!nodes || nodes.length === 0) return;
+        const needLoad = nodes.filter(n => Number(n.traffic_history_count ?? -1) === -1);
+        // 逐个请求，避免并发压力过大
+        needLoad.forEach((n, idx) => {
+            setTimeout(async () => {
+                try {
+                    const res = await fetch(`/api/traffic/history-count?uuid=${encodeURIComponent(n.uuid)}`);
+                    const result = await res.json();
+                    if (result.status === 'success') {
+                        const count = Number(result.count || 0);
+                        const badge = document.getElementById('records_badge_' + n.uuid);
+                        if (badge) {
+                            badge.classList.remove('loading');
+                            if (count === 0) {
+                                badge.classList.add('zero');
+                                badge.textContent = '0';
+                                badge.title = '无历史流量记录';
+                                badge.onclick = null;
+                                badge.style.cursor = 'default';
+                            } else {
+                                badge.textContent = String(count);
+                                badge.title = '点击清除历史流量记录';
+                                badge.onclick = function() {
+                                    confirmClearTrafficHistory(n.uuid, n.name || '-', count);
+                                };
+                            }
+                        }
+                        // 同步更新内存中的节点数据
+                        n.traffic_history_count = count;
+                    }
+                } catch (e) {
+                    const badge = document.getElementById('records_badge_' + n.uuid);
+                    if (badge) {
+                        badge.classList.remove('loading');
+                        badge.classList.add('zero');
+                        badge.textContent = '?';
+                        badge.title = '加载失败';
+                    }
+                }
+            }, idx * 200); // 每个请求间隔 200ms，避免并发冲击
+        });
+    }
+
+    // 确认清除历史流量数据
+    function confirmClearTrafficHistory(uuid, nodeName, count) {
+        if (count <= 0) return;
+        const msg = `是否清除该节点的历史流量统计数据？\n\n节点：${nodeName}\n记录数：${count} 条\n\n⚠️ 此操作不影响累计流量统计。`;
+        if (!confirm(msg)) return;
+
+        // 执行清除
+        doClearTrafficHistory(uuid);
+    }
+
+    async function doClearTrafficHistory(uuid) {
+        const badge = document.getElementById('records_badge_' + uuid);
+        if (badge) {
+            badge.textContent = '...';
+            badge.classList.add('loading');
+            badge.classList.remove('zero');
+            badge.onclick = null;
+        }
+
+        try {
+            const res = await fetch('/api/traffic/clear-history', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ uuid }),
+            });
+            const result = await res.json();
+            if (result.status === 'success') {
+                if (badge) {
+                    badge.classList.remove('loading');
+                    badge.classList.add('zero');
+                    badge.textContent = '0';
+                    badge.title = '无历史流量记录';
+                    badge.style.cursor = 'default';
+                }
+                showOfflineNotifySaved();
+            } else {
+                if (badge) {
+                    badge.classList.remove('loading');
+                    badge.textContent = '!';
+                    badge.title = '清除失败: ' + (result.message || '未知错误');
+                }
+                showOfflineNotifySaveFailed();
+            }
+        } catch (e) {
+            if (badge) {
+                badge.classList.remove('loading');
+                badge.textContent = '!';
+                badge.title = '请求失败';
+            }
+            showOfflineNotifySaveFailed();
+        }
     }
 
     function filterOfflineNotifyNodes(keyword) {
@@ -4298,41 +4522,6 @@
         return offlineNotifyRows.find((n) => n.uuid === uuid) || null;
     }
 
-    async function toggleOfflineNotifyEnabled(uuid, currentEnabled) {
-        const row = getOfflineNotifyRowByUUID(uuid);
-        const nextEnabled = !currentEnabled;
-        const thresholdInput = document.getElementById(
-            "offline_threshold_" + uuid,
-        );
-        let threshold = row ? Number(row.threshold || 0) : 0;
-        if (thresholdInput) {
-            const parsed = parseInt(thresholdInput.value, 10);
-            if (!Number.isNaN(parsed)) threshold = parsed;
-        }
-        if (Number.isNaN(threshold) || threshold < 0) threshold = 0;
-        if (threshold > 100) threshold = 100;
-
-        showOfflineNotifySaving();
-        try {
-            const res = await fetch("/api/offline-notify/update", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                    uuid,
-                    offline_notify_enabled: nextEnabled,
-                    traffic_threshold_enabled: nextEnabled && threshold > 0,
-                }),
-            });
-            const result = await res.json();
-            if (result.status !== "success")
-                throw new Error(result.message || "save failed");
-            showOfflineNotifySaved();
-            await loadOfflineNotifySettings();
-        } catch (e) {
-            showOfflineNotifySaveFailed();
-            await loadOfflineNotifySettings();
-        }
-    }
 
     function queueOfflineNotifyGraceSave(uuid) {
         const input = document.getElementById("offline_grace_" + uuid);
@@ -4392,16 +4581,12 @@
         if (threshold > 100) threshold = 100;
         input.value = String(threshold);
 
-        const row = getOfflineNotifyRowByUUID(uuid);
-        const enabled = !!(row && row.enabled);
-
         try {
             const res = await fetch("/api/offline-notify/update", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
                     uuid,
-                    traffic_threshold_enabled: enabled && threshold > 0,
                     traffic_threshold_percent: threshold,
                 }),
             });
@@ -4430,9 +4615,6 @@
                 alert("未找到已选节点，请刷新后重试");
                 return;
             }
-            const allEnabled = selected.every((n) => n.enabled);
-            document.getElementById("sysBatchOfflineNotifyEnabled").value =
-                allEnabled ? "1" : "0";
             document.getElementById("sysBatchOfflineNotifyGrace").value =
                 String(selected[0].grace ?? 180);
             document.getElementById("sysBatchTrafficThresholdPercent").value =
@@ -4468,9 +4650,6 @@
     }
 
     async function saveBatchInline() {
-        const enabled =
-            document.getElementById("sysBatchOfflineNotifyEnabled").value ===
-            "1";
         let grace = parseInt(
             document.getElementById("sysBatchOfflineNotifyGrace").value,
             10,
@@ -4505,9 +4684,7 @@
                         headers: { "Content-Type": "application/json" },
                         body: JSON.stringify({
                             uuid,
-                            offline_notify_enabled: enabled,
                             offline_notify_grace_sec: grace,
-                            traffic_threshold_enabled: enabled && threshold > 0,
                             traffic_threshold_percent: threshold,
                         }),
                     })
@@ -5475,11 +5652,17 @@
         const switchBackWrap = document.getElementById("dbSwitchBackWrap");
         const postTestActions = document.getElementById("dbPostTestActions");
         const migrateSection = document.getElementById("dbMigrateSection");
+        const vacuumSection = document.getElementById("dbVacuumSection");
 
         // 切换引擎选项时，重置测试状态
         dbTestPassed = false;
         postTestActions.style.display = "none";
         resetDBTestBtn();
+
+        // VACUUM 按钮仅在当前引擎为 PostgreSQL 时显示
+        if (vacuumSection) {
+            vacuumSection.style.display = (dbCurrentType === "postgres") ? "block" : "none";
+        }
 
         if (selectedType === "postgres") {
             pgSection.style.display = "block";
@@ -5634,6 +5817,48 @@
         }
         btn.disabled = false;
         btn.innerHTML = "🔄 直接切换到 PostgreSQL";
+    }
+
+    async function vacuumDatabaseAction() {
+        const btn = document.getElementById("btnDBVacuum");
+        const resultEl = document.getElementById("dbVacuumResult");
+        if (!btn) return;
+
+        btn.disabled = true;
+        btn.innerHTML = "⏳ 正在执行空间回收...";
+        btn.className = "btn-sys-geo-action btn-sys-geo-loading";
+        resultEl.innerHTML = '<span style="color: #888;">正在执行 VACUUM，请稍候...</span>';
+
+        try {
+            const res = await fetch("/api/db/vacuum", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({}),
+            });
+            const json = await res.json();
+            if (json.status === "success") {
+                btn.innerHTML = "✅ 空间回收完成";
+                btn.className = "btn-sys-geo-action btn-sys-geo-latest";
+                resultEl.innerHTML = '<span style="color: #16a34a;">✅ ' + (json.message || "VACUUM 执行成功") + '</span>';
+                // 刷新数据库状态以显示最新大小
+                await loadDBStatus();
+            } else {
+                btn.innerHTML = "❌ 执行失败，点击重试";
+                btn.className = "btn-sys-geo-action btn-sys-geo-error";
+                resultEl.innerHTML = '<span style="color: #d74242;">' + (json.message || "执行失败") + '</span>';
+            }
+        } catch (e) {
+            btn.innerHTML = "❌ 请求失败，点击重试";
+            btn.className = "btn-sys-geo-action btn-sys-geo-error";
+            resultEl.innerHTML = '<span style="color: #d74242;">网络请求失败</span>';
+        }
+        btn.disabled = false;
+        // 5秒后恢复按钮初始状态
+        setTimeout(() => {
+            btn.innerHTML = "🧹 执行空间回收 (VACUUM)";
+            btn.className = "btn-sys-geo-action btn-sys-geo-update";
+            resultEl.innerHTML = "";
+        }, 5000);
     }
 
     async function switchBackToSqlite() {

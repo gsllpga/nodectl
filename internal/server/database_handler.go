@@ -132,6 +132,40 @@ func apiSwitchDatabase(w http.ResponseWriter, r *http.Request) {
 	sendJSON(w, "success", "数据库已成功切换为 "+req.Type)
 }
 
+// apiVacuumDatabase 对 PostgreSQL 执行 VACUUM 回收死元组占用的磁盘空间
+func apiVacuumDatabase(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var req struct {
+		Table string `json:"table"` // 可选，指定表名；为空则 VACUUM 整个数据库
+	}
+	// 允许空 body
+	_ = json.NewDecoder(r.Body).Decode(&req)
+
+	var err error
+	if req.Table != "" {
+		err = database.VacuumTable(req.Table)
+	} else {
+		err = database.VacuumDatabase()
+	}
+
+	if err != nil {
+		logger.Log.Warn("VACUUM 执行失败", "table", req.Table, "error", err)
+		sendJSON(w, "error", err.Error())
+		return
+	}
+
+	msg := "VACUUM 执行成功，已回收可用空间"
+	if req.Table != "" {
+		msg = "VACUUM " + req.Table + " 执行成功"
+	}
+	logger.Log.Info("VACUUM 执行成功", "table", req.Table)
+	sendJSON(w, "success", msg)
+}
+
 // apiMigrateDatabase 从 SQLite 迁移数据到 PostgreSQL
 func apiMigrateDatabase(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {

@@ -6,6 +6,7 @@ import (
 	"context"
 	"crypto/tls"
 	"embed"
+	"fmt"
 	"html/template"
 	"io/fs"
 	"log"
@@ -18,6 +19,7 @@ import (
 	"sync"
 	"time"
 
+	"nodectl/internal/database"
 	"nodectl/internal/logger"
 	"nodectl/internal/middleware"
 	"nodectl/internal/service"
@@ -297,6 +299,8 @@ func Start(tmplFS embed.FS) {
 	mux.HandleFunc("/api/traffic/landing-nodes", withAuthAndSecure(apiGetTrafficLandingNodes))
 	mux.HandleFunc("/api/traffic/series", withAuthAndSecure(apiGetTrafficSeries))
 	mux.HandleFunc("/api/traffic/consumption-rank", withAuthAndSecure(apiGetTrafficConsumptionRank))
+	mux.HandleFunc("/api/traffic/clear-history", withAuthAndSecure(apiClearNodeTrafficHistory))
+	mux.HandleFunc("/api/traffic/history-count", withAuthAndSecure(apiGetNodeTrafficHistoryCount))
 	mux.HandleFunc("/api/update-geoip", withAuthAndSecure(apiUpdateGeoIP))
 	mux.HandleFunc("/api/get-geo-status", withAuthAndSecure(apiGetGeoStatus))
 	// 程序版本更新检查
@@ -310,18 +314,20 @@ func Start(tmplFS embed.FS) {
 	mux.HandleFunc("/api/db/test-connection", withAuthAndSecure(apiTestDBConnection))
 	mux.HandleFunc("/api/db/switch", withAuthAndSecure(apiSwitchDatabase))
 	mux.HandleFunc("/api/db/migrate", withAuthAndSecure(apiMigrateDatabase))
+	mux.HandleFunc("/api/db/vacuum", withAuthAndSecure(apiVacuumDatabase))
 
 	// ========== C. 公开/工具 路由 ==========
-	mux.HandleFunc("/api/public/install-script", withSecure(apiPublicScript)) // 安装脚本
-	mux.HandleFunc("/api/callback/report", withSecure(apiCallbackReport))     // 节点上报
-	mux.HandleFunc("/api/callback/traffic/ws", apiCallbackTrafficWS)          // Agent WS 统一上报通道
+	mux.HandleFunc("/api/public/new-install-script", withSecure(apiNewInstallScript)) // 🆕 新版极简安装脚本
+	mux.HandleFunc("/api/public/download/agent", apiDownloadAgent)                    // 🆕 Agent 二进制下载302中转层，强制匹配面板和agent版本
+	mux.HandleFunc("/api/agent/init-config", withSecure(apiAgentInitConfig))          // 🆕 Agent 初始化配置
+	mux.HandleFunc("/api/callback/traffic/ws", apiCallbackTrafficWS)                  // Agent WS 统一上报通道
 	// 实时流量订阅 (前端 WebSocket)
 	mux.HandleFunc("/api/traffic/live", withAuthAndSecure(apiTrafficLive)) // 前端实时流量订阅
 
 	// ========== 节点控制 (Agent 命令下发) ==========
-	mux.HandleFunc("/api/node/control/reset-links", withAuthAndSecure(apiNodeControlResetLinks))              // 远程重置链接
-	mux.HandleFunc("/api/node/control/reinstall-singbox", withAuthAndSecure(apiNodeControlReinstall))         // 远程重装 sing-box
+	mux.HandleFunc("/api/callback/reset-protocol", withAuthAndSecure(apiResetProtocol))                       // 🆕 协议重置接口（管理员操作，需登录鉴权）
 	mux.HandleFunc("/api/node/control/check-agent-update", withAuthAndSecure(apiNodeControlCheckAgentUpdate)) // 远程检查 Agent 更新
+	mux.HandleFunc("/api/node/control/push-config", withAuthAndSecure(apiNodeControlPushConfig))              // 推送协议配置到 Agent
 	mux.HandleFunc("/api/node/control/tunnel-start", withAuthAndSecure(apiNodeControlTunnelStart))            // 远程启动 tunnel
 	mux.HandleFunc("/api/node/control/tunnel-stop", withAuthAndSecure(apiNodeControlTunnelStop))              // 远程停止 tunnel
 	mux.HandleFunc("/api/node/control/stream", withAuthAndSecure(apiNodeControlStream))                       // 命令执行 SSE 流
@@ -353,25 +359,27 @@ func Start(tmplFS embed.FS) {
 	mux.HandleFunc("/api/airport/test/history/delete", withAuthAndSecure(apiAirportSpeedHistoryDelete))
 
 	// ========== Cloudflare 管理 ==========
-	mux.HandleFunc("/api/cf/token/verify", withAuthAndSecure(apiCFTokenVerify))                 // Token 权限验证
-	mux.HandleFunc("/api/cf/token/save", withAuthAndSecure(apiCFTokenSave))                     // Token 保存
-	mux.HandleFunc("/api/cf/token/last-verify", withAuthAndSecure(apiCFGetLastTokenVerify))     // 最近一次校验记录
-	mux.HandleFunc("/api/cf/cert/settings", withAuthAndSecure(apiCFCertSettings))               // 读取/保存安全配置
-	mux.HandleFunc("/api/cf/cert/apply", withAuthAndSecure(apiCFCertApply))                     // 申请证书
-	mux.HandleFunc("/api/cf/tunnel/test", withAuthAndSecure(apiCFTunnelTest))                   // 测试 CF 凭据
-	mux.HandleFunc("/api/cf/tunnel/settings", withAuthAndSecure(apiCFTunnelSettings))           // 读取/保存 Tunnel 配置
-	mux.HandleFunc("/api/cf/tunnel/cloudflared/prepare", withAuthAndSecure(apiCFTunnelPrepare)) // 下载 cloudflared (SSE)
-	mux.HandleFunc("/api/cf/tunnel/create", withAuthAndSecure(apiCFTunnelCreate))               // 创建 Tunnel (幂等)
-	mux.HandleFunc("/api/cf/tunnel/dns", withAuthAndSecure(apiCFTunnelDNS))                     // 绑定 DNS
-	mux.HandleFunc("/api/cf/tunnel/delete", withAuthAndSecure(apiCFTunnelDelete))               // 删除 Tunnel
-	mux.HandleFunc("/api/cf/tunnel/config/render", withAuthAndSecure(apiCFTunnelConfigRender))  // 生成配置文件
-	mux.HandleFunc("/api/cf/tunnel/run", withAuthAndSecure(apiCFTunnelRun))                     // 启动 Tunnel
-	mux.HandleFunc("/api/cf/tunnel/stop", withAuthAndSecure(apiCFTunnelStop))                   // 停止 Tunnel
-	mux.HandleFunc("/api/cf/tunnel/status", withAuthAndSecure(apiCFTunnelStatus))               // 读取状态
-	mux.HandleFunc("/api/cf/tunnel/list", withAuthAndSecure(apiCFTunnelList))                   // 按前缀查询 Tunnel 列表
-	mux.HandleFunc("/api/cf/tunnel/delete-by-id", withAuthAndSecure(apiCFTunnelDeleteByID))     // 删除指定 Tunnel
-	mux.HandleFunc("/api/cf/tunnel/detect", withAuthAndSecure(apiCFTunnelDetect))               // 自动发现账户信息
-	mux.HandleFunc("/api/cf/tunnel/oneclick", withAuthAndSecure(apiCFTunnelOneClick))           // 一键部署 (SSE)
+	mux.HandleFunc("/api/cf/token/verify", withAuthAndSecure(apiCFTokenVerify))                  // Token 权限验证
+	mux.HandleFunc("/api/cf/token/save", withAuthAndSecure(apiCFTokenSave))                      // Token 保存
+	mux.HandleFunc("/api/cf/token/last-verify", withAuthAndSecure(apiCFGetLastTokenVerify))      // 最近一次校验记录
+	mux.HandleFunc("/api/cf/cert/settings", withAuthAndSecure(apiCFCertSettings))                // 读取/保存安全配置
+	mux.HandleFunc("/api/cf/cert/apply", withAuthAndSecure(apiCFCertApply))                      // 申请证书
+	mux.HandleFunc("/api/cf/tunnel/test", withAuthAndSecure(apiCFTunnelTest))                    // 测试 CF 凭据
+	mux.HandleFunc("/api/cf/tunnel/settings", withAuthAndSecure(apiCFTunnelSettings))            // 读取/保存 Tunnel 配置
+	mux.HandleFunc("/api/cf/tunnel/cloudflared/prepare", withAuthAndSecure(apiCFTunnelPrepare))  // 下载 cloudflared (SSE)
+	mux.HandleFunc("/api/cf/tunnel/create", withAuthAndSecure(apiCFTunnelCreate))                // 创建 Tunnel (幂等)
+	mux.HandleFunc("/api/cf/tunnel/dns", withAuthAndSecure(apiCFTunnelDNS))                      // 绑定 DNS
+	mux.HandleFunc("/api/cf/tunnel/delete", withAuthAndSecure(apiCFTunnelDelete))                // 删除 Tunnel
+	mux.HandleFunc("/api/cf/tunnel/config/render", withAuthAndSecure(apiCFTunnelConfigRender))   // 生成配置文件
+	mux.HandleFunc("/api/cf/tunnel/run", withAuthAndSecure(apiCFTunnelRun))                      // 启动 Tunnel
+	mux.HandleFunc("/api/cf/tunnel/stop", withAuthAndSecure(apiCFTunnelStop))                    // 停止 Tunnel
+	mux.HandleFunc("/api/cf/tunnel/status", withAuthAndSecure(apiCFTunnelStatus))                // 读取状态
+	mux.HandleFunc("/api/cf/tunnel/list", withAuthAndSecure(apiCFTunnelList))                    // 按前缀查询 Tunnel 列表
+	mux.HandleFunc("/api/cf/tunnel/delete-by-id", withAuthAndSecure(apiCFTunnelDeleteByID))      // 删除指定 Tunnel
+	mux.HandleFunc("/api/cf/tunnel/detect", withAuthAndSecure(apiCFTunnelDetect))                // 自动发现账户信息
+	mux.HandleFunc("/api/cf/tunnel/oneclick", withAuthAndSecure(apiCFTunnelOneClick))            // 一键部署 (SSE)
+	mux.HandleFunc("/api/cf/tunnel/version-status", withAuthAndSecure(apiCFTunnelVersionStatus)) // cloudflared 版本状态
+	mux.HandleFunc("/api/cf/tunnel/force-update", withAuthAndSecure(apiCFTunnelForceUpdate))     // cloudflared 强制更新
 
 	// ========== Cloudflare IP 优选 ==========
 	mux.HandleFunc("/api/cf/ipopt/settings", withAuthAndSecure(apiCFIPOptSettings))                         // 读取/保存优选设置
@@ -388,6 +396,14 @@ func Start(tmplFS embed.FS) {
 	mux.HandleFunc("/api/cf/ipopt/speed-urls/update", withAuthAndSecure(apiCFIPOptSpeedURLUpdate))          // 更新测速地址
 	mux.HandleFunc("/api/cf/ipopt/speed-urls/delete", withAuthAndSecure(apiCFIPOptSpeedURLDelete))          // 删除测速地址
 	mux.HandleFunc("/api/cf/ipopt/speed-urls/set-default", withAuthAndSecure(apiCFIPOptSpeedURLSetDefault)) // 设置默认测速地址
+	mux.HandleFunc("/api/cf/ipopt/version-status", withAuthAndSecure(apiCFIPOptVersionStatus))              // CloudflareST 版本状态
+	mux.HandleFunc("/api/cf/ipopt/force-update", withAuthAndSecure(apiCFIPOptForceUpdate))                  // CloudflareST 强制更新
+	// ========== 自定义节点管理 ==========
+	mux.HandleFunc("/api/custom-nodes/list", withAuthAndSecure(apiCustomNodesList))     // 获取自定义节点列表
+	mux.HandleFunc("/api/custom-nodes/add", withAuthAndSecure(apiCustomNodesAdd))       // 添加自定义节点
+	mux.HandleFunc("/api/custom-nodes/update", withAuthAndSecure(apiCustomNodesUpdate)) // 更新自定义节点
+	mux.HandleFunc("/api/custom-nodes/delete", withAuthAndSecure(apiCustomNodesDelete)) // 删除自定义节点
+
 	// 手动优选列表
 	mux.HandleFunc("/api/cf/ipopt/manual/list", withAuthAndSecure(apiCFIPOptManualList))         // 获取手动优选IP列表
 	mux.HandleFunc("/api/cf/ipopt/manual/add", withAuthAndSecure(apiCFIPOptManualAdd))           // 添加手动优选IP
@@ -408,9 +424,11 @@ func Start(tmplFS embed.FS) {
 		err := service.LoadCertificate()
 		certLoaded := (err == nil)
 
-		// 实例化当前 Server，统一监听 8080 端口
+		// 实例化当前 Server，动态读取监听端口（Docker 环境始终为 8080）
+		webPort := database.GetWebPort()
+		listenAddr := fmt.Sprintf(":%d", webPort)
 		activeServer := &http.Server{
-			Addr:     ":8080",
+			Addr:     listenAddr,
 			Handler:  mux,
 			ErrorLog: log.New(&serverLogWriter{}, "", 0),
 		}
@@ -434,14 +452,14 @@ func Start(tmplFS embed.FS) {
 			<-restartChan // 阻塞等待通道信号
 			logger.Log.Info("收到重启信号，正在卸载当前网络服务...")
 			if srv != nil {
-				srv.Close() // 强制关闭服务，释放 8080 端口
+				srv.Close() // 强制关闭服务，释放监听端口
 			}
 		}(activeServer)
 
 		// [主线程] 启动服务并阻塞
 		var serveErr error
 		if certLoaded {
-			logger.Log.Info("网络服务已启动", "mode", "HTTPS", "addr", "https://localhost:8080", "domain", service.GetCurrentCertInfo().Domain)
+			logger.ConsoleAndLog.Info("网络服务已启动", "mode", "HTTPS", "addr", fmt.Sprintf("https://localhost:%d", webPort), "domain", service.GetCurrentCertInfo().Domain)
 			// 首次启动时，在 Web 服务准备就绪后自动拉起 Tunnel
 			if firstBoot {
 				go service.AutoStartCFTunnel()
@@ -449,7 +467,7 @@ func Start(tmplFS embed.FS) {
 			}
 			serveErr = activeServer.ListenAndServeTLS("", "")
 		} else {
-			logger.Log.Info("网络服务已启动", "mode", "HTTP", "addr", "http://localhost:8080", "msg", "如需使用 HTTPS，请在面板上传证书")
+			logger.ConsoleAndLog.Info("网络服务已启动", "mode", "HTTP", "addr", fmt.Sprintf("http://localhost:%d", webPort), "msg", "如需使用 HTTPS，请在面板上传证书")
 			// 首次启动时，在 Web 服务准备就绪后自动拉起 Tunnel
 			if firstBoot {
 				go service.AutoStartCFTunnel()

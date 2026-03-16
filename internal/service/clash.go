@@ -89,11 +89,21 @@ func SaveCustomClashModules(modules []ClashModuleDef) error {
 	return nil
 }
 
+// defaultRecommendedModules 是"常用推荐"预设的模块列表，用于首次初始化兜底
+var defaultRecommendedModules = []string{
+	"Telegram", "Google", "GoogleFCM", "YouTube", "Netflix",
+	"Twitter(X)", "GitHub", "OpenAI", "Spotify", "Discord",
+	"Microsoft", "TikTok",
+}
+
 func GetActiveClashModules() []string {
 	var conf database.SysConfig
-	database.DB.Where("key = ?", "clash_active_modules").First(&conf)
+	database.DB.Where("key = ?", "clash_active_modules").Limit(1).Find(&conf)
 	if conf.Value == "" {
-		return []string{}
+		// 兜底：当数据库中值为空时（旧用户从未设置过），自动填充为"常用推荐"预设并持久化
+		logger.Log.Info("Clash 分流规则为空，自动应用常用推荐预设")
+		_ = SaveActiveClashModules(defaultRecommendedModules)
+		return defaultRecommendedModules
 	}
 	return strings.Split(conf.Value, ",")
 }
@@ -316,7 +326,7 @@ func getEmojiURL(icon string) string {
 
 func GetCustomProxyRules() []CustomProxyRule {
 	var conf database.SysConfig
-	database.DB.Where("key = ?", "clash_custom_proxy_rules").First(&conf)
+	database.DB.Where("key = ?", "clash_custom_proxy_rules").Limit(1).Find(&conf)
 	var rules []CustomProxyRule
 	if conf.Value != "" {
 		json.Unmarshal([]byte(conf.Value), &rules)
@@ -343,7 +353,7 @@ func SaveCustomProxyRules(rules []CustomProxyRule) error {
 
 func GetCustomDirectRules() string {
 	var conf database.SysConfig
-	database.DB.Where("key = ?", "clash_custom_direct_raw").First(&conf)
+	database.DB.Where("key = ?", "clash_custom_direct_raw").Limit(1).Find(&conf)
 	return conf.Value
 }
 
@@ -356,7 +366,7 @@ func SaveCustomDirectRules(content string) error {
 
 func GetCustomDirectIcon() string {
 	var conf database.SysConfig
-	database.DB.Where("key = ?", "clash_custom_direct_icon").First(&conf)
+	database.DB.Where("key = ?", "clash_custom_direct_icon").Limit(1).Find(&conf)
 	if conf.Value == "" {
 		return "🌐"
 	}

@@ -440,6 +440,11 @@
         }
     }
 
+    /* 手机端：桌面不显示旋转容器样式 */
+    .ts-rotate-wrap {
+        display: contents;
+    }
+
     @media (max-width: 768px) {
         .ts-layout {
             display: flex;
@@ -464,7 +469,84 @@
         }
 
         .ts-left {
-            display: none;
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+            width: 100%;
+        }
+
+        /*
+         * 手机端图表旋转90度显示
+         * 图表原本是宽>高的横向布局，旋转90度后变成纵向，更适合手机浏览
+         *
+         * 原理：
+         * - .ts-panel 的渲染宽度设为较大值（利用手机纵向空间），高度设为容器宽度
+         * - 旋转90度后，原来的宽度变成纵向高度，原来的高度变成横向宽度
+         * - .ts-rotate-wrap 预留旋转后的占位高度
+         */
+        .ts-rotate-wrap {
+            display: block;
+            position: relative;
+            width: 100%;
+            /* 占位高度 = 面板渲染宽度（旋转后变纵向） */
+            --panel-render-w: min(82vh, 640px);
+            height: var(--panel-render-w);
+            overflow: visible;
+        }
+
+        .ts-rotate-wrap .ts-panel {
+            position: absolute;
+            /* 渲染宽度：利用纵向空间，设为视口高度的82%或640px取小值 */
+            width: var(--panel-render-w);
+            /* 渲染高度：旋转后填满屏幕宽度 */
+            height: calc(100vw - 24px);
+            /* 居中于容器 */
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%) rotate(90deg);
+            transform-origin: center center;
+            box-sizing: border-box;
+            padding: 10px 14px;
+        }
+
+        .ts-rotate-wrap .ts-svg {
+            flex: 1;
+            min-height: 0;
+            height: auto;
+        }
+
+        .ts-rotate-wrap .ts-chart-wrap {
+            flex: 1;
+            min-height: 0;
+        }
+
+        .ts-rotate-wrap .ts-panel-header {
+            flex-wrap: wrap;
+            margin-bottom: 4px;
+            flex-shrink: 0;
+        }
+
+        .ts-rotate-wrap .ts-panel-title {
+            font-size: 14px;
+        }
+
+        .ts-rotate-wrap .ts-selected-node {
+            font-size: 13px;
+        }
+
+        .ts-rotate-wrap .ts-selected-node .ts-node-sub {
+            font-size: 11px;
+        }
+
+        .ts-rotate-wrap .ts-trend-metric {
+            font-size: 11px;
+        }
+
+        .ts-rotate-wrap .ts-legend {
+            margin-top: 2px;
+            margin-bottom: 0;
+            font-size: 12px;
+            flex-shrink: 0;
         }
 
         .ts-svg {
@@ -491,52 +573,56 @@
 <div class="sub-card traffic-stats-card" id="traffic-stats-card">
     <div class="ts-layout">
         <div class="ts-left">
-            <div class="ts-panel">
-                <div class="ts-panel-header">
-                    <div class="ts-head-left">
-                        <div class="ts-panel-title">📊 流量分布</div>
-                        <div class="ts-switch" id="ts-dist-switch">
-                            <button type="button" data-interval="2">2小时</button>
-                            <button type="button" data-interval="1" class="active">1小时</button>
+            <div class="ts-rotate-wrap">
+                <div class="ts-panel">
+                    <div class="ts-panel-header">
+                        <div class="ts-head-left">
+                            <div class="ts-panel-title">📊 流量分布</div>
+                            <div class="ts-switch" id="ts-dist-switch">
+                                <button type="button" data-interval="2">2小时</button>
+                                <button type="button" data-interval="1" class="active">1小时</button>
+                            </div>
+                        </div>
+                        <div class="ts-head-right">
+                            <div class="ts-selected-node" id="ts-selected-node"><span class="dot"></span><span>--</span>
+                            </div>
                         </div>
                     </div>
-                    <div class="ts-head-right">
-                        <div class="ts-selected-node" id="ts-selected-node"><span class="dot"></span><span>--</span>
-                        </div>
+                    <div class="ts-chart-wrap" id="ts-bar-wrap">
+                        <svg class="ts-svg" id="ts-bar-svg" viewBox="0 0 960 250" preserveAspectRatio="xMidYMid meet"></svg>
+                        <div class="ts-tooltip" id="ts-bar-tooltip"></div>
                     </div>
-                </div>
-                <div class="ts-chart-wrap" id="ts-bar-wrap">
-                    <svg class="ts-svg" id="ts-bar-svg" viewBox="0 0 960 250" preserveAspectRatio="xMidYMid meet"></svg>
-                    <div class="ts-tooltip" id="ts-bar-tooltip"></div>
-                </div>
-                <div class="ts-legend">
-                    <span><i class="ts-dot" style="background:#34c759"></i>上传</span>
-                    <span><i class="ts-dot" style="background:#1e88ff"></i>下载</span>
+                    <div class="ts-legend">
+                        <span><i class="ts-dot" style="background:#34c759"></i>上传</span>
+                        <span><i class="ts-dot" style="background:#1e88ff"></i>下载</span>
+                    </div>
                 </div>
             </div>
 
-            <div class="ts-panel">
-                <div class="ts-panel-header">
-                    <div class="ts-head-left">
-                        <div class="ts-panel-title">📈 流量趋势</div>
-                        <div class="ts-switch" id="ts-trend-switch">
-                            <button type="button" data-mode="increment" class="active">增量</button>
-                            <button type="button" data-mode="total">总量</button>
+            <div class="ts-rotate-wrap">
+                <div class="ts-panel">
+                    <div class="ts-panel-header">
+                        <div class="ts-head-left">
+                            <div class="ts-panel-title">📈 流量趋势</div>
+                            <div class="ts-switch" id="ts-trend-switch">
+                                <button type="button" data-mode="increment" class="active">增量</button>
+                                <button type="button" data-mode="total">总量</button>
+                            </div>
+                        </div>
+                        <div class="ts-head-right">
+                            <span id="ts-trend-usage" class="ts-trend-metric">已用流量: 0 B</span>
                         </div>
                     </div>
-                    <div class="ts-head-right">
-                        <span id="ts-trend-usage" class="ts-trend-metric">已用流量: 0 B</span>
+                    <div class="ts-chart-wrap" id="ts-line-wrap">
+                        <svg class="ts-svg" id="ts-line-svg" viewBox="0 0 960 250"
+                            preserveAspectRatio="xMidYMid meet"></svg>
+                        <div class="ts-tooltip" id="ts-line-tooltip"></div>
                     </div>
-                </div>
-                <div class="ts-chart-wrap" id="ts-line-wrap">
-                    <svg class="ts-svg" id="ts-line-svg" viewBox="0 0 960 250"
-                        preserveAspectRatio="xMidYMid meet"></svg>
-                    <div class="ts-tooltip" id="ts-line-tooltip"></div>
-                </div>
-                <div class="ts-legend">
-                    <span><i class="ts-dot" style="background:#34c759"></i>上传</span>
-                    <span><i class="ts-dot" style="background:#1e88ff"></i>下载</span>
-                    <span><i class="ts-dot" style="background:#b16bff"></i>总计</span>
+                    <div class="ts-legend">
+                        <span><i class="ts-dot" style="background:#34c759"></i>上传</span>
+                        <span><i class="ts-dot" style="background:#1e88ff"></i>下载</span>
+                        <span><i class="ts-dot" style="background:#b16bff"></i>总计</span>
+                    </div>
                 </div>
             </div>
         </div>
@@ -1194,9 +1280,25 @@
             return (data.series && Array.isArray(data.series.points)) ? data.series.points : [];
         }
 
+        function isMobileRotated() {
+            return window.innerWidth <= 768;
+        }
+
+        function getChartFontSize() {
+            return isMobileRotated() ? { axis: '12', tick: '13', yAxis: '12' } : { axis: '10.2', tick: '11.5', yAxis: '10.2' };
+        }
+
         function getChartSize(svg) {
-            const w = Math.max(960, Math.floor((svg && svg.clientWidth) || 960));
-            const h = Math.max(250, Math.floor((svg && svg.clientHeight) || 280));
+            let w, h;
+            if (isMobileRotated() && svg) {
+                // 手机旋转模式：直接使用 SVG 容器的实际像素尺寸
+                // 这样 viewBox 和容器比例一致，不会产生多余空白
+                w = Math.max(400, Math.floor(svg.clientWidth || 400));
+                h = Math.max(180, Math.floor(svg.clientHeight || 200));
+            } else {
+                w = Math.max(960, Math.floor((svg && svg.clientWidth) || 960));
+                h = Math.max(250, Math.floor((svg && svg.clientHeight) || 280));
+            }
             if (svg) {
                 svg.setAttribute('viewBox', `0 0 ${w} ${h}`);
                 svg.setAttribute('preserveAspectRatio', 'xMidYMid meet');
@@ -1212,6 +1314,7 @@
                 return;
             }
 
+            const fs = getChartFontSize();
             const size = getChartSize(svg);
             const w = size.w, h = size.h, left = 64, right = 28, top = 12, bottom = 20;
             const chartW = w - left - right;
@@ -1226,7 +1329,7 @@
                 const y = top + chartH * i / 5;
                 const val = maxV * (5 - i) / 5;
                 out += `<line x1="${left}" y1="${y.toFixed(2)}" x2="${w - right}" y2="${y.toFixed(2)}" stroke="#f0f1f6"/>`;
-                out += `<text x="${left - 6}" y="${(y + 3).toFixed(2)}" text-anchor="end" fill="#8f8f9a" font-size="10.2" font-weight="600" font-family="Segoe UI, PingFang SC, Microsoft YaHei, sans-serif">${esc(fmtAxisGb(val))}</text>`;
+                out += `<text x="${left - 6}" y="${(y + 3).toFixed(2)}" text-anchor="end" fill="#8f8f9a" font-size="${fs.yAxis}" font-weight="600" font-family="Segoe UI, PingFang SC, Microsoft YaHei, sans-serif">${esc(fmtAxisGb(val))}</text>`;
             }
             out += `<line x1="${left}" y1="${h - bottom}" x2="${w - right}" y2="${h - bottom}" stroke="#d6d6de"/>`;
             out += `<circle cx="${left}" cy="${h - bottom}" r="3.2" fill="#34c759" stroke="#fff" stroke-width="1"/>`;
@@ -1251,7 +1354,7 @@
 
                 if (tickSet.has(i)) {
                     const label = fmtAxisLabel(p.label);
-                    out += `<text x="${(left + i * groupW + groupW / 2).toFixed(2)}" y="${h - 6}" text-anchor="middle" fill="#70707c" font-size="11.5" font-weight="600" font-family="Segoe UI, PingFang SC, Microsoft YaHei, sans-serif">${esc(label)}</text>`;
+                    out += `<text x="${(left + i * groupW + groupW / 2).toFixed(2)}" y="${h - 6}" text-anchor="middle" fill="#70707c" font-size="${fs.tick}" font-weight="600" font-family="Segoe UI, PingFang SC, Microsoft YaHei, sans-serif">${esc(label)}</text>`;
                 }
 
                 // 透明hit区域覆盖整个柱组宽度
@@ -1295,6 +1398,7 @@
                 return;
             }
 
+            const fs = getChartFontSize();
             const size = getChartSize(svg);
             const w = size.w, h = size.h, left = 64, right = 28, top = 12, bottom = 20;
             const chartW = w - left - right;
@@ -1328,7 +1432,7 @@
 
                 if (tickSet.has(i)) {
                     const label = fmtAxisLabel(p.label);
-                    axisLabels += `<text x="${ux}" y="${h - 6}" text-anchor="middle" fill="#70707c" font-size="11.5" font-weight="600" font-family="Segoe UI, PingFang SC, Microsoft YaHei, sans-serif">${esc(label)}</text>`;
+                    axisLabels += `<text x="${ux}" y="${h - 6}" text-anchor="middle" fill="#70707c" font-size="${fs.tick}" font-weight="600" font-family="Segoe UI, PingFang SC, Microsoft YaHei, sans-serif">${esc(label)}</text>`;
                 }
 
                 // 可见描点 + 透明交互热区
@@ -1345,7 +1449,7 @@
                 const y = top + chartH * i / 5;
                 const val = maxV * (5 - i) / 5;
                 yGuides += `<line x1="${left}" y1="${y.toFixed(2)}" x2="${w - right}" y2="${y.toFixed(2)}" stroke="#f0f1f6"/>`;
-                yGuides += `<text x="${left - 6}" y="${(y + 3).toFixed(2)}" text-anchor="end" fill="#8f8f9a" font-size="10.2" font-weight="600" font-family="Segoe UI, PingFang SC, Microsoft YaHei, sans-serif">${esc(fmtAxisGb(val))}</text>`;
+                yGuides += `<text x="${left - 6}" y="${(y + 3).toFixed(2)}" text-anchor="end" fill="#8f8f9a" font-size="${fs.yAxis}" font-weight="600" font-family="Segoe UI, PingFang SC, Microsoft YaHei, sans-serif">${esc(fmtAxisGb(val))}</text>`;
             }
 
             svg.innerHTML = `

@@ -711,6 +711,17 @@
 
 <script>
     const clashModal = document.getElementById('clashTemplateModal');
+
+    // 点击遮罩层关闭
+    clashModal.addEventListener('click', function(e) {
+        if (e.target === clashModal) closeClashModal();
+    });
+
+    // ESC 键关闭
+    document.addEventListener('keydown', function(e) {
+        if (e.key === 'Escape' && clashModal.classList.contains('active')) closeClashModal();
+    });
+
     let cacheBuiltin = [];
     let cacheCustom = [];
     let cachePresets = [];

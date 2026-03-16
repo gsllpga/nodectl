@@ -560,7 +560,7 @@
 
                 .rule-actions {
                     display: grid;
-                    grid-template-columns: repeat(4, 1fr);
+                    grid-template-columns: repeat(3, 1fr);
                     gap: 6px;
                 }
 
@@ -1165,6 +1165,13 @@
                             ><span class="rule-icon">☁️</span
                             ><span class="rule-name">CF配置</span></a
                         >
+                        <a
+                            href="javascript:void(0)"
+                            onclick="openCustomNodesModal()"
+                            class="btn-edit-rule"
+                            ><span class="rule-icon">🔗</span
+                            ><span class="rule-name">自定义节点</span></a
+                        >
                     </div>
                     <p
                         style="
@@ -1349,7 +1356,7 @@
             const fixedProtoColors = {
                 ss: { bg: "#e0f2fe", text: "#2563eb" }, // 经典蓝
                 hy2: { bg: "#ffedd5", text: "#ea580c" }, // 活力橙
-                vless: { bg: "#f3e8ff", text: "#9333ea" }, // 优雅紫
+                reality: { bg: "#f3e8ff", text: "#9333ea" }, // 优雅紫
                 tuic: { bg: "#fee2e2", text: "#dc2626" }, // 醒目红
                 socks5: { bg: "#ccfbf1", text: "#0d9488" }, // 青色
                 trojan: { bg: "#fef9c3", text: "#ca8a04" }, // 黄色
@@ -1632,9 +1639,23 @@
                 if (modal) modal.style.display = "none";
             }
 
-            // 确认删除
+            // 确认删除（含防重复点击保护）
+            let _deleteInProgress = false;
             async function confirmDeleteNode() {
                 if (!currentDeleteUUID) return;
+                if (_deleteInProgress) return; // 防止重复点击
+                _deleteInProgress = true;
+
+                // 禁用按钮并显示加载状态
+                const btn = document.querySelector('.btn-confirm-delete');
+                if (btn) {
+                    btn.disabled = true;
+                    btn._origText = btn.textContent;
+                    btn.textContent = '删除中...';
+                    btn.style.opacity = '0.6';
+                    btn.style.cursor = 'not-allowed';
+                }
+
                 try {
                     const response = await fetch("/api/delete-node", {
                         method: "POST",
@@ -1653,6 +1674,15 @@
                     }
                 } catch (error) {
                     alert("网络错误，请稍后重试");
+                } finally {
+                    _deleteInProgress = false;
+                    // 恢复按钮状态
+                    if (btn) {
+                        btn.disabled = false;
+                        btn.textContent = btn._origText || '确认删除';
+                        btn.style.opacity = '';
+                        btn.style.cursor = '';
+                    }
                 }
             }
 
@@ -1711,5 +1741,6 @@
         "sub_links_modal.html" .}} {{template "custom_rules_modal.html" .}}
         {{template "airport_sub_modal.html" .}} {{template "logs_modal.html" .}}
         {{template "cf_modal.html" .}}
+        {{template "custom_nodes_modal.html" .}}
     </body>
 </html>

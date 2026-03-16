@@ -54,6 +54,7 @@ func saveNodeTrafficTotalOnce(installID string, rxBytes, txBytes int64, reported
 
 func saveNodeTrafficPointOnce(installID string, rxBytes, txBytes int64, reportedAt time.Time) (bool, error) {
 	found := false
+	var savedNodeUUID string
 	err := database.DB.Transaction(func(tx *gorm.DB) error {
 		var node database.NodePool
 		if err := tx.Where("install_id = ?", installID).First(&node).Error; err != nil {
@@ -63,6 +64,7 @@ func saveNodeTrafficPointOnce(installID string, rxBytes, txBytes int64, reported
 			return err
 		}
 		found = true
+		savedNodeUUID = node.UUID
 
 		rec := database.NodeTrafficStat{
 			NodeUUID:   node.UUID,
@@ -88,6 +90,12 @@ func saveNodeTrafficPointOnce(installID string, rxBytes, txBytes int64, reported
 	if err != nil {
 		return false, err
 	}
+
+	// 事务成功后递增历史流量记录计数
+	if found && savedNodeUUID != "" {
+		IncrementTrafficHistoryCount(savedNodeUUID)
+	}
+
 	return found, nil
 }
 
@@ -224,7 +232,34 @@ func loadTrafficRetentionDays(tx *gorm.DB) int {
 func cleanupExpiredTrafficStats(tx *gorm.DB, now time.Time, retentionDays int) error {
 	cutoff := now.AddDate(0, 0, -normalizeTrafficRetentionDays(retentionDays))
 	cutoffDayKey := dayKey(cutoff)
-	return tx.Where("day_key < ?", cutoffDayKey).Delete(&database.NodeTrafficStat{}).Error
+
+	// 先按节点统计即将被删除的记录数，用于后续递减计数
+	type nodeDeleteCount struct {
+		NodeUUID string `gorm:"column:node_uuid"`
+		Cnt      int64  `gorm:"column:cnt"`
+	}
+	var counts []nodeDeleteCount
+	tx.Model(&database.NodeTrafficStat{}).
+		Select("node_uuid, COUNT(*) as cnt").
+		Where("day_key < ?", cutoffDayKey).
+		Group("node_uuid").
+		Scan(&counts)
+
+	// 执行删除
+	if err := tx.Where("day_key < ?", cutoffDayKey).Delete(&database.NodeTrafficStat{}).Error; err != nil {
+		return err
+	}
+
+	// 删除成功后，异步递减各节点的历史记录计数（不阻塞事务）
+	if len(counts) > 0 {
+		deletedByNode := make(map[string]int64, len(counts))
+		for _, c := range counts {
+			deletedByNode[c.NodeUUID] = c.Cnt
+		}
+		go BatchDecrementTrafficHistoryCountByCleanup(deletedByNode)
+	}
+
+	return nil
 }
 
 // SaveNodeTrafficTotalOnly 仅更新 node_pool 累计流量，不写历史点数据。

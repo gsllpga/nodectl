@@ -16,7 +16,6 @@ import (
 )
 
 const (
-	agentReleaseLatestAPI   = "https://api.github.com/repos/hobin66/nodectl/releases/latest"
 	agentStartupCheckDelay  = 15 * time.Second
 	agentStartupCheckWindow = 60 * time.Second
 )
@@ -30,13 +29,13 @@ var (
 //  1. 不阻塞主流程（异步执行）
 //  2. 只在进程生命周期内执行一次
 //  3. 先从 GitHub 获取最新版本，与数据库中各节点的版本号比较，
-//     若版本号一致则不下发更新检查命令（避免无谓的命令下发）
+//     若版本号一致则不下发更新命令（避免无谓的命令下发）
 //  4. 仅对在线节点且版本落后的 Agent 下发 check-agent-update
 //  5. 汇总式日志输出，不逐节点打印
 func StartAgentStartupSilentUpdateCheck() {
 	agentStartupUpdateOnce.Do(func() {
 		go func() {
-			logger.Log.Info("启动静默 Agent 更新检查任务已创建", "delay", agentStartupCheckDelay.String())
+			logger.Log.Debug("启动静默 Agent 更新检查任务已创建", "delay", agentStartupCheckDelay.String())
 
 			timer := time.NewTimer(agentStartupCheckDelay)
 			defer timer.Stop()
@@ -53,7 +52,7 @@ func StartAgentStartupSilentUpdateCheck() {
 				return
 			}
 			if !enabled {
-				logger.Log.Info("启动静默 Agent 更新检查已关闭，跳过执行", "config_key", "agent_startup_silent_update_enabled")
+				logger.Log.Debug("启动静默 Agent 更新检查已关闭，跳过执行", "config_key", "agent_startup_silent_update_enabled")
 				return
 			}
 
@@ -69,27 +68,29 @@ func StartAgentStartupSilentUpdateCheck() {
 
 func runAgentStartupSilentUpdateCheck(ctx context.Context) (retErr error) {
 	var (
-		latestVersion string
-		nodes         []database.NodePool
+		latestStableVersion string
+		latestAlphaVersion  string
+		nodes               []database.NodePool
 	)
 
 	defer func() {
 		// 显式释放临时内存引用，避免长生命周期 goroutine 持有大对象
-		latestVersion = ""
+		latestStableVersion = ""
+		latestAlphaVersion = ""
 		for i := range nodes {
 			nodes[i] = database.NodePool{}
 		}
 		nodes = nil
 	}()
 
-	latestVersion, err := fetchLatestAgentVersionFromGitHub(ctx)
+	// 获取最新的正式版本和 alpha 版本
+	latestStableVersion, latestAlphaVersion, err := fetchLatestAgentVersionsFromGitHub(ctx)
 	if err != nil {
 		return fmt.Errorf("获取 GitHub 最新 Agent 版本失败: %w", err)
 	}
 
-	latest := normalizeSemver(latestVersion)
-	if !semver.IsValid(latest) {
-		return fmt.Errorf("远端版本号无效: %s", latestVersion)
+	if latestStableVersion == "" && latestAlphaVersion == "" {
+		return fmt.Errorf("未找到任何可用版本")
 	}
 
 	if err := database.DB.Select("uuid", "install_id", "name", "agent_version").Find(&nodes).Error; err != nil {
@@ -98,7 +99,10 @@ func runAgentStartupSilentUpdateCheck(ctx context.Context) (retErr error) {
 
 	total := len(nodes)
 	if total == 0 {
-		logger.Log.Info("启动静默 Agent 更新检查完成：无节点", "latest_version", latestVersion)
+		logger.Log.Info("启动静默 Agent 更新检查完成：无节点",
+			"latest_stable", latestStableVersion,
+			"latest_alpha", latestAlphaVersion,
+		)
 		return nil
 	}
 
@@ -128,8 +132,28 @@ func runAgentStartupSilentUpdateCheck(ctx context.Context) (retErr error) {
 			continue
 		}
 
-		// 数据库版本 >= 远端最新版本：已是最新，无需下发
-		if semver.Compare(dbVer, latest) >= 0 {
+		// 根据节点版本判断渠道，选择对应的目标版本
+		var targetVersion string
+		if strings.Contains(strings.ToLower(dbVer), "-alpha") {
+			// Alpha 版本的节点，检查是否有更新的 alpha 版本
+			targetVersion = latestAlphaVersion
+		} else {
+			// 正式版本的节点，检查正式版本
+			targetVersion = latestStableVersion
+		}
+
+		// 如果目标版本为空（可能没有该渠道的发布），跳过
+		if targetVersion == "" {
+			continue
+		}
+
+		targetVer := normalizeSemver(targetVersion)
+		if !semver.IsValid(targetVer) {
+			continue
+		}
+
+		// 数据库版本 >= 目标版本：已是最新，无需下发
+		if semver.Compare(dbVer, targetVer) >= 0 {
 			skippedUpToDate++
 			continue
 		}
@@ -144,7 +168,8 @@ func runAgentStartupSilentUpdateCheck(ctx context.Context) (retErr error) {
 	// 所有节点版本均已是最新，直接结束，不下发任何命令
 	if len(needUpdate) == 0 {
 		logger.Log.Info("Agent 更新检查完成：所有节点版本均已是最新",
-			"latest_version", latestVersion,
+			"latest_stable", latestStableVersion,
+			"latest_alpha", latestAlphaVersion,
 			"total_nodes", total,
 		)
 		return nil
@@ -177,7 +202,8 @@ func runAgentStartupSilentUpdateCheck(ctx context.Context) (retErr error) {
 
 	// ── 汇总日志：一行显示成功/失败数 ──
 	logger.Log.Info("已成功下发 Agent 检查更新",
-		"latest_version", latestVersion,
+		"latest_stable", latestStableVersion,
+		"latest_alpha", latestAlphaVersion,
 		"成功", triggered,
 		"失败", skippedFireErr,
 		"离线跳过", skippedOffline,
@@ -188,10 +214,13 @@ func runAgentStartupSilentUpdateCheck(ctx context.Context) (retErr error) {
 	return nil
 }
 
-func fetchLatestAgentVersionFromGitHub(ctx context.Context) (string, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, agentReleaseLatestAPI, nil)
+// fetchLatestAgentVersionsFromGitHub 获取最新的正式版本和 alpha 版本
+// 返回: (最新正式版本, 最新alpha版本, error)
+func fetchLatestAgentVersionsFromGitHub(ctx context.Context) (stableVersion, alphaVersion string, err error) {
+	// 获取所有 releases
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, githubReleasesListAPI, nil)
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
 	req.Header.Set("Accept", "application/vnd.github.v3+json")
 	req.Header.Set("User-Agent", "nodectl-core-agent-startup-check")
@@ -199,44 +228,58 @@ func fetchLatestAgentVersionFromGitHub(ctx context.Context) (string, error) {
 	client := &http.Client{Timeout: 15 * time.Second}
 	resp, err := client.Do(req)
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("github api status not ok: %s", resp.Status)
+		return "", "", fmt.Errorf("github api status not ok: %s", resp.Status)
 	}
 
-	var release struct {
+	var releases []struct {
 		TagName string `json:"tag_name"`
 		Assets  []struct {
 			Name string `json:"name"`
 		} `json:"assets"`
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&release); err != nil {
-		return "", err
+	if err := json.NewDecoder(resp.Body).Decode(&releases); err != nil {
+		return "", "", err
 	}
 
-	// 优先使用 tag_name
-	if v := normalizeSemver(release.TagName); v != "" && semver.IsValid(v) {
-		return v, nil
-	}
+	// 遍历所有 releases，找出最新的正式版本和 alpha 版本
+	for _, release := range releases {
+		tagLower := strings.ToLower(release.TagName)
 
-	// 兜底：从资产名中提取 nodectl-agent-linux-*-vX.Y.Z
-	for _, a := range release.Assets {
-		name := strings.TrimSpace(a.Name)
-		if name == "" {
-			continue
-		}
-		if idx := strings.LastIndex(name, "-v"); idx > 0 {
-			candidate := normalizeSemver(name[idx+1:])
+		// 检查是否是 alpha 版本
+		if strings.Contains(tagLower, "-alpha") {
+			candidate := normalizeSemver(release.TagName)
 			if semver.IsValid(candidate) {
-				return candidate, nil
+				if alphaVersion == "" {
+					alphaVersion = candidate
+				} else {
+					currentAlpha := normalizeSemver(alphaVersion)
+					if semver.Compare(candidate, currentAlpha) > 0 {
+						alphaVersion = candidate
+					}
+				}
+			}
+		} else {
+			// 正式版本（无预发布后缀）
+			candidate := normalizeSemver(release.TagName)
+			if semver.IsValid(candidate) && semver.Prerelease(candidate) == "" {
+				if stableVersion == "" {
+					stableVersion = candidate
+				} else {
+					currentStable := normalizeSemver(stableVersion)
+					if semver.Compare(candidate, currentStable) > 0 {
+						stableVersion = candidate
+					}
+				}
 			}
 		}
 	}
 
-	return "", fmt.Errorf("无法从 GitHub release 中解析 Agent 版本")
+	return stableVersion, alphaVersion, nil
 }
 
 func normalizeSemver(v string) string {

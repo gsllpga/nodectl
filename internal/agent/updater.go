@@ -44,7 +44,7 @@ const (
 	maxCrashCount = 3
 	// HTTP 请求超时
 	httpTimeout = 60 * time.Second
-	// 产物文件名正则（匹配 nodectl-agent-linux-amd64-v1.4.2）
+	// 产物文件名正则（匹配 nodectl-agent-linux-amd64-v1.4.2 或 nodectl-agent-linux-amd64-v1.4.2-alpha）
 	assetPattern = `^nodectl-agent-linux-%s-(v\d+\.\d+\.\d+.*)$`
 )
 
@@ -183,7 +183,7 @@ func (u *Updater) Run(ctx context.Context) {
 
 	// 启动后随机抖动 0~10min
 	jitter := time.Duration(time.Now().UnixNano()%int64(updateInitialJitter/time.Millisecond)) * time.Millisecond
-	log.Printf("[Updater] 首次检查将在 %v 后开始", jitter.Round(time.Second))
+	log.Printf("[Updater] 首次检查将在 %v 后开始 (渠道: %s)", jitter.Round(time.Second), GetChannel())
 
 	select {
 	case <-ctx.Done():
@@ -216,7 +216,7 @@ func (u *Updater) TriggerCheck(ctx context.Context) error {
 	return nil
 }
 
-// IsPostUpdatePending 返回当前是否处于“更新后待健康确认”阶段（存在 .bak）
+// IsPostUpdatePending 返回当前是否处于"更新后待健康确认"阶段（存在 .bak）
 func (u *Updater) IsPostUpdatePending() bool {
 	bakPath := u.selfPath + ".bak"
 	_, err := os.Stat(bakPath)
@@ -235,9 +235,10 @@ func (u *Updater) checkAndUpdate(ctx context.Context) {
 	}
 	defer u.mu.Unlock()
 
-	log.Printf("[Updater] 开始检查更新 (当前版本: %s)", AgentVersion)
+	channel := GetChannel()
+	log.Printf("[Updater] 开始检查更新 (当前版本: %s, 渠道: %s)", AgentVersion, channel)
 
-	// 1. 查询 latest release
+	// 1. 根据渠道查询最新 release
 	targetVersion, downloadURL, sha256URL, err := u.findLatestAgentRelease(ctx)
 	if err != nil {
 		log.Printf("[Updater] 检查更新失败: %v", err)
@@ -258,9 +259,23 @@ func (u *Updater) checkAndUpdate(ctx context.Context) {
 		return
 	}
 
-	// 仅正式版触发（跳过 prerelease）
-	if semver.Prerelease(targetVersion) != "" {
-		log.Printf("[Updater] 远端为预发布版本 %s，跳过", targetVersion)
+	// 渠道匹配检查：确保目标版本与当前渠道匹配
+	targetPre := semver.Prerelease(targetVersion)
+	switch channel {
+	case ChannelAlpha:
+		// Alpha 渠道：目标必须是 alpha 版本
+		if !strings.Contains(strings.ToLower(targetPre), "alpha") {
+			log.Printf("[Updater] Alpha 渠道但目标版本 %s 不是 alpha 版本，跳过", targetVersion)
+			return
+		}
+	case ChannelStable:
+		// 正式渠道：目标必须是正式版本（无预发布后缀）
+		if targetPre != "" {
+			log.Printf("[Updater] 正式渠道但目标版本 %s 是预发布版本，跳过", targetVersion)
+			return
+		}
+	default:
+		log.Printf("[Updater] 未知渠道 %s，跳过更新", channel)
 		return
 	}
 
@@ -425,8 +440,25 @@ type ghAsset struct {
 }
 
 // findLatestAgentRelease 查询最新 release 并匹配当前架构的 agent 产物
+// 根据当前渠道选择不同的 API 和筛选逻辑
 // 返回: 目标版本号、二进制下载 URL、sha256 下载 URL
 func (u *Updater) findLatestAgentRelease(ctx context.Context) (version, binaryURL, sha256URL string, err error) {
+	channel := GetChannel()
+
+	switch channel {
+	case ChannelAlpha:
+		// Alpha 版本：查询所有 releases，筛选最新的 alpha 版本
+		return u.findLatestAlphaRelease(ctx)
+	case ChannelStable:
+		// 正式版本：使用 latest API
+		return u.findLatestStableRelease(ctx)
+	default:
+		return "", "", "", fmt.Errorf("不支持更新检查的渠道: %s", channel)
+	}
+}
+
+// findLatestStableRelease 获取最新的正式版本（main 分支）
+func (u *Updater) findLatestStableRelease(ctx context.Context) (version, binaryURL, sha256URL string, err error) {
 	apiURL := fmt.Sprintf("https://api.github.com/repos/%s/%s/releases/latest", UpdateRepoOwner, UpdateRepoName)
 
 	req, err := http.NewRequestWithContext(ctx, "GET", apiURL, nil)
@@ -496,6 +528,124 @@ func (u *Updater) findLatestAgentRelease(ctx context.Context) (version, binaryUR
 	}
 
 	return matchedVersion, matchedAsset.BrowserDownloadURL, sha256Asset.BrowserDownloadURL, nil
+}
+
+// findLatestAlphaRelease 获取最新的 Alpha 版本（alpha 分支）
+// 从所有 releases 中筛选出最新的 alpha 版本
+func (u *Updater) findLatestAlphaRelease(ctx context.Context) (version, binaryURL, sha256URL string, err error) {
+	apiURL := fmt.Sprintf("https://api.github.com/repos/%s/%s/releases", UpdateRepoOwner, UpdateRepoName)
+
+	req, err := http.NewRequestWithContext(ctx, "GET", apiURL, nil)
+	if err != nil {
+		return "", "", "", err
+	}
+	req.Header.Set("Accept", "application/vnd.github.v3+json")
+	req.Header.Set("User-Agent", fmt.Sprintf("nodectl-agent/%s", AgentVersion))
+
+	resp, err := u.client.Do(req)
+	if err != nil {
+		return "", "", "", fmt.Errorf("请求 GitHub API 失败: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return "", "", "", fmt.Errorf("GitHub API 返回 %d", resp.StatusCode)
+	}
+
+	// 限制读取体积（防止异常响应撑爆内存）
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 1024*1024))
+	if err != nil {
+		return "", "", "", fmt.Errorf("读取响应失败: %w", err)
+	}
+
+	var releases []ghRelease
+	if err := json.Unmarshal(body, &releases); err != nil {
+		return "", "", "", fmt.Errorf("解析 releases JSON 失败: %w", err)
+	}
+
+	// 筛选最新的 alpha 版本
+	arch := runtime.GOARCH
+	pattern := regexp.MustCompile(fmt.Sprintf(assetPattern, regexp.QuoteMeta(arch)))
+
+	type matchedRelease struct {
+		version   string
+		binaryURL string
+		sha256URL string
+		tagName   string
+	}
+
+	var latestAlpha *matchedRelease
+
+	for i := range releases {
+		tagLower := strings.ToLower(releases[i].TagName)
+		// 只考虑 alpha 版本
+		if !strings.Contains(tagLower, "-alpha") {
+			continue
+		}
+
+		// 查找匹配当前架构的 asset
+		var matchedAsset *ghAsset
+		var matchedVersion string
+
+		for j := range releases[i].Assets {
+			asset := &releases[i].Assets[j]
+			if strings.HasSuffix(asset.Name, ".sha256") {
+				continue
+			}
+			matches := pattern.FindStringSubmatch(asset.Name)
+			if matches != nil && len(matches) >= 2 {
+				matchedAsset = asset
+				matchedVersion = matches[1]
+				break
+			}
+		}
+
+		if matchedAsset == nil {
+			continue // 该 release 没有匹配当前架构的产物
+		}
+
+		// 查找对应的 .sha256 文件
+		sha256Name := matchedAsset.Name + ".sha256"
+		var sha256Asset *ghAsset
+		for j := range releases[i].Assets {
+			if releases[i].Assets[j].Name == sha256Name {
+				sha256Asset = &releases[i].Assets[j]
+				break
+			}
+		}
+
+		if sha256Asset == nil {
+			continue // 缺少校验文件，跳过
+		}
+
+		candidate := &matchedRelease{
+			version:   matchedVersion,
+			binaryURL: matchedAsset.BrowserDownloadURL,
+			sha256URL: sha256Asset.BrowserDownloadURL,
+			tagName:   releases[i].TagName,
+		}
+
+		// 使用 semver 比较版本
+		candidateVer := "v" + strings.TrimPrefix(matchedVersion, "v")
+		if !semver.IsValid(candidateVer) {
+			continue
+		}
+
+		if latestAlpha == nil {
+			latestAlpha = candidate
+		} else {
+			currentVer := "v" + strings.TrimPrefix(latestAlpha.version, "v")
+			if semver.Compare(candidateVer, currentVer) > 0 {
+				latestAlpha = candidate
+			}
+		}
+	}
+
+	if latestAlpha == nil {
+		return "", "", "", fmt.Errorf("未找到 Alpha 版本的 agent 产物 (架构: %s)", arch)
+	}
+
+	return latestAlpha.version, latestAlpha.binaryURL, latestAlpha.sha256URL, nil
 }
 
 // downloadSHA256 下载 .sha256 文件并提取哈希值

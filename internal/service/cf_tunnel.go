@@ -33,13 +33,14 @@ const (
 	cfTunnelPIDFile   = "data/cf/tunnel/cloudflared.pid"
 )
 
-// getAutoOriginURL 自动获取本地服务回源地址
+// getAutoOriginURL 自动获取本地服务回源地址（端口跟随 dbconfig.json 中的 web_port 配置）
 func getAutoOriginURL() string {
+	port := database.GetWebPort()
 	certEnabled := strings.ToLower(strings.TrimSpace(getCFConfig("cf_cert_enabled")))
 	if (certEnabled == "true" || certEnabled == "1") && HasValidLocalCertificate() {
-		return "https://127.0.0.1:8080"
+		return fmt.Sprintf("https://127.0.0.1:%d", port)
 	}
-	return "http://127.0.0.1:8080"
+	return fmt.Sprintf("http://127.0.0.1:%d", port)
 }
 
 // cfTunnelBinaryName 返回当前平台的 cloudflared 二进制名
@@ -2221,7 +2222,7 @@ func OneClickSetupCFTunnel(token, subdomain, domain, tunnelName string, progress
 		"cf_domain":                   domain,
 		"cf_tunnel_name":              tunnelName,
 		"cf_tunnel_subdomain":         subdomain,
-		"cf_tunnel_origin_url":        "http://127.0.0.1:8080",
+		"cf_tunnel_origin_url":        fmt.Sprintf("http://127.0.0.1:%d", database.GetWebPort()),
 		"cf_tunnel_bind_main_process": "true",
 		"cf_tunnel_enabled":           "true",
 	}
@@ -2324,5 +2325,89 @@ func OneClickSetupCFTunnel(token, subdomain, domain, tunnelName string, progress
 		"panel_url", panelURL,
 	)
 
+	return nil
+}
+
+// ===================== cloudflared 远程版本检查与自动更新 =====================
+
+// GetCloudflaredRemoteVersion 从 GitHub API 获取 cloudflared 最新版本号
+func GetCloudflaredRemoteVersion() (string, error) {
+	client := &http.Client{Timeout: 15 * time.Second}
+	req, err := http.NewRequest("GET", "https://api.github.com/repos/cloudflare/cloudflared/releases/latest", nil)
+	if err != nil {
+		return "", fmt.Errorf("创建请求失败: %w", err)
+	}
+	req.Header.Set("Accept", "application/vnd.github.v3+json")
+	req.Header.Set("User-Agent", "nodectl")
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("请求失败: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != 200 {
+		return "", fmt.Errorf("GitHub API 返回 HTTP %d", resp.StatusCode)
+	}
+
+	var release struct {
+		TagName string `json:"tag_name"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&release); err != nil {
+		return "", fmt.Errorf("解析响应失败: %w", err)
+	}
+
+	return strings.TrimSpace(release.TagName), nil
+}
+
+// GetCloudflaredVersionStatus 获取 cloudflared 版本状态（供前端版本检测用）
+// 返回: localVersion, remoteVersion, state ("latest"/"update_available"/"not_found"/"error")
+func GetCloudflaredVersionStatus() (localVer, remoteVer, state string) {
+	exists, local := CheckCloudflaredBinary()
+	if !exists {
+		localVer = ""
+	} else {
+		localVer = local
+	}
+
+	remote, err := GetCloudflaredRemoteVersion()
+	if err != nil {
+		logger.Log.Warn("获取 cloudflared 远程版本失败", "error", err)
+		remoteVer = ""
+		if localVer == "" {
+			state = "not_found"
+		} else {
+			state = "error"
+		}
+		return
+	}
+	remoteVer = remote
+
+	if localVer == "" {
+		state = "not_found"
+		return
+	}
+
+	// 版本比较：去掉前缀后对比
+	cleanLocal := strings.TrimSpace(localVer)
+	cleanRemote := strings.TrimSpace(strings.TrimPrefix(remoteVer, "v"))
+	cleanRemote = strings.TrimPrefix(cleanRemote, "v")
+
+	if cleanLocal == cleanRemote {
+		state = "latest"
+	} else {
+		state = "update_available"
+	}
+	return
+}
+
+// ForceUpdateCloudflared 强制下载最新版 cloudflared（覆盖现有）
+func ForceUpdateCloudflared() error {
+	logger.Log.Info("开始强制更新 cloudflared...")
+	err := DownloadCloudflared(nil)
+	if err != nil {
+		return fmt.Errorf("下载 cloudflared 失败: %w", err)
+	}
+	logger.Log.Info("cloudflared 更新完成")
 	return nil
 }

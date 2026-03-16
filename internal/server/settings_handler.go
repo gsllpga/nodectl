@@ -37,6 +37,7 @@ func apiGetSettings(w http.ResponseWriter, r *http.Request) {
 		"auth_cookie_ttl_mode",
 		"tg_bot_enabled", "tg_bot_token", "tg_bot_whitelist", "tg_bot_register_commands", "tg_login_notify_mode", "tg_speedtest_notify_enabled", "tg_threshold_stop_notify_enabled", "clash_proxies_update_interval", "clash_rules_update_interval", "clash_public_rules_update_interval",
 		"geo_auto_update", "mihomo_auto_update", "agent_startup_silent_update_enabled", "agent_ws_push_interval_sec",
+		"cf_tunnel_auto_update", "cf_ipopt_auto_update",
 		// 新增协议与内核优化配置
 		"proxy_port_trojan", "proxy_hy2_sni", "proxy_tuic_sni", "proxy_enable_bbr",
 		// VMess 族
@@ -47,6 +48,8 @@ func apiGetSettings(w http.ResponseWriter, r *http.Request) {
 		// Trojan-TLS 族
 		"proxy_port_trojan_wst", "proxy_port_trojan_hut",
 		"proxy_tls_transport_path", "proxy_vmess_tls_sni", "proxy_vless_tls_sni", "proxy_trojan_tls_sni",
+		// AnyTLS
+		"proxy_port_anytls", "proxy_anytls_sni",
 	}).Find(&configs).Error; err != nil {
 		logger.Log.Error("读取系统配置失败", "error", err, "ip", clientIP, "path", reqPath)
 	}
@@ -95,6 +98,7 @@ func apiUpdateSettings(w http.ResponseWriter, r *http.Request) {
 		"tg_bot_enabled":       true, "tg_bot_token": true, "tg_bot_whitelist": true, "tg_bot_register_commands": true, "tg_login_notify_mode": true, "tg_speedtest_notify_enabled": true, "tg_threshold_stop_notify_enabled": true,
 		"clash_proxies_update_interval": true, "clash_rules_update_interval": true, "clash_public_rules_update_interval": true,
 		"geo_auto_update": true, "mihomo_auto_update": true, "agent_startup_silent_update_enabled": true, "agent_ws_push_interval_sec": true,
+		"cf_tunnel_auto_update": true, "cf_ipopt_auto_update": true,
 		// 新增协议与内核优化配置
 		"proxy_port_trojan": true,
 		"proxy_hy2_sni":     true, "proxy_tuic_sni": true, "proxy_enable_bbr": true,
@@ -107,12 +111,16 @@ func apiUpdateSettings(w http.ResponseWriter, r *http.Request) {
 		"proxy_port_trojan_wst": true, "proxy_port_trojan_hut": true,
 		"proxy_tls_transport_path": true,
 		"proxy_vmess_tls_sni":      true, "proxy_vless_tls_sni": true, "proxy_trojan_tls_sni": true,
+		// AnyTLS
+		"proxy_port_anytls": true, "proxy_anytls_sni": true,
 	}
 
 	needRestartTgBot := false
 	needReloadLoginRateLimit := false
 	needKickGeoAutoUpdate := false
 	needKickMihomoAutoUpdate := false
+	needKickCFTunnelAutoUpdate := false
+	needKickCFIPOptAutoUpdate := false
 	changedDetails := make([]string, 0)
 
 	maskValue := func(key, val string) string {
@@ -170,8 +178,8 @@ func apiUpdateSettings(w http.ResponseWriter, r *http.Request) {
 			if k == "pref_traffic_point_persist_interval_sec" {
 				v = strings.TrimSpace(v)
 				seconds, err := strconv.Atoi(v)
-				if err != nil || seconds < 10 || seconds > 3600 {
-					sendJSON(w, "error", "实时流量点数据落库间隔无效，仅支持 10-3600 秒")
+				if err != nil || seconds < 0 || (seconds > 0 && seconds < 10) || seconds > 3600 {
+					sendJSON(w, "error", "实时流量点数据落库间隔无效，仅支持 0 (关闭) 或 10-3600 秒")
 					return
 				}
 				v = strconv.Itoa(seconds)
@@ -254,6 +262,14 @@ func apiUpdateSettings(w http.ResponseWriter, r *http.Request) {
 				needKickMihomoAutoUpdate = true
 			}
 
+			if k == "cf_tunnel_auto_update" && oldConfig.Value != v && strings.TrimSpace(strings.ToLower(v)) == "true" {
+				needKickCFTunnelAutoUpdate = true
+			}
+
+			if k == "cf_ipopt_auto_update" && oldConfig.Value != v && strings.TrimSpace(strings.ToLower(v)) == "true" {
+				needKickCFIPOptAutoUpdate = true
+			}
+
 			// 强制公共规则更新间隔最小为 86400
 			if k == "clash_public_rules_update_interval" {
 				intVal, err := strconv.Atoi(v)
@@ -303,6 +319,14 @@ func apiUpdateSettings(w http.ResponseWriter, r *http.Request) {
 
 	if needKickMihomoAutoUpdate {
 		service.TriggerMihomoAutoUpdateCheckNow()
+	}
+
+	if needKickCFTunnelAutoUpdate {
+		service.TriggerCFTunnelAutoUpdateCheckNow()
+	}
+
+	if needKickCFIPOptAutoUpdate {
+		service.TriggerCFIPOptAutoUpdateCheckNow()
 	}
 
 	if len(changedDetails) == 0 {

@@ -784,21 +784,100 @@
     }
 
     /* 节点行及测速、分组布局重构 */
-    .air-node-row {
+    .air-node-item {
         display: flex;
-        align-items: center;
-        padding: 6px 10px;
-        background: #f9f9fc;
+        flex-direction: column;
         border-radius: 6px;
         border: 1px solid #f0f0f0;
         transition: 0.2s;
         animation: airFadeIn 0.2s ease-out forwards;
         flex-shrink: 0;
+        overflow: hidden;
+    }
+
+    .air-node-item:hover {
+        border-color: #e5e5ea;
+    }
+
+    .air-node-row {
+        display: flex;
+        align-items: center;
+        padding: 6px 10px;
+        background: #f9f9fc;
+        transition: 0.2s;
+        flex-shrink: 0;
     }
 
     .air-node-row:hover {
         background: #f0f0f5;
-        border-color: #e5e5ea;
+    }
+
+    /* 链接展开区域 */
+    .air-node-link-panel {
+        max-height: 0;
+        overflow: hidden;
+        transition: max-height 0.3s cubic-bezier(0.4, 0, 0.2, 1), padding 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        background: #f5f5f7;
+        padding: 0 10px;
+    }
+
+    .air-node-link-panel.expanded {
+        max-height: 500px;
+        padding: 8px 10px;
+    }
+
+    .air-node-link-box {
+        display: flex;
+        align-items: flex-start;
+        background: #eaeaee;
+        border: 1px solid #dcdce0;
+        border-radius: 6px;
+        padding: 8px 10px;
+        cursor: pointer;
+        transition: all 0.2s;
+    }
+
+    .air-node-link-box:hover {
+        border-color: #c0c0c8;
+        background: #e3e3e8;
+    }
+
+    .air-node-link-box:active {
+        background: #dbdbe0;
+    }
+
+    .air-node-link-text {
+        flex: 1;
+        font-size: 11px;
+        font-family: monospace;
+        color: #555;
+        word-break: break-all;
+        line-height: 1.5;
+        user-select: all;
+    }
+
+    .air-node-link-copied-toast {
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        background: rgba(0, 0, 0, 0.75);
+        color: #fff;
+        font-size: 12px;
+        font-weight: 600;
+        padding: 4px 14px;
+        border-radius: 6px;
+        pointer-events: none;
+        animation: airFadeIn 0.15s ease forwards;
+        z-index: 10;
+    }
+
+    .air-node-item {
+        position: relative;
+    }
+
+    .air-node-row {
+        cursor: pointer;
     }
 
     .air-node-name {
@@ -1363,6 +1442,16 @@
         return false;
     }
 
+    // 点击遮罩层关闭
+    document.getElementById('airportModal').addEventListener('click', function(e) {
+        if (e.target === this) closeAirModal();
+    });
+
+    // ESC 键关闭
+    document.addEventListener('keydown', function(e) {
+        if (e.key === 'Escape' && document.getElementById('airportModal').classList.contains('active')) closeAirModal();
+    });
+
     // ================= 弹窗开关 =================
     function openAirportSubModal() {
         document.getElementById('airportModal').classList.add('active');
@@ -1473,11 +1562,34 @@
         }
     }
 
+    async function checkMihomoCoreReady() {
+        try {
+            const res = await fetch('/api/mihomo/status');
+            const data = await res.json();
+            if (data.status === 'success' && data.data && data.data.state !== 'not_found') {
+                return true;
+            }
+            return false;
+        } catch (_) {
+            return false;
+        }
+    }
+
+    function showMihomoCoreNotReadyTip() {
+        showAirSaveStatus('⚠️ 请先在系统设置中下载 Mihomo 测速内核', true);
+    }
+
     async function startCurrentSubBackgroundTest(mode, event) {
         if (event) event.stopPropagation();
         if (!airState.currentSubId) return;
         closeAirSpeedModePanel();
         const selectedMode = normalizeAirSpeedTestMode(mode);
+
+        // 检查 Mihomo 核心是否已下载
+        if (!await checkMihomoCoreReady()) {
+            showMihomoCoreNotReadyTip();
+            return;
+        }
         if (!airState.isHistoryMode) {
             airState.nodes.forEach(n => {
                 const el = document.getElementById(`speed-tags-${n.id}`);
@@ -1870,8 +1982,8 @@
         });
 
         sorted.forEach(node => {
-            const row = document.createElement('div');
-            row.className = 'air-node-row';
+            const item = document.createElement('div');
+            item.className = 'air-node-item';
             const protoTag = node.protocol ? `<span class="air-proto-tag">${node.protocol}</span>` : '';
 
             // 当前选中状态图标
@@ -1889,35 +2001,106 @@
                 testBtnIcon = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#ef4444" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><rect x="9" y="9" width="6" height="6" fill="#ef4444"></rect></svg>`;
             }
 
-            row.innerHTML = `
-                <div class="air-node-name">${protoTag}${node.name}</div>
-                <div class="air-node-actions">
-                    <div class="air-speed-tags" id="speed-tags-${node.id}"></div>
-                    
-                    <div class="air-speed-mode-wrapper node" id="speed-mode-${node.id}">
-                        <div class="air-speed-mode-capsule">
-                            <button class="air-speed-mode-item" data-mode="ping_only" onclick="testSingleAirNode('${node.id}', 'ping_only', event)">仅 Ping</button>
-                            <button class="air-speed-mode-item" data-mode="ping_speed" onclick="testSingleAirNode('${node.id}', 'ping_speed', event)">Ping + 带宽</button>
-                            <button class="air-speed-mode-item" data-mode="all" onclick="testSingleAirNode('${node.id}', 'all', event)">全面测试</button>
-                        </div>
-                        <button class="air-circle-btn" id="btn-test-${node.id}" title="${testBtnTitle}" onclick="${testBtnAction}">
-                            ${testBtnIcon}
-                        </button>
-                    </div>
+            // 安全转义链接内容，防止 XSS
+            const escapedLink = escapeAirHtml(node.link || '');
+            const hasLink = !!(node.link && node.link.trim());
 
-                    <div class="air-routing-wrapper" id="dropdown-${node.id}">
-                        <div class="air-routing-capsule">
-                            <button class="air-capsule-item ${node.routing_type === 0 ? 'active' : ''}" data-val="0" onclick="setAirNodeRouting('${node.id}', 0, '${containerId}', event)">禁用</button>
-                            <button class="air-capsule-item ${node.routing_type === 1 ? 'active' : ''}" data-val="1" onclick="setAirNodeRouting('${node.id}', 1, '${containerId}', event)">直连</button>
-                            <button class="air-capsule-item ${node.routing_type === 2 ? 'active' : ''}" data-val="2" onclick="setAirNodeRouting('${node.id}', 2, '${containerId}', event)">落地</button>
+            item.innerHTML = `
+                <div class="air-node-row" onclick="toggleNodeLink('${node.id}', event)">
+                    <div class="air-node-name">${protoTag}${node.name}</div>
+                    <div class="air-node-actions">
+                        <div class="air-speed-tags" id="speed-tags-${node.id}"></div>
+
+                        <div class="air-speed-mode-wrapper node" id="speed-mode-${node.id}">
+                            <div class="air-speed-mode-capsule">
+                                <button class="air-speed-mode-item" data-mode="ping_only" onclick="testSingleAirNode('${node.id}', 'ping_only', event)">仅 Ping</button>
+                                <button class="air-speed-mode-item" data-mode="ping_speed" onclick="testSingleAirNode('${node.id}', 'ping_speed', event)">Ping + 带宽</button>
+                                <button class="air-speed-mode-item" data-mode="all" onclick="testSingleAirNode('${node.id}', 'all', event)">全面测试</button>
+                            </div>
+                            <button class="air-circle-btn" id="btn-test-${node.id}" title="${testBtnTitle}" onclick="${testBtnAction}">
+                                ${testBtnIcon}
+                            </button>
                         </div>
-                        <button class="air-circle-btn" title="修改分组" onclick="toggleRoutingMenu('${node.id}', event)" style="color: ${iconColor}; border-color: ${node.routing_type === 0 ? 'var(--air-border)' : iconColor};">
-                            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="6" y1="3" x2="6" y2="15"></line><circle cx="18" cy="6" r="3"></circle><circle cx="6" cy="18" r="3"></circle><path d="M18 9a9 9 0 0 1-9 9"></path></svg>
-                        </button>
+
+                        <div class="air-routing-wrapper" id="dropdown-${node.id}">
+                            <div class="air-routing-capsule">
+                                <button class="air-capsule-item ${node.routing_type === 0 ? 'active' : ''}" data-val="0" onclick="setAirNodeRouting('${node.id}', 0, '${containerId}', event)">禁用</button>
+                                <button class="air-capsule-item ${node.routing_type === 1 ? 'active' : ''}" data-val="1" onclick="setAirNodeRouting('${node.id}', 1, '${containerId}', event)">直连</button>
+                                <button class="air-capsule-item ${node.routing_type === 2 ? 'active' : ''}" data-val="2" onclick="setAirNodeRouting('${node.id}', 2, '${containerId}', event)">落地</button>
+                            </div>
+                            <button class="air-circle-btn" title="修改分组" onclick="toggleRoutingMenu('${node.id}', event)" style="color: ${iconColor}; border-color: ${node.routing_type === 0 ? 'var(--air-border)' : iconColor};">
+                                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="6" y1="3" x2="6" y2="15"></line><circle cx="18" cy="6" r="3"></circle><circle cx="6" cy="18" r="3"></circle><path d="M18 9a9 9 0 0 1-9 9"></path></svg>
+                            </button>
+                        </div>
                     </div>
                 </div>
+                ${hasLink ? `<div class="air-node-link-panel" id="link-panel-${node.id}">
+                    <div class="air-node-link-box" onclick="copyNodeLink('${node.id}', event)" title="点击复制链接">
+                        <div class="air-node-link-text">${escapedLink}</div>
+                    </div>
+                </div>` : ''}
             `;
-            container.appendChild(row);
+            container.appendChild(item);
+        });
+    }
+
+    // ================= 链接展开与复制 =================
+
+    function toggleNodeLink(nodeId, event) {
+        // 如果点击的是按钮等交互元素，不触发展开
+        if (event && event.target.closest('.air-circle-btn, .air-capsule-item, .air-speed-mode-item, .air-mini-btn, .air-node-link-box')) return;
+        const panel = document.getElementById(`link-panel-${nodeId}`);
+        if (!panel) return;
+
+        const isExpanded = panel.classList.contains('expanded');
+
+        // 先关闭其他所有已展开的链接面板
+        document.querySelectorAll('.air-node-link-panel.expanded').forEach(el => {
+            el.classList.remove('expanded');
+        });
+
+        // 切换当前面板
+        if (!isExpanded) {
+            panel.classList.add('expanded');
+        }
+    }
+
+    function copyNodeLink(nodeId, event) {
+        if (event) event.stopPropagation();
+        const node = airState.nodes.find(n => n.id === nodeId);
+        if (!node || !node.link) return;
+
+        const itemEl = document.getElementById(`link-panel-${nodeId}`)?.closest('.air-node-item');
+
+        function showCopiedToast() {
+            if (!itemEl) { showAirSaveStatus('已复制'); return; }
+            // 移除已有的 toast
+            const old = itemEl.querySelector('.air-node-link-copied-toast');
+            if (old) old.remove();
+            const toast = document.createElement('div');
+            toast.className = 'air-node-link-copied-toast';
+            toast.textContent = '✓ 已复制';
+            itemEl.appendChild(toast);
+            setTimeout(() => toast.remove(), 1200);
+        }
+
+        navigator.clipboard.writeText(node.link).then(() => {
+            showCopiedToast();
+        }).catch(() => {
+            // 降级方案：使用旧版 API
+            try {
+                const textarea = document.createElement('textarea');
+                textarea.value = node.link;
+                textarea.style.position = 'fixed';
+                textarea.style.opacity = '0';
+                document.body.appendChild(textarea);
+                textarea.select();
+                document.execCommand('copy');
+                document.body.removeChild(textarea);
+                showCopiedToast();
+            } catch (_) {
+                showAirSaveStatus('复制失败，请手动复制', true);
+            }
         });
     }
 
@@ -2066,7 +2249,11 @@
             const data = JSON.parse(event.data);
 
             if (data.node_id === 'all') {
-                alert("引擎异常: " + data.text);
+                if (data.text && data.text.includes('Mihomo')) {
+                    showMihomoCoreNotReadyTip();
+                } else {
+                    showAirSaveStatus("引擎异常: " + data.text, true);
+                }
                 stopSpeedTest(); // 遇错直接停止重置
                 return;
             }
@@ -2099,8 +2286,16 @@
         };
     }
 
-    function testSingleAirNode(nodeId, mode, event) {
+    async function testSingleAirNode(nodeId, mode, event) {
         if (event) event.stopPropagation();
+
+        // 检查 Mihomo 核心是否已下载
+        if (!await checkMihomoCoreReady()) {
+            showMihomoCoreNotReadyTip();
+            closeAirSpeedModePanel();
+            return;
+        }
+
         // ✨ 取消在这里提前渲染 HTML，移交到 startSpeedTestStream 中去统一排队执行
         const selectedMode = normalizeAirSpeedTestMode(mode);
         closeAirSpeedModePanel();

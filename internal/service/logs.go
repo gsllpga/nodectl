@@ -36,6 +36,7 @@ var (
 		"proxy_port_tuic":                         "TUIC 端口",
 		"proxy_port_reality":                      "Reality 端口",
 		"proxy_port_trojan":                       "Trojan 端口",
+		"proxy_port_anytls":                       "AnyTLS 端口",
 		"proxy_port_socks5":                       "Socks5 端口",
 		"proxy_socks5_user":                       "Socks5 用户名",
 		"proxy_socks5_pass":                       "Socks5 密码",
@@ -78,6 +79,7 @@ var (
 		"proxy_vmess_tls_sni":                     "VMess TLS SNI",
 		"proxy_vless_tls_sni":                     "VLESS TLS SNI",
 		"proxy_trojan_tls_sni":                    "Trojan TLS SNI",
+		"proxy_anytls_sni":                        "AnyTLS SNI",
 		"agent_ws_push_interval_sec":              "Agent 推送速率",
 		"auth_cookie_ttl_mode":                    "登录会话有效期",
 		"login_ip_retry_window_sec":               "登录失败计数窗口",
@@ -855,6 +857,21 @@ func formatChangePartCN(part string) string {
 		default:
 			return fmt.Sprintf("协议 %s 变更: %s", proto, content)
 		}
+	}
+
+	if strings.HasPrefix(key, "link_ports[") && strings.HasSuffix(key, "]") {
+		proto := key[len("link_ports[") : len(key)-1]
+		if strings.HasPrefix(content, "add ") {
+			return fmt.Sprintf("协议 %s 端口新增为 %s", proto, strings.TrimSpace(strings.TrimPrefix(content, "add ")))
+		}
+		if content == "removed" {
+			return fmt.Sprintf("协议 %s 端口已移除", proto)
+		}
+		if strings.Contains(content, " -> ") {
+			pair := strings.SplitN(content, " -> ", 2)
+			return fmt.Sprintf("协议 %s 端口由 %s 改为 %s", proto, strings.TrimSpace(pair[0]), strings.TrimSpace(pair[1]))
+		}
+		return fmt.Sprintf("协议 %s 端口变更: %s", proto, content)
 	}
 
 	if strings.HasPrefix(key, "link_ip_modes[") && strings.HasSuffix(key, "]") {

@@ -1176,6 +1176,30 @@
             width: 100%;
         }
     }
+    /* 跳动箭头动画（更新提示） */
+    @keyframes cftBounce {
+        0%, 100% { transform: translateY(0); }
+        50% { transform: translateY(-3px); }
+    }
+    .cft-update-icon {
+        display: inline-flex;
+        align-items: center;
+        cursor: pointer;
+        margin-left: 6px;
+        animation: cftBounce 0.8s ease-in-out infinite;
+        transition: opacity 0.2s;
+    }
+    .cft-update-icon:hover {
+        opacity: 0.7;
+    }
+    .cft-update-icon.updating {
+        animation: cftSpin 1s linear infinite;
+        cursor: default;
+        pointer-events: none;
+    }
+    @keyframes cftSpin {
+        100% { transform: rotate(360deg); }
+    }
 </style>
 
 <!-- ================= CF 管理弹窗 ================= -->
@@ -1352,7 +1376,7 @@
                                 class="cft-btn cft-btn-primary"
                                 onclick="cftVerifyToken()"
                                 id="cft-verify-btn"
-                                style="flex-shrink: 0"
+                                style="flex-shrink: 0; display: none"
                             >
                                 验证权限
                             </button>
@@ -1573,6 +1597,13 @@
                             >
                         </div>
                         <div class="cft-status-row">
+                            <span class="cft-status-label">最新版本</span>
+                            <span class="cft-status-value" style="display:flex;align-items:center;gap:4px;">
+                                <span id="cft-cf-remote-version">--</span>
+                                <span id="cft-cf-version-icon"></span>
+                            </span>
+                        </div>
+                        <div class="cft-status-row">
                             <span class="cft-status-label">Tunnel ID</span>
                             <span
                                 class="cft-status-value"
@@ -1601,6 +1632,38 @@
                         </div>
                     </div>
 
+                    <!-- 自动更新开关 + 更新按钮 -->
+                    <div
+                        class="cft-field"
+                        style="
+                            display: flex;
+                            justify-content: space-between;
+                            align-items: center;
+                            border: 1px solid #e5eaf3;
+                            background: #fafcff;
+                            border-radius: 10px;
+                            padding: 10px 12px;
+                            margin-bottom: 12px;
+                        "
+                    >
+                        <div>
+                            <span style="font-size: 12px; color: #333; font-weight: 600;">
+                                🔄 自动更新 cloudflared
+                            </span>
+                            <div style="font-size: 11px; color: #888; margin-top: 2px;">
+                                每天凌晨自动检查并更新到最新版本
+                            </div>
+                        </div>
+                        <label class="cft-toggle-switch">
+                            <input
+                                type="checkbox"
+                                id="cft-tunnel-auto-update"
+                                onchange="cftTunnelAutoUpdateToggle()"
+                            />
+                            <span class="cft-toggle-slider"></span>
+                            <span class="cft-toggle-knob"></span>
+                        </label>
+                    </div>
                     <!-- 操作面板 (Aligned right) -->
                     <div
                         class="cft-actions"
@@ -2181,19 +2244,50 @@
                                 <span class="cft-status-value" id="cft-ipopt-binary-version">--</span>
                             </div>
                             <div class="cft-status-row">
+                                <span class="cft-status-label">最新版本</span>
+                                <span class="cft-status-value" style="display:flex;align-items:center;gap:4px;">
+                                    <span id="cft-ipopt-remote-version">--</span>
+                                    <span id="cft-ipopt-version-icon"></span>
+                                </span>
+                            </div>
+                            <div class="cft-status-row">
                                 <span class="cft-status-label">平台架构</span>
                                 <span class="cft-status-value" id="cft-ipopt-platform">--</span>
                             </div>
                         </div>
-                        <div style="display: flex; justify-content: flex-end; margin-top: 10px;">
-                            <button
-                                class="cft-btn cft-btn-primary"
-                                id="cft-ipopt-download-btn"
-                                onclick="cftIPOptDownloadBinary()"
-                            >
-                                下载组件
-                            </button>
+                    </div>
+
+                    <!-- 自动更新开关 -->
+                    <div
+                        class="cft-field"
+                        style="
+                            display: flex;
+                            justify-content: space-between;
+                            align-items: center;
+                            border: 1px solid #e5eaf3;
+                            background: #fafcff;
+                            border-radius: 10px;
+                            padding: 10px 12px;
+                            margin-top: 12px;
+                        "
+                    >
+                        <div>
+                            <span style="font-size: 12px; color: #333; font-weight: 600;">
+                                🔄 自动更新 CloudflareST
+                            </span>
+                            <div style="font-size: 11px; color: #888; margin-top: 2px;">
+                                每天凌晨自动检查并更新到最新版本
+                            </div>
                         </div>
+                        <label class="cft-toggle-switch">
+                            <input
+                                type="checkbox"
+                                id="cft-ipopt-auto-update"
+                                onchange="cftIPOptAutoUpdateToggle()"
+                            />
+                            <span class="cft-toggle-slider"></span>
+                            <span class="cft-toggle-knob"></span>
+                        </label>
                     </div>
 
                     <!-- 应用到 Tunnel 节点开关 -->
@@ -2605,6 +2699,16 @@
 <script>
     // ============== Cloudflare 管理弹窗 ==============
 
+    // 点击遮罩层关闭
+    document.getElementById('cfTunnelModal').addEventListener('click', function(e) {
+        if (e.target === this) closeCFTunnelModal();
+    });
+
+    // ESC 键关闭
+    document.addEventListener('keydown', function(e) {
+        if (e.key === 'Escape' && document.getElementById('cfTunnelModal').classList.contains('active')) closeCFTunnelModal();
+    });
+
     let cftAutoSaveTimer = null;
     let cftSecuritySaveTimer = null;
 
@@ -2879,6 +2983,11 @@
                     d.cf_tunnel_subdomain || ""
                 ).trim();
             }
+
+            // 加载自动更新开关状态
+            await cftLoadAutoUpdateSettings();
+            // 加载 cloudflared 版本状态
+            await cftLoadTunnelVersionStatus();
         } catch (e) {
             console.error("加载 CF 配置失败", e);
         }
@@ -3229,6 +3338,12 @@
 
             // 检查是否有正在运行的任务，如果有则自动连接 SSE
             await cftIPOptCheckRunningTask();
+
+            // 加载自动更新开关状态
+            await cftLoadAutoUpdateSettings();
+
+            // 加载 CloudflareST 版本状态
+            await cftLoadIPOptVersionStatus();
         } catch (e) {
             console.error("加载优选设置失败:", e);
         }
@@ -4342,6 +4457,9 @@
             if (json.status === "success" && json.data) {
                 const d = json.data;
 
+                // 跟踪运行状态（供更新按钮检查）
+                cftTunnelIsRunning = !!d.running;
+
                 const indicator = document.getElementById(
                     "cft-status-indicator",
                 );
@@ -4502,6 +4620,9 @@
             if (json.status === "success" && json.data) {
                 const record = json.data;
                 if (record && record.result) {
+                    // 有历史验证记录，显示"验证权限"按钮
+                    const verifyBtn = document.getElementById("cft-verify-btn");
+                    if (verifyBtn) verifyBtn.style.display = "";
                     // 渲染校验结果
                     cftRenderTokenResult(record.result);
                     // 显示上次校验时间横幅
@@ -4755,6 +4876,9 @@
                 cftShowMsg("cft-token-msg", "success", "✅ Token 已保存");
                 cftShowSaveIndicator("success", "Token 已保存");
                 if (json.data) cftRenderTokenResult(json.data);
+                // 保存成功后显示"验证权限"按钮
+                const verifyBtn = document.getElementById("cft-verify-btn");
+                if (verifyBtn) verifyBtn.style.display = "";
                 cftLoadSettings();
                 cftLoadSecuritySettings();
                 document.getElementById("cft-token-input").value = "";
@@ -5524,6 +5648,283 @@
         } finally {
             btn.disabled = false;
             btn.textContent = "一键部署";
+        }
+    }
+
+    // ============== cloudflared 自动更新与版本检测 ==============
+
+    async function cftLoadAutoUpdateSettings() {
+        try {
+            const resp = await fetch("/api/get-settings");
+            const json = await resp.json();
+            if (json.status === "success" && json.data) {
+                const tEl = document.getElementById("cft-tunnel-auto-update");
+                if (tEl) tEl.checked = (json.data.cf_tunnel_auto_update === "true" || json.data.cf_tunnel_auto_update === "1");
+                const iEl = document.getElementById("cft-ipopt-auto-update");
+                if (iEl) iEl.checked = (json.data.cf_ipopt_auto_update === "true" || json.data.cf_ipopt_auto_update === "1");
+            }
+        } catch (e) { console.error("加载自动更新配置失败", e); }
+    }
+
+    async function cftTunnelAutoUpdateToggle() {
+        const toggle = document.getElementById("cft-tunnel-auto-update");
+        if (!toggle) return;
+        cftShowSaveIndicator("saving", "保存中...");
+        try {
+            const resp = await fetch("/api/update-settings", {
+                method: "POST", headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ cf_tunnel_auto_update: toggle.checked ? "true" : "false" }),
+            });
+            cftShowSaveIndicator(resp.ok ? "success" : "error", resp.ok ? "已保存" : "保存失败");
+        } catch (e) { cftShowSaveIndicator("error", "保存失败"); }
+    }
+
+    // ============== 版本图标渲染辅助函数 ==============
+    const cftBouncingArrowSVG = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#007aff" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>';
+    const cftSpinningSVG = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#007aff" stroke-width="2"><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/></svg>';
+
+    function cftRenderVersionIcon(iconEl, state, onClick) {
+        if (!iconEl) return;
+        if (state === "latest") {
+            iconEl.innerHTML = '<span style="color:#34c759;font-size:13px;" title="已是最新版本">✅</span>';
+            iconEl.className = "";
+            iconEl.style.cursor = "default";
+            iconEl.onclick = null;
+        } else if (state === "update_available" || state === "not_found") {
+            const title = state === "not_found" ? "点击下载" : "点击更新";
+            iconEl.innerHTML = cftBouncingArrowSVG;
+            iconEl.className = "cft-update-icon";
+            iconEl.title = title;
+            iconEl.style.cursor = "pointer";
+            iconEl.onclick = onClick;
+        } else if (state === "updating") {
+            iconEl.innerHTML = cftSpinningSVG;
+            iconEl.className = "cft-update-icon updating";
+            iconEl.title = "更新中...";
+            iconEl.style.cursor = "default";
+            iconEl.onclick = null;
+        } else {
+            // error or unknown
+            iconEl.innerHTML = "";
+            iconEl.className = "";
+            iconEl.onclick = null;
+        }
+    }
+
+    // ============== cloudflared 版本状态 ==============
+    let cftTunnelIsRunning = false; // 跟踪 tunnel 运行状态
+
+    async function cftLoadTunnelVersionStatus() {
+        try {
+            const resp = await fetch("/api/cf/tunnel/version-status");
+            const json = await resp.json();
+            if (json.status === "success" && json.data) {
+                const d = json.data;
+                const remoteEl = document.getElementById("cft-cf-remote-version");
+                const iconEl = document.getElementById("cft-cf-version-icon");
+                if (remoteEl) remoteEl.textContent = d.remote_version || "--";
+                cftRenderVersionIcon(iconEl, d.state, () => cftTunnelClickUpdate(d.state));
+            }
+        } catch (e) { console.error("加载 cloudflared 版本状态失败", e); }
+    }
+
+    function cftTunnelClickUpdate(state) {
+        // 检查 tunnel 是否在运行
+        if (cftTunnelIsRunning) {
+            cftShowSaveIndicator("error", "请先停止 Tunnel 再更新");
+            return;
+        }
+        const iconEl = document.getElementById("cft-cf-version-icon");
+        cftRenderVersionIcon(iconEl, "updating", null);
+
+        const actionLabel = (state === "not_found") ? "下载" : "更新";
+        const apiEndpoint = (state === "not_found") ? "/api/cf/tunnel/cloudflared/prepare" : "/api/cf/tunnel/force-update";
+
+        if (state === "not_found") {
+            // 未安装时使用 SSE 下载流程
+            cftTunnelDownloadViaSSE(iconEl);
+            return;
+        }
+
+        // 有更新时使用 force-update
+        fetch("/api/cf/tunnel/force-update", { method: "POST" })
+            .then(r => r.json())
+            .then(json => {
+                if (json.status === "success") {
+                    cftShowMsg("cft-tunnel-msg", "success", "cloudflared " + actionLabel + "已启动...");
+                    let attempts = 0;
+                    const poll = setInterval(async () => {
+                        attempts++;
+                        if (attempts > 60) { clearInterval(poll); cftRenderVersionIcon(iconEl, "update_available", () => cftTunnelClickUpdate("update_available")); return; }
+                        try {
+                            const res = await fetch("/api/cf/tunnel/version-status");
+                            const sd = await res.json();
+                            if (sd.status === "success" && sd.data.state === "latest") {
+                                clearInterval(poll);
+                                cftRenderVersionIcon(iconEl, "latest", null);
+                                cftShowMsg("cft-tunnel-msg", "success", "cloudflared 已更新到最新版本");
+                                await cftLoadStatus();
+                            }
+                        } catch (e) {}
+                    }, 2000);
+                } else {
+                    cftShowMsg("cft-tunnel-msg", "error", json.message || actionLabel + "失败");
+                    cftRenderVersionIcon(iconEl, "update_available", () => cftTunnelClickUpdate("update_available"));
+                }
+            })
+            .catch(e => {
+                cftShowMsg("cft-tunnel-msg", "error", "请求失败: " + e.message);
+                cftRenderVersionIcon(iconEl, "update_available", () => cftTunnelClickUpdate("update_available"));
+            });
+    }
+
+    async function cftTunnelDownloadViaSSE(iconEl) {
+        try {
+            const resp = await fetch("/api/cf/tunnel/cloudflared/prepare", { method: "POST" });
+            const ct = (resp.headers.get("content-type") || "").toLowerCase();
+            if (!ct.includes("text/event-stream")) {
+                // 非 SSE（可能已存在），直接解析 JSON
+                const json = await resp.json();
+                if (json.status === "success") {
+                    cftRenderVersionIcon(iconEl, "latest", null);
+                    cftShowMsg("cft-tunnel-msg", "success", "cloudflared 已就绪");
+                    await cftLoadStatus();
+                    await cftLoadTunnelVersionStatus();
+                }
+                return;
+            }
+            const reader = resp.body.getReader();
+            const decoder = new TextDecoder();
+            let buffer = "";
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+                buffer += decoder.decode(value, { stream: true });
+                const lines = buffer.split("\n");
+                buffer = lines.pop() || "";
+                for (const line of lines) {
+                    if (line.startsWith("event: done")) {
+                        cftRenderVersionIcon(iconEl, "latest", null);
+                        cftShowMsg("cft-tunnel-msg", "success", "cloudflared 下载完成");
+                        await cftLoadStatus();
+                        await cftLoadTunnelVersionStatus();
+                    } else if (line.startsWith("event: error")) {
+                        cftRenderVersionIcon(iconEl, "not_found", () => cftTunnelClickUpdate("not_found"));
+                    }
+                }
+            }
+        } catch (e) {
+            cftShowMsg("cft-tunnel-msg", "error", "下载失败: " + e.message);
+            cftRenderVersionIcon(iconEl, "not_found", () => cftTunnelClickUpdate("not_found"));
+        }
+    }
+
+    // ============== CloudflareST 自动更新与版本检测 ==============
+
+    async function cftIPOptAutoUpdateToggle() {
+        const toggle = document.getElementById("cft-ipopt-auto-update");
+        if (!toggle) return;
+        cftShowSaveIndicator("saving", "保存中...");
+        try {
+            const resp = await fetch("/api/update-settings", {
+                method: "POST", headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ cf_ipopt_auto_update: toggle.checked ? "true" : "false" }),
+            });
+            cftShowSaveIndicator(resp.ok ? "success" : "error", resp.ok ? "已保存" : "保存失败");
+        } catch (e) { cftShowSaveIndicator("error", "保存失败"); }
+    }
+
+    async function cftLoadIPOptVersionStatus() {
+        try {
+            const resp = await fetch("/api/cf/ipopt/version-status");
+            const json = await resp.json();
+            if (json.status === "success" && json.data) {
+                const d = json.data;
+                const remoteEl = document.getElementById("cft-ipopt-remote-version");
+                const iconEl = document.getElementById("cft-ipopt-version-icon");
+                if (remoteEl) remoteEl.textContent = d.remote_version || "--";
+                cftRenderVersionIcon(iconEl, d.state, () => cftIPOptClickUpdate(d.state));
+            }
+        } catch (e) { console.error("加载 CloudflareST 版本状态失败", e); }
+    }
+
+    function cftIPOptClickUpdate(state) {
+        const iconEl = document.getElementById("cft-ipopt-version-icon");
+        cftRenderVersionIcon(iconEl, "updating", null);
+
+        const actionLabel = (state === "not_found") ? "下载" : "更新";
+
+        if (state === "not_found") {
+            // 未安装时使用 SSE 下载流程
+            cftIPOptDownloadViaBounce(iconEl);
+            return;
+        }
+
+        // 有更新时使用 force-update
+        fetch("/api/cf/ipopt/force-update", { method: "POST" })
+            .then(r => r.json())
+            .then(json => {
+                if (json.status === "success") {
+                    cftShowMsg("cft-ipopt-msg", "success", "CloudflareST " + actionLabel + "已启动...");
+                    let attempts = 0;
+                    const poll = setInterval(async () => {
+                        attempts++;
+                        if (attempts > 60) { clearInterval(poll); cftRenderVersionIcon(iconEl, "update_available", () => cftIPOptClickUpdate("update_available")); return; }
+                        try {
+                            const res = await fetch("/api/cf/ipopt/version-status");
+                            const sd = await res.json();
+                            if (sd.status === "success" && sd.data.state === "latest") {
+                                clearInterval(poll);
+                                cftRenderVersionIcon(iconEl, "latest", null);
+                                cftShowMsg("cft-ipopt-msg", "success", "CloudflareST 已更新到最新版本");
+                                await cftLoadIPOptSettings();
+                            }
+                        } catch (e) {}
+                    }, 2000);
+                } else {
+                    cftShowMsg("cft-ipopt-msg", "error", json.message || actionLabel + "失败");
+                    cftRenderVersionIcon(iconEl, state, () => cftIPOptClickUpdate(state));
+                }
+            })
+            .catch(e => {
+                cftShowMsg("cft-ipopt-msg", "error", "请求失败: " + e.message);
+                cftRenderVersionIcon(iconEl, state, () => cftIPOptClickUpdate(state));
+            });
+    }
+
+    async function cftIPOptDownloadViaBounce(iconEl) {
+        try {
+            const resp = await fetch("/api/cf/ipopt/binary/download", { method: "POST" });
+            const reader = resp.body.getReader();
+            const decoder = new TextDecoder();
+            let buffer = "";
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+                buffer += decoder.decode(value, { stream: true });
+                const lines = buffer.split("\n");
+                buffer = lines.pop() || "";
+                for (const line of lines) {
+                    if (line.startsWith("data: ")) {
+                        try {
+                            const data = JSON.parse(line.substring(6));
+                            if (data.status === "completed") {
+                                cftRenderVersionIcon(iconEl, "latest", null);
+                                cftShowMsg("cft-ipopt-msg", "success", "CloudflareST 下载完成");
+                                await cftLoadIPOptSettings();
+                                return;
+                            } else if (data.status === "error") {
+                                cftRenderVersionIcon(iconEl, "not_found", () => cftIPOptClickUpdate("not_found"));
+                                cftShowMsg("cft-ipopt-msg", "error", data.message || "下载失败");
+                                return;
+                            }
+                        } catch(e) {}
+                    }
+                }
+            }
+        } catch (e) {
+            cftShowMsg("cft-ipopt-msg", "error", "下载失败: " + e.message);
+            cftRenderVersionIcon(iconEl, "not_found", () => cftIPOptClickUpdate("not_found"));
         }
     }
 </script>

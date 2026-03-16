@@ -1,10 +1,13 @@
 package server
 
 import (
+	"encoding/json"
+	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
 
+	"nodectl/internal/database"
 	"nodectl/internal/logger"
 	"nodectl/internal/service"
 )
@@ -117,4 +120,69 @@ func apiCallbackTrafficWS(w http.ResponseWriter, r *http.Request) {
 // 需要登录鉴权
 func apiTrafficLive(w http.ResponseWriter, r *http.Request) {
 	service.HandleTrafficLive(w, r)
+}
+
+// apiClearNodeTrafficHistory 清除指定节点的历史流量统计数据
+// 路由: POST /api/traffic/clear-history
+// 请求体: { "uuid": "节点UUID" }
+// 注意：仅清除历史采样点数据（node_traffic_stats），不影响累计流量（traffic_up/traffic_down）
+func apiClearNodeTrafficHistory(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var req struct {
+		UUID string `json:"uuid"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		sendJSON(w, "error", "请求格式错误")
+		return
+	}
+	req.UUID = strings.TrimSpace(req.UUID)
+	if req.UUID == "" {
+		sendJSON(w, "error", "缺少节点 UUID")
+		return
+	}
+
+	// 校验节点是否存在
+	var node database.NodePool
+	if err := database.DB.Select("uuid", "name").Where("uuid = ?", req.UUID).First(&node).Error; err != nil {
+		sendJSON(w, "error", "节点不存在")
+		return
+	}
+
+	deleted, err := service.ClearNodeTrafficHistory(req.UUID)
+	if err != nil {
+		logger.Log.Error("清除节点历史流量数据失败", "uuid", req.UUID, "name", node.Name, "error", err)
+		sendJSON(w, "error", "清除失败: "+err.Error())
+		return
+	}
+
+	logger.Log.Info("节点历史流量数据已清除", "uuid", req.UUID, "name", node.Name, "deleted", deleted)
+	sendJSON(w, "success", map[string]interface{}{
+		"message": fmt.Sprintf("已清除 %d 条历史流量记录", deleted),
+		"deleted": deleted,
+	})
+}
+
+// apiGetNodeTrafficHistoryCount 获取指定节点的历史流量记录条数
+// 路由: GET /api/traffic/history-count?uuid=...
+func apiGetNodeTrafficHistoryCount(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	nodeUUID := strings.TrimSpace(r.URL.Query().Get("uuid"))
+	if nodeUUID == "" {
+		sendJSON(w, "error", "缺少节点 UUID")
+		return
+	}
+
+	count := service.GetNodeTrafficHistoryCount(nodeUUID)
+	sendJSON(w, "success", map[string]interface{}{
+		"uuid":  nodeUUID,
+		"count": count,
+	})
 }

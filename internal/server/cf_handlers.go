@@ -800,6 +800,46 @@ func apiCFTunnelOneClick(w http.ResponseWriter, r *http.Request) {
 
 // ------------------- [Token 校验记录] -------------------
 
+// ------------------- [cloudflared 版本检查与更新] -------------------
+
+// apiCFTunnelVersionStatus GET /api/cf/tunnel/version-status
+// 获取 cloudflared 版本状态（本地版本、远程版本、是否需要更新）
+func apiCFTunnelVersionStatus(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	localVer, remoteVer, state := service.GetCloudflaredVersionStatus()
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"status": "success",
+		"data": map[string]interface{}{
+			"local_version":  localVer,
+			"remote_version": remoteVer,
+			"state":          state,
+		},
+	})
+}
+
+// apiCFTunnelForceUpdate POST /api/cf/tunnel/force-update
+// 强制更新 cloudflared 到最新版本
+func apiCFTunnelForceUpdate(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	go func() {
+		if err := service.ForceUpdateCloudflared(); err != nil {
+			logger.Log.Error("cloudflared 手动更新失败", "error", err)
+		}
+	}()
+
+	logger.Log.Info("cloudflared 手动更新已触发", "ip", getClientIP(r))
+	sendJSON(w, "success", "已开始更新 cloudflared")
+}
+
 // apiCFGetLastTokenVerify GET /api/cf/token/last-verify
 // 获取最近一次 Token 权限校验记录（持久化，跨会话有效）
 func apiCFGetLastTokenVerify(w http.ResponseWriter, r *http.Request) {

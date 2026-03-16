@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -37,6 +38,7 @@ type DBConfig struct {
 	Password string `json:"password,omitempty"` // PostgreSQL 密码
 	DBName   string `json:"dbname,omitempty"`   // PostgreSQL 数据库名
 	SSLMode  string `json:"sslmode,omitempty"`  // PostgreSQL SSL 模式 (disable/require/verify-full)
+	WebPort  int    `json:"web_port,omitempty"` // Web 服务监听端口 (默认 8080，Docker 环境始终使用 8080)
 }
 
 // DBStatus 数据库状态信息
@@ -109,6 +111,7 @@ type NodePool struct {
 	IsBlocked               bool              `gorm:"column:is_blocked;default:false" json:"is_blocked"` // 是否屏蔽
 	Links                   map[string]string `gorm:"column:links;serializer:json" json:"links"`
 	LinkIPModes             map[string]int    `gorm:"column:link_ip_modes;serializer:json" json:"link_ip_modes"` //协议级别的IP生成模式
+	LinkPorts               map[string]int    `gorm:"column:link_ports;serializer:json" json:"link_ports"`       // 协议级别的个性化端口设置（创建时从SysConfig导入默认值）
 	DisabledLinks           []string          `gorm:"column:disabled_links;serializer:json" json:"disabled_links"`
 	IPV4                    string            `gorm:"column:ipv4;type:varchar(15)" json:"ipv4"`
 	IPV6                    string            `gorm:"column:ipv6;type:varchar(45)" json:"ipv6"`
@@ -126,6 +129,7 @@ type NodePool struct {
 	ResetDay                int               `gorm:"column:reset_day;default:0" json:"reset_day"`                                          // 每月重置日 (1-31, 0表示不重置)
 	TrafficUpdateAt         *time.Time        `gorm:"column:traffic_update_at" json:"traffic_update_at"`                                    // 流量更新时间
 	AgentVersion            string            `gorm:"column:agent_version;type:varchar(32);default:''" json:"agent_version"`                // Agent 版本号
+	TrafficHistoryCount     *int64            `gorm:"column:traffic_history_count" json:"traffic_history_count"`                            // 历史流量记录条数（写入计数，NULL表示未初始化需查库）
 	TunnelEnabled           bool              `gorm:"column:tunnel_enabled;default:false" json:"tunnel_enabled"`                            // 是否启用 tunnel 加速
 	TunnelID                string            `gorm:"column:tunnel_id;type:varchar(64);default:''" json:"tunnel_id"`                        // 节点绑定的 Tunnel ID
 	TunnelToken             string            `gorm:"column:tunnel_token;type:text;default:''" json:"tunnel_token"`                         // 节点专属 Tunnel Token（每节点独立）
@@ -165,7 +169,68 @@ func (n *NodePool) BeforeCreate(tx *gorm.DB) (err error) {
 	if n.InstallID == "" {
 		n.InstallID = generateSecureRandomID(12)
 	}
+
+	// 从 SysConfig 读取所有协议的默认端口，写入 LinkPorts 作为该节点的初始端口配置
+	if n.LinkPorts == nil || len(n.LinkPorts) == 0 {
+		n.LinkPorts = loadDefaultPortsFromSysConfig(tx)
+	}
+
 	return
+}
+
+// loadDefaultPortsFromSysConfig 从 SysConfig 中读取所有 proxy_port_* 配置，
+// 将协议名映射为端口号返回。用于节点创建时填充默认端口。
+func loadDefaultPortsFromSysConfig(tx *gorm.DB) map[string]int {
+	// 协议名 -> SysConfig Key 的映射
+	protoToKey := map[string]string{
+		"ss":         "proxy_port_ss",
+		"hy2":        "proxy_port_hy2",
+		"tuic":       "proxy_port_tuic",
+		"reality":    "proxy_port_reality",
+		"socks5":     "proxy_port_socks5",
+		"trojan":     "proxy_port_trojan",
+		"anytls":     "proxy_port_anytls",
+		"vmess_tcp":  "proxy_port_vmess_tcp",
+		"vmess_ws":   "proxy_port_vmess_ws",
+		"vmess_http": "proxy_port_vmess_http",
+		"vmess_quic": "proxy_port_vmess_quic",
+		"vmess_wst":  "proxy_port_vmess_wst",
+		"vmess_hut":  "proxy_port_vmess_hut",
+		"vless_wst":  "proxy_port_vless_wst",
+		"vless_hut":  "proxy_port_vless_hut",
+		"trojan_wst": "proxy_port_trojan_wst",
+		"trojan_hut": "proxy_port_trojan_hut",
+	}
+
+	// 收集所有需要查询的 Key
+	keys := make([]string, 0, len(protoToKey))
+	for _, key := range protoToKey {
+		keys = append(keys, key)
+	}
+
+	// 使用干净的会话查询 SysConfig，避免 BeforeCreate 事务上下文中
+	// 携带的 Model/Where 等子句污染查询，导致结果不全。
+	cleanDB := tx.Session(&gorm.Session{NewDB: true})
+	var cfgs []SysConfig
+	cleanDB.Where("key IN ?", keys).Find(&cfgs)
+
+	// 构建 Key -> Value 映射
+	valueByKey := make(map[string]string, len(cfgs))
+	for _, c := range cfgs {
+		valueByKey[c.Key] = strings.TrimSpace(c.Value)
+	}
+
+	// 构建结果 map
+	ports := make(map[string]int, len(protoToKey))
+	for proto, key := range protoToKey {
+		if valStr, ok := valueByKey[key]; ok && valStr != "" {
+			if port, err := strconv.Atoi(valStr); err == nil && port > 0 {
+				ports[proto] = port
+			}
+		}
+	}
+
+	return ports
 }
 
 func generateSecureRandomID(length int) string {
@@ -299,6 +364,30 @@ func (r *AirportSpeedTestResult) BeforeCreate(tx *gorm.DB) (err error) {
 	return
 }
 
+// ------------------- 自定义节点 -------------------
+
+// CustomNode 自定义协议链接节点表
+type CustomNode struct {
+	ID          string    `gorm:"primaryKey;type:varchar(36)" json:"id"`
+	Link        string    `gorm:"type:text" json:"link"`            // 原始协议链接 (vmess://, vless://, ss:// 等)
+	Name        string    `gorm:"type:varchar(255)" json:"name"`    // 从链接中解析出的节点名称
+	Protocol    string    `gorm:"type:varchar(32)" json:"protocol"` // 协议类型
+	RoutingType int       `gorm:"default:1" json:"routing_type"`    // 1=直连, 2=落地, 0=屏蔽
+	CreatedAt   time.Time `gorm:"column:created_at" json:"created_at"`
+	UpdatedAt   time.Time `gorm:"column:updated_at" json:"updated_at"`
+}
+
+func (CustomNode) TableName() string {
+	return "custom_nodes"
+}
+
+func (n *CustomNode) BeforeCreate(tx *gorm.DB) (err error) {
+	if n.ID == "" {
+		n.ID = uuid.New().String()
+	}
+	return
+}
+
 // ------------------- 数据库初始化 -------------------
 
 // openSQLite 打开 SQLite 数据库连接
@@ -367,6 +456,7 @@ func autoMigrateAll(db *gorm.DB) error {
 		&AirportNode{},
 		&AirportSpeedTestHistory{},
 		&AirportSpeedTestResult{},
+		&CustomNode{},
 	)
 }
 
@@ -398,7 +488,7 @@ func InitDB() {
 			_ = SaveDBConfig(cfg)
 			logger.Log.Warn("已自动回退到 SQLite 数据库")
 		} else {
-			logger.Log.Info("数据库引擎已启动", "type", "PostgreSQL", "host", cfg.Host, "dbname", cfg.DBName)
+			logger.ConsoleAndLog.Info("数据库引擎已启动", "type", "PostgreSQL", "host", cfg.Host, "dbname", cfg.DBName)
 		}
 	default:
 		db, err = openSQLite()
@@ -406,7 +496,7 @@ func InitDB() {
 			logger.Log.Error("连接 SQLite 失败", "err", err.Error())
 			panic("数据库连接失败")
 		}
-		logger.Log.Info("数据库引擎已启动", "type", "SQLite")
+		logger.ConsoleAndLog.Info("数据库引擎已启动", "type", "SQLite")
 	}
 
 	// 自动迁移所有的表
@@ -487,8 +577,10 @@ func GetDBStatus() DBStatus {
 	status.RecordInfo["airport_subs"] = count
 	DB.Model(&AirportNode{}).Count(&count)
 	status.RecordInfo["airport_nodes"] = count
+	DB.Model(&CustomNode{}).Count(&count)
+	status.RecordInfo["custom_nodes"] = count
 
-	status.TableCount = 5
+	status.TableCount = 6
 	return status
 }
 
@@ -632,6 +724,11 @@ func MigrateToPostgres(pgCfg DBConfig) error {
 		return fmt.Errorf("迁移 airport_speed_test_results 失败: %w", err)
 	}
 
+	// 4.8 迁移 CustomNode
+	if err := migrateTable[CustomNode](srcDB, dstDB, "custom_nodes"); err != nil {
+		return fmt.Errorf("迁移 custom_nodes 失败: %w", err)
+	}
+
 	// 5. 修正 PostgreSQL 自增序列，避免后续写入撞主键
 	if err := syncNodeTrafficStatSequenceForDB(dstDB); err != nil {
 		return fmt.Errorf("同步 node_traffic_stats 序列失败: %w", err)
@@ -722,6 +819,86 @@ func migrateTableBatched[T any](src, dst *gorm.DB, tableName string, batchSize i
 	return nil
 }
 
+// ------------------- 节点流量数据批量删除 -------------------
+
+// DeleteNodeTrafficStatsBatched 分批删除指定节点的流量统计数据。
+// 每批删除 batchSize 条记录，每批使用独立事务，大幅降低长事务锁持有时间，
+// 避免在流量数据量巨大时一次性 DELETE 导致数据库锁表、WAL 膨胀或连接池耗尽。
+// 返回总删除条数和首次遇到的错误（如果有）。
+func DeleteNodeTrafficStatsBatched(nodeUUID string, batchSize int) (int64, error) {
+	if batchSize <= 0 {
+		batchSize = 1000
+	}
+
+	var totalDeleted int64
+	for {
+		result := DB.Where("node_uuid = ?", nodeUUID).Limit(batchSize).Delete(&NodeTrafficStat{})
+		if result.Error != nil {
+			return totalDeleted, result.Error
+		}
+		totalDeleted += result.RowsAffected
+		if result.RowsAffected < int64(batchSize) {
+			// 本批删除的行数少于 batchSize，说明已全部删完
+			break
+		}
+	}
+	return totalDeleted, nil
+}
+
+// ------------------- PostgreSQL VACUUM -------------------
+
+// VacuumDatabase 对 PostgreSQL 执行 VACUUM（回收已删除行占用的磁盘空间）。
+// PostgreSQL 使用 MVCC 机制，DELETE 只是标记行为"死元组"，磁盘空间不会立即释放，
+// 必须通过 VACUUM 回收。普通 VACUUM 回收空间供表复用，VACUUM FULL 会彻底压缩表文件
+// 但需要排他锁。此函数执行普通 VACUUM（非阻塞），适合在线运行。
+func VacuumDatabase() error {
+	cfg := LoadDBConfig()
+	if cfg.Type != "postgres" {
+		return fmt.Errorf("VACUUM 仅适用于 PostgreSQL 数据库")
+	}
+	sqlDB, err := DB.DB()
+	if err != nil {
+		return fmt.Errorf("获取底层连接失败: %w", err)
+	}
+	// VACUUM 不能在事务中执行，直接使用底层 sql.DB
+	_, err = sqlDB.Exec("VACUUM")
+	if err != nil {
+		return fmt.Errorf("执行 VACUUM 失败: %w", err)
+	}
+	return nil
+}
+
+// VacuumTable 对 PostgreSQL 指定表执行 VACUUM。
+func VacuumTable(tableName string) error {
+	cfg := LoadDBConfig()
+	if cfg.Type != "postgres" {
+		return fmt.Errorf("VACUUM 仅适用于 PostgreSQL 数据库")
+	}
+	// 表名白名单，防止 SQL 注入
+	allowed := map[string]bool{
+		"node_pool":                    true,
+		"node_traffic_stats":           true,
+		"sys_config":                   true,
+		"airport_subs":                 true,
+		"airport_nodes":                true,
+		"airport_speed_test_histories": true,
+		"airport_speed_test_results":   true,
+		"custom_nodes":                 true,
+	}
+	if !allowed[tableName] {
+		return fmt.Errorf("不允许对表 %s 执行 VACUUM", tableName)
+	}
+	sqlDB, err := DB.DB()
+	if err != nil {
+		return fmt.Errorf("获取底层连接失败: %w", err)
+	}
+	_, err = sqlDB.Exec("VACUUM " + tableName)
+	if err != nil {
+		return fmt.Errorf("执行 VACUUM %s 失败: %w", tableName, err)
+	}
+	return nil
+}
+
 // ------------------- 辅助函数 -------------------
 
 // formatBytesHuman 格式化字节数为人类可读形式
@@ -746,4 +923,49 @@ func formatBytesHuman(bytes int64) string {
 // GetUnderlyingDB 获取底层 sql.DB 实例 (用于外部模块的 Ping、Stats 等)
 func GetUnderlyingDB() (*sql.DB, error) {
 	return DB.DB()
+}
+
+// ------------------- Web 端口管理 -------------------
+
+// DefaultWebPort Web 服务默认监听端口
+const DefaultWebPort = 8080
+
+// isRunningInDocker 检测当前是否运行在 Docker 容器内
+// 通过检查 /.dockerenv 文件或 /proc/1/cgroup 中是否包含 docker/containerd 关键字判断，
+// 不需要任何额外的环境依赖。
+func isRunningInDocker() bool {
+	// 方法 1: 检查 /.dockerenv 文件（Docker 运行时自动创建）
+	if _, err := os.Stat("/.dockerenv"); err == nil {
+		return true
+	}
+	// 方法 2: 检查 /proc/1/cgroup 中是否包含 docker 或 containerd 关键字
+	data, err := os.ReadFile("/proc/1/cgroup")
+	if err == nil {
+		content := strings.ToLower(string(data))
+		if strings.Contains(content, "docker") || strings.Contains(content, "containerd") {
+			return true
+		}
+	}
+	return false
+}
+
+// GetWebPort 获取 Web 服务监听端口。
+// 规则：
+//  1. Docker 环境始终返回 8080（避免用户在容器内误改端口导致服务不可达）
+//  2. 非 Docker 环境：优先读取 data/dbconfig.json 中的 web_port 字段
+//  3. 若未配置或值无效（<1 或 >65535），返回默认端口 8080
+func GetWebPort() int {
+	if isRunningInDocker() {
+		return DefaultWebPort
+	}
+	cfg := LoadDBConfig()
+	if cfg.WebPort >= 1 && cfg.WebPort <= 65535 {
+		return cfg.WebPort
+	}
+	return DefaultWebPort
+}
+
+// GetWebPortStr 返回 Web 端口的字符串形式，格式如 ":8080"，可直接用于 http.Server.Addr
+func GetWebPortStr() string {
+	return fmt.Sprintf(":%d", GetWebPort())
 }

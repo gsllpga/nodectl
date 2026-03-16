@@ -153,7 +153,7 @@ func InitCFIPOpt() {
 	// 清理过期日志文件
 	cleanOldLogs()
 
-	logger.Log.Info("CF 优选IP模块初始化完成")
+	logger.Log.Debug("CF 优选IP模块初始化完成")
 }
 
 // cleanOldLogs 清理超过 7 天的日志文件
@@ -1855,4 +1855,113 @@ func GetEffectiveOptIP() (string, error) {
 
 	// 使用定时优选的 Top1 IP
 	return GetTop1IPOptIP()
+}
+
+// ===================== CloudflareST 远程版本检查与自动更新 =====================
+
+// GetCFIPOptRemoteVersion 从 GitHub API 获取 CloudflareST 最新版本号
+func GetCFIPOptRemoteVersion() (string, error) {
+	client := &http.Client{Timeout: 15 * time.Second}
+	req, err := http.NewRequest("GET", "https://api.github.com/repos/XIU2/CloudflareSpeedTest/releases/latest", nil)
+	if err != nil {
+		return "", fmt.Errorf("创建请求失败: %w", err)
+	}
+	req.Header.Set("Accept", "application/vnd.github.v3+json")
+	req.Header.Set("User-Agent", "nodectl")
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("请求失败: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != 200 {
+		return "", fmt.Errorf("GitHub API 返回 HTTP %d", resp.StatusCode)
+	}
+
+	var release struct {
+		TagName string `json:"tag_name"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&release); err != nil {
+		return "", fmt.Errorf("解析响应失败: %w", err)
+	}
+
+	return strings.TrimSpace(release.TagName), nil
+}
+
+// GetCFIPOptVersionStatus 获取 CloudflareST 版本状态（供前端版本检测用）
+// 返回: localVersion, remoteVersion, state ("latest"/"update_available"/"not_found"/"error")
+func GetCFIPOptVersionStatus() (localVer, remoteVer, state string) {
+	exists, local, _ := IsCFIPOptBinaryExists()
+	if !exists {
+		localVer = ""
+	} else {
+		localVer = local
+	}
+
+	remote, err := GetCFIPOptRemoteVersion()
+	if err != nil {
+		logger.Log.Warn("获取 CloudflareST 远程版本失败", "error", err)
+		remoteVer = ""
+		if localVer == "" {
+			state = "not_found"
+		} else {
+			state = "error"
+		}
+		return
+	}
+	remoteVer = remote
+
+	if localVer == "" {
+		state = "not_found"
+		return
+	}
+
+	// 版本比较：去掉 v 前缀后对比
+	cleanLocal := strings.TrimSpace(strings.TrimPrefix(localVer, "v"))
+	cleanRemote := strings.TrimSpace(strings.TrimPrefix(remoteVer, "v"))
+
+	if cleanLocal == cleanRemote {
+		state = "latest"
+	} else {
+		state = "update_available"
+	}
+	return
+}
+
+// ForceUpdateCFIPOpt 强制下载最新版 CloudflareST（覆盖现有）
+func ForceUpdateCFIPOpt() error {
+	logger.Log.Info("开始强制更新 CloudflareST...")
+
+	// 获取最新版本号
+	remoteVer, err := GetCFIPOptRemoteVersion()
+	if err != nil {
+		return fmt.Errorf("获取远程版本失败: %w", err)
+	}
+
+	cleanVer := strings.TrimPrefix(strings.TrimSpace(remoteVer), "v")
+	downloadURL, err := getCFIPOptDownloadURL(cleanVer)
+	if err != nil {
+		return fmt.Errorf("获取下载地址失败: %w", err)
+	}
+
+	// 创建一个 nil 通道（同步下载，不推送进度）
+	progressChan := make(chan map[string]interface{}, 10)
+	go func() {
+		for range progressChan {
+			// 丢弃进度消息
+		}
+	}()
+
+	err = downloadAndExtract(downloadURL, progressChan)
+	close(progressChan)
+
+	if err != nil {
+		return fmt.Errorf("下载 CloudflareST 失败: %w", err)
+	}
+
+	// 保存版本号
+	setCFIPOptConfig("cf_ipopt_bin_version", cleanVer)
+	logger.Log.Info("CloudflareST 更新完成", "version", cleanVer)
+	return nil
 }

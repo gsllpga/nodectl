@@ -324,6 +324,16 @@
         list.insertAdjacentHTML('beforeend', html);
     }
 
+    // 点击遮罩层关闭
+    document.getElementById('updateModal').addEventListener('click', function(e) {
+        if (e.target === this) closeUpdateModal();
+    });
+
+    // ESC 键关闭
+    document.addEventListener('keydown', function(e) {
+        if (e.key === 'Escape' && document.getElementById('updateModal').classList.contains('active')) closeUpdateModal();
+    });
+
     // 打开弹窗
     function openUpdateModal() {
         const modal = document.getElementById('updateModal');

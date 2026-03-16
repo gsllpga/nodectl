@@ -373,6 +373,11 @@
         if (e.target === addNodeModalEl) closeAddNodeModal();
     });
 
+    // ESC 键关闭
+    document.addEventListener('keydown', function (e) {
+        if (e.key === 'Escape' && addNodeModalEl.classList.contains('active')) closeAddNodeModal();
+    });
+
     function openAddNodeModal() {
         addNodeModalEl.classList.add('active');
         document.getElementById('addNodeForm').reset();

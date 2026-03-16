@@ -502,6 +502,16 @@
     const subModal = document.getElementById('subLinksModal');
     const subModalCard = document.getElementById('subModalCard');
 
+    // 点击遮罩层关闭
+    subModal.addEventListener('click', function(e) {
+        if (e.target === subModal) closeSubLinksModal();
+    });
+
+    // ESC 键关闭
+    document.addEventListener('keydown', function(e) {
+        if (e.key === 'Escape' && subModal.classList.contains('active')) closeSubLinksModal();
+    });
+
     let currentBaseUrl = '';
     let currentToken = '';
     let currentFormatKey = null;

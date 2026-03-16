@@ -4,11 +4,13 @@ package agent
 import (
 	"bufio"
 	"context"
+	"crypto/tls"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
 	"log"
+	"net/http"
 	"os"
 	"os/exec"
 	"os/signal"
@@ -18,6 +20,11 @@ import (
 	"sync"
 	"syscall"
 	"time"
+
+	"nodectl/internal/agent/api"
+	"nodectl/internal/agent/links"
+	"nodectl/internal/agent/reporter"
+	"nodectl/internal/agent/singbox"
 )
 
 // Runtime Agent 运行时：调度采集与上报，管理信号与生命周期
@@ -30,6 +37,10 @@ type Runtime struct {
 	cancel         context.CancelFunc
 	bootID         string
 	intervalChange chan int // 动态推送间隔变更通知通道
+
+	// 🆕 sing-box 管理模块
+	singboxMgr *singbox.Manager
+	linkGen    *links.Generator
 }
 
 // NewRuntime 创建运行时实例
@@ -46,6 +57,9 @@ func NewRuntime(cfg *Config, updater *Updater) *Runtime {
 
 // Run 启动 Agent 主循环（阻塞直到收到退出信号）
 func (rt *Runtime) Run() error {
+	// 初始化 sing-box 管理器（使用配置中的路径）
+	rt.singboxMgr = rt.createSingboxManager()
+
 	// 初始化采集器
 	if err := rt.collector.Init(); err != nil {
 		return err
@@ -66,6 +80,9 @@ func (rt *Runtime) Run() error {
 	if postUpdatePending {
 		postUpdateTimeout = rt.updater.HealthTimeout()
 	}
+
+	// 🆕 尝试加载协议缓存并启动 sing-box（如果缓存存在）
+	rt.initSingBox(ctx)
 
 	// 首次连接 (无限重试直到成功或被中断)
 	for {
@@ -108,6 +125,9 @@ func (rt *Runtime) Run() error {
 	if rt.updater != nil {
 		rt.updater.MarkHealthy()
 	}
+
+	// 🆕 WS 连接成功后，上报节点上线信息
+	rt.reportNodeOnline(ctx)
 
 	// 启动自动更新检查循环（后台 goroutine）
 	if rt.updater != nil {
@@ -167,6 +187,557 @@ func (rt *Runtime) Run() error {
 	}
 }
 
+// ensureSingboxManager 确保 singboxMgr 已初始化，若为 nil 则自动创建
+// Agent 负责管理 sing-box 的完整生命周期（下载、安装、启动、杀死），
+// 当 singboxMgr 未初始化时应主动创建而非要求用户手动部署。
+func (rt *Runtime) ensureSingboxManager() *singbox.Manager {
+	if rt.singboxMgr == nil {
+		log.Printf("[Agent] sing-box 管理器未初始化，正在自动创建...")
+		rt.singboxMgr = rt.createSingboxManager()
+	}
+	return rt.singboxMgr
+}
+
+// createSingboxManager 🆕 根据 Config.Singbox 配置创建 sing-box 管理器
+func (rt *Runtime) createSingboxManager() *singbox.Manager {
+	sbCfg := rt.cfg.Singbox
+
+	// 使用配置中的路径创建 ConfigManager 和 Installer
+	var configPath, protocolsPath, certDir string
+	if sbCfg != nil {
+		configPath = sbCfg.ConfigPath
+	}
+	// protocolsPath 和 certDir 使用默认值
+	cfgMgr := singbox.NewConfigManagerWithPaths(configPath, protocolsPath, certDir)
+
+	var binaryPath string
+	if sbCfg != nil {
+		binaryPath = sbCfg.BinaryPath
+	}
+	installer := singbox.NewInstaller(binaryPath)
+
+	return singbox.NewManagerWithConfig(cfgMgr, installer)
+}
+
+// initSingBox 🆕 初始化 sing-box 管理器并尝试启动
+// 配置加载优先级：
+//  1. Config.Protocols（主配置文件中的协议配置）
+//  2. protocols.json 缓存文件
+//  3. 🆕 主动从面板拉取初始化配置（使用 install_id）
+//  4. 等待后端通过 WS 下发（最终兜底）
+func (rt *Runtime) initSingBox(ctx context.Context) {
+	cfgMgr := rt.singboxMgr.GetConfigManager()
+
+	// 优先级 1：检查主配置文件中是否已有协议配置
+	if rt.cfg.Protocols != nil && len(rt.cfg.Protocols.EnabledProtocolList()) > 0 {
+		cfgMgr.Protocols = rt.cfg.Protocols
+		log.Printf("[Agent] 从主配置加载协议配置，启用的协议: %v", cfgMgr.Protocols.EnabledProtocolList())
+		// 同步到缓存
+		if err := cfgMgr.SaveToCache(); err != nil {
+			log.Printf("[Agent] 同步协议缓存失败: %v", err)
+		}
+	} else {
+		// 优先级 2：尝试从缓存加载协议配置
+		if err := cfgMgr.LoadFromCache(); err == nil {
+			log.Printf("[Agent] 已加载协议缓存，启用的协议: %v", cfgMgr.Protocols.EnabledProtocolList())
+			// 将缓存中的协议配置同步到主配置（运行时引用）
+			rt.cfg.Protocols = cfgMgr.Protocols
+		} else {
+			// 优先级 3：🆕 主动从面板拉取初始化配置
+			log.Printf("[Agent] 协议缓存不存在或加载失败: %v，尝试从面板拉取初始化配置...", err)
+			pc, fetchErr := rt.fetchAndBuildProtocolConfig(ctx)
+			if fetchErr != nil {
+				log.Printf("[Agent] 从面板拉取初始化配置失败: %v（等待后端通过 WS 下发）", fetchErr)
+				return
+			}
+			cfgMgr.Protocols = pc
+			rt.cfg.Protocols = pc
+			log.Printf("[Agent] 已从面板拉取初始化配置，启用的协议: %v", pc.EnabledProtocolList())
+			// 持久化到缓存
+			if err := cfgMgr.SaveToCache(); err != nil {
+				log.Printf("[Agent] 保存协议缓存失败: %v", err)
+			}
+		}
+	}
+
+	// 确保自签证书存在
+	if err := cfgMgr.EnsureCerts("nodectl-agent"); err != nil {
+		log.Printf("[Agent] 生成自签证书失败: %v", err)
+	}
+
+	// 确保 sing-box 已安装
+	installer := rt.singboxMgr.GetInstaller()
+	if !installer.IsInstalled() {
+		log.Printf("[Agent] sing-box 未安装，尝试自动安装...")
+		if err := installer.EnsureInstalled(ctx); err != nil {
+			log.Printf("[Agent] sing-box 安装失败: %v", err)
+			return
+		}
+	}
+
+	// 🆕 检测并终止遗留的 sing-box 进程（Agent 通过 execve 更新后，旧 sing-box 仍在运行）
+	// 必须在端口冲突检测之前执行，否则旧 sing-box 占用的端口会被误报为冲突
+	if rt.singboxMgr.KillOrphanProcess() {
+		log.Printf("[Agent] 已终止遗留的 sing-box 进程，准备启动新实例")
+	}
+
+	// 🆕 端口冲突预检测（首次启动，不排除任何端口）
+	portConflicts := singbox.CheckPortConflicts(cfgMgr.Protocols, nil)
+	if len(portConflicts) > 0 {
+		conflictMsg := singbox.FormatPortConflictsMessage(portConflicts)
+		log.Printf("[Agent] 初始化检测到端口冲突:\n%s", conflictMsg)
+		log.Printf("[Agent] 由于端口冲突，sing-box 未启动。请通过面板修改端口后重新推送配置")
+		return
+	}
+
+	// 生成 sing-box 配置
+	if err := cfgMgr.GenerateAndSave(); err != nil {
+		log.Printf("[Agent] 生成 sing-box 配置失败: %v", err)
+		return
+	}
+
+	// 启动 sing-box 并验证健康状态
+	if err := rt.singboxMgr.StartAndVerify(ctx, 3*time.Second); err != nil {
+		log.Printf("[Agent] 启动 sing-box 失败（进程可能立即退出）: %v", err)
+		log.Printf("[Agent] 提示: 请检查端口是否被其他进程占用，或查看 /var/log/nodectl-agent/singbox.log 获取详细错误")
+		return
+	}
+
+	log.Printf("[Agent] sing-box 已启动，进程运行正常")
+}
+
+// initConfigResponse 面板 /api/agent/init-config 的响应结构
+type initConfigResponse struct {
+	Status string `json:"status"`
+	Data   struct {
+		Protocols struct {
+			Enabled []string `json:"enabled"`
+		} `json:"protocols"`
+		Ports    map[string]int `json:"ports"`
+		PanelURL string         `json:"panel_url"`
+		WSURL    string         `json:"ws_url"`
+	} `json:"data"`
+}
+
+// fetchAndBuildProtocolConfig 🆕 从面板拉取初始化配置并构建完整的 ProtocolConfig
+// 面板返回启用的协议列表和端口映射，Agent 本地生成密钥/密码/UUID 等凭据
+func (rt *Runtime) fetchAndBuildProtocolConfig(ctx context.Context) (*singbox.ProtocolConfig, error) {
+	// 1. 构造面板 init-config API 地址
+	panelURL := rt.cfg.PanelURL
+	if panelURL == "" {
+		// 从 ws_url 反向推导 panel_url
+		panelURL = DerivePanelURL(rt.cfg.WSURL)
+	}
+	if panelURL == "" {
+		return nil, fmt.Errorf("无法确定面板地址（panel_url 和 ws_url 均为空）")
+	}
+
+	apiURL := fmt.Sprintf("%s/api/agent/init-config?install_id=%s",
+		strings.TrimRight(panelURL, "/"), rt.cfg.InstallID)
+
+	log.Printf("[Agent] 正在从面板拉取初始化配置: %s", apiURL)
+
+	// 2. 发起 HTTP 请求（带超时，跳过自签证书验证）
+	client := &http.Client{
+		Timeout: 15 * time.Second,
+		Transport: &http.Transport{
+			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+		},
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, apiURL, nil)
+	if err != nil {
+		return nil, fmt.Errorf("创建请求失败: %w", err)
+	}
+	req.Header.Set("User-Agent", "nodectl-agent/"+AgentVersion)
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("请求面板失败: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
+		return nil, fmt.Errorf("面板返回非 200: %d, body=%s", resp.StatusCode, string(body))
+	}
+
+	// 3. 解析响应
+	// 面板 sendJSON(w, "success", map[string]interface{}{"data": {...}}) 会将 map 合并到顶层
+	// 实际返回格式: {"status":"success","data":{"protocols":{"enabled":[...]},"ports":{...},...}}
+	var apiResp struct {
+		Status  string `json:"status"`
+		Message string `json:"message,omitempty"` // 错误时为字符串
+		Data    struct {
+			Protocols struct {
+				Enabled []string `json:"enabled"`
+			} `json:"protocols"`
+			Ports    map[string]int    `json:"ports"`
+			SNI      map[string]string `json:"sni"` // 🆕 面板自定义 SNI 配置
+			PanelURL string            `json:"panel_url"`
+			WSURL    string            `json:"ws_url"`
+		} `json:"data"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&apiResp); err != nil {
+		return nil, fmt.Errorf("解析响应 JSON 失败: %w", err)
+	}
+
+	if apiResp.Status != "success" {
+		return nil, fmt.Errorf("面板返回错误: status=%s, message=%s", apiResp.Status, apiResp.Message)
+	}
+
+	enabledProtocols := apiResp.Data.Protocols.Enabled
+	ports := apiResp.Data.Ports
+	sniMap := apiResp.Data.SNI
+
+	if len(enabledProtocols) == 0 {
+		return nil, fmt.Errorf("面板返回的启用协议列表为空（节点可能尚未配置协议）")
+	}
+
+	log.Printf("[Agent] 面板返回: 启用协议=%v, 端口=%v, sni=%v", enabledProtocols, ports, sniMap)
+
+	// 4. 构建完整的 ProtocolConfig（端口来自面板，凭据本地生成）
+	pc := singbox.DefaultProtocolConfig()
+
+	// 🆕 应用面板下发的自定义 SNI 配置（覆盖内置默认值）
+	applySNIConfig(pc, sniMap)
+
+	// 设置启用的协议
+	for _, proto := range enabledProtocols {
+		pc.SetEnabled(proto, true)
+	}
+
+	// 为每个启用的协议生成凭据并设置端口
+	for _, proto := range enabledProtocols {
+		port := ports[proto]
+		if err := rt.generateProtocolCredentials(pc, proto, port); err != nil {
+			log.Printf("[Agent] 生成协议 %s 凭据失败: %v", proto, err)
+			// 不阻断其他协议，继续处理
+		}
+	}
+
+	return pc, nil
+}
+
+// generateProtocolCredentials 为指定协议生成凭据并设置端口
+// 面板端只下发「启用哪些协议 + 端口」，密钥/密码等敏感凭据均由 Agent 本地生成
+func (rt *Runtime) generateProtocolCredentials(pc *singbox.ProtocolConfig, proto string, port int) error {
+	switch proto {
+	case singbox.ProtoSS:
+		if port > 0 {
+			pc.SS.Port = port
+		}
+		if pc.SS.Password == "" {
+			pwd, err := singbox.GenerateSSPassword(pc.SS.Method)
+			if err != nil {
+				return err
+			}
+			pc.SS.Password = pwd
+		}
+
+	case singbox.ProtoHY2:
+		if port > 0 {
+			pc.HY2.Port = port
+		}
+		if pc.HY2.Password == "" {
+			pwd, err := singbox.GeneratePassword(16)
+			if err != nil {
+				return err
+			}
+			pc.HY2.Password = pwd
+		}
+
+	case singbox.ProtoTUIC:
+		if port > 0 {
+			pc.TUIC.Port = port
+		}
+		if pc.TUIC.UUID == "" {
+			uuid, err := singbox.GenerateUUID()
+			if err != nil {
+				return err
+			}
+			pc.TUIC.UUID = uuid
+		}
+		if pc.TUIC.Password == "" {
+			pwd, err := singbox.GeneratePassword(16)
+			if err != nil {
+				return err
+			}
+			pc.TUIC.Password = pwd
+		}
+
+	case singbox.ProtoReality:
+		if port > 0 {
+			pc.Reality.Port = port
+		}
+		if pc.Reality.UUID == "" {
+			uuid, err := singbox.GenerateUUID()
+			if err != nil {
+				return err
+			}
+			pc.Reality.UUID = uuid
+		}
+		if pc.Reality.PrivateKey == "" {
+			keyPair, err := singbox.GenerateRealityKeyPair()
+			if err != nil {
+				return err
+			}
+			pc.Reality.PrivateKey = keyPair.PrivateKey
+			pc.Reality.PublicKey = keyPair.PublicKey
+		}
+		if pc.Reality.ShortID == "" {
+			shortID, err := singbox.GenerateShortID()
+			if err != nil {
+				return err
+			}
+			pc.Reality.ShortID = shortID
+		}
+
+	case singbox.ProtoSocks5:
+		if port > 0 {
+			pc.Socks5.Port = port
+		}
+		if pc.Socks5.Username == "" {
+			usr, err := singbox.GeneratePassword(12)
+			if err != nil {
+				return err
+			}
+			pc.Socks5.Username = usr
+		}
+		if pc.Socks5.Password == "" {
+			pwd, err := singbox.GeneratePassword(16)
+			if err != nil {
+				return err
+			}
+			pc.Socks5.Password = pwd
+		}
+
+	case singbox.ProtoTrojan:
+		if port > 0 {
+			pc.Trojan.Port = port
+		}
+		if pc.Trojan.Password == "" {
+			pwd, err := singbox.GeneratePassword(16)
+			if err != nil {
+				return err
+			}
+			pc.Trojan.Password = pwd
+		}
+
+	case singbox.ProtoAnyTLS:
+		if port > 0 {
+			pc.AnyTLS.Port = port
+		}
+		if pc.AnyTLS.Password == "" {
+			uuid, err := singbox.GenerateUUID()
+			if err != nil {
+				return err
+			}
+			pc.AnyTLS.Password = uuid
+		}
+
+	// VMess 族
+	case singbox.ProtoVmessTCP:
+		if port > 0 {
+			pc.VMess.TCPPort = port
+		}
+		rt.ensureVMessUUID(pc)
+	case singbox.ProtoVmessWS:
+		if port > 0 {
+			pc.VMess.WSPort = port
+		}
+		rt.ensureVMessUUID(pc)
+	case singbox.ProtoVmessHTTP:
+		if port > 0 {
+			pc.VMess.HTTPPort = port
+		}
+		rt.ensureVMessUUID(pc)
+	case singbox.ProtoVmessQUIC:
+		if port > 0 {
+			pc.VMess.QUICPort = port
+		}
+		rt.ensureVMessUUID(pc)
+	case singbox.ProtoVmessWST:
+		if port > 0 {
+			pc.VMess.WSTPort = port
+		}
+		rt.ensureVMessUUID(pc)
+	case singbox.ProtoVmessHUT:
+		if port > 0 {
+			pc.VMess.HUTPort = port
+		}
+		rt.ensureVMessUUID(pc)
+
+	// VLESS-TLS 族
+	case singbox.ProtoVlessWST:
+		if port > 0 {
+			pc.VlessTLS.WSTPort = port
+		}
+		rt.ensureVlessTLSUUID(pc)
+	case singbox.ProtoVlessHUT:
+		if port > 0 {
+			pc.VlessTLS.HUTPort = port
+		}
+		rt.ensureVlessTLSUUID(pc)
+
+	// Trojan-TLS 族
+	case singbox.ProtoTrojanWST:
+		if port > 0 {
+			pc.TrojanTLS.WSTPort = port
+		}
+		rt.ensureTrojanTLSPassword(pc)
+	case singbox.ProtoTrojanHUT:
+		if port > 0 {
+			pc.TrojanTLS.HUTPort = port
+		}
+		rt.ensureTrojanTLSPassword(pc)
+	}
+
+	return nil
+}
+
+// ensureVMessUUID 确保 VMess 族共用 UUID 已生成
+func (rt *Runtime) ensureVMessUUID(pc *singbox.ProtocolConfig) {
+	if pc.VMess.UUID == "" {
+		uuid, err := singbox.GenerateUUID()
+		if err != nil {
+			log.Printf("[Agent] 生成 VMess UUID 失败: %v", err)
+			return
+		}
+		pc.VMess.UUID = uuid
+	}
+}
+
+// ensureVlessTLSUUID 确保 VLESS-TLS 族共用 UUID 已生成
+func (rt *Runtime) ensureVlessTLSUUID(pc *singbox.ProtocolConfig) {
+	if pc.VlessTLS.UUID == "" {
+		uuid, err := singbox.GenerateUUID()
+		if err != nil {
+			log.Printf("[Agent] 生成 VLESS-TLS UUID 失败: %v", err)
+			return
+		}
+		pc.VlessTLS.UUID = uuid
+	}
+}
+
+// ensureTrojanTLSPassword 确保 Trojan-TLS 族共用密码已生成
+func (rt *Runtime) ensureTrojanTLSPassword(pc *singbox.ProtocolConfig) {
+	if pc.TrojanTLS.Password == "" {
+		pwd, err := singbox.GeneratePassword(16)
+		if err != nil {
+			log.Printf("[Agent] 生成 Trojan-TLS 密码失败: %v", err)
+			return
+		}
+		pc.TrojanTLS.Password = pwd
+	}
+}
+
+// reportNodeOnline 🆕 通过 WS 上报节点上线信息
+func (rt *Runtime) reportNodeOnline(ctx context.Context) {
+	if rt.singboxMgr == nil {
+		return
+	}
+
+	cfgMgr := rt.singboxMgr.GetConfigManager()
+	pc := cfgMgr.Protocols
+
+	// 获取公网 IPv4 和 IPv6
+	publicIPv4 := api.GetPublicIP()
+	publicIPv6 := api.GetPublicIPv6()
+
+	// 获取 hostname
+	hostname, _ := os.Hostname()
+
+	// 生成链接（使用 IPv4 作为主 IP）
+	linkIP := publicIPv4
+	if linkIP == "" {
+		linkIP = publicIPv6
+	}
+	suffix := pc.HostSuffix
+	if suffix == "" {
+		suffix = hostname
+	}
+	gen := links.NewGenerator(linkIP, suffix, pc)
+	linksMap := gen.GenerateAllMap()
+
+	// 获取 sing-box 版本
+	sbVersion := ""
+	installer := rt.singboxMgr.GetInstaller()
+	if v, err := installer.GetVersion(); err == nil {
+		sbVersion = v
+	}
+
+	// 构造节点上线消息
+	payload := &reporter.NodeOnlinePayload{
+		Hostname:  hostname,
+		IPv4:      publicIPv4,
+		IPv6:      publicIPv6,
+		Protocols: pc.EnabledProtocolList(),
+		Links:     linksMap,
+		AgentVer:  AgentVersion,
+		SBVersion: sbVersion,
+	}
+
+	msg := &reporter.Message{
+		Type:      reporter.MessageTypeNodeOnline,
+		InstallID: rt.cfg.InstallID,
+		Timestamp: time.Now().Unix(),
+		Payload:   payload,
+	}
+
+	if err := rt.reporter.SendMessage(ctx, msg); err != nil {
+		log.Printf("[Agent] 上报节点上线失败: %v", err)
+	} else {
+		log.Printf("[Agent] 节点上线已上报，IPv4=%s, IPv6=%s, 协议: %v", publicIPv4, publicIPv6, payload.Protocols)
+	}
+}
+
+// reportLinksUpdate 🆕 通过 WS 上报链接更新
+func (rt *Runtime) reportLinksUpdate(ctx context.Context, action string, protocols []string) {
+	if rt.singboxMgr == nil {
+		return
+	}
+
+	cfgMgr := rt.singboxMgr.GetConfigManager()
+	pc := cfgMgr.Protocols
+
+	// 获取公网 IPv4 和 IPv6
+	publicIPv4 := api.GetPublicIP()
+	publicIPv6 := api.GetPublicIPv6()
+	hostname, _ := os.Hostname()
+	suffix := pc.HostSuffix
+	if suffix == "" {
+		suffix = hostname
+	}
+
+	// 生成链接（使用 IPv4 作为主 IP）
+	linkIP := publicIPv4
+	if linkIP == "" {
+		linkIP = publicIPv6
+	}
+	gen := links.NewGenerator(linkIP, suffix, pc)
+	linksMap := gen.GenerateAllMap()
+
+	msg := &reporter.Message{
+		Type:      reporter.MessageTypeLinksUpdate,
+		InstallID: rt.cfg.InstallID,
+		Timestamp: time.Now().Unix(),
+		Payload: &reporter.LinksUpdatePayload{
+			Action:    action,
+			Protocols: protocols,
+			Links:     linksMap,
+			IPv4:      publicIPv4,
+			IPv6:      publicIPv6,
+		},
+	}
+
+	if err := rt.reporter.SendMessage(ctx, msg); err != nil {
+		log.Printf("[Agent] 上报链接更新失败: %v", err)
+	} else {
+		log.Printf("[Agent] 链接更新已上报: action=%s, protocols=%v", action, protocols)
+	}
+}
+
 // handleDisconnect 处理断线重连
 func (rt *Runtime) handleDisconnect(ctx context.Context) {
 	if ctx.Err() != nil {
@@ -212,20 +783,24 @@ func (rt *Runtime) reloadConfig() {
 }
 
 // shutdown 优雅退出
-// 顺序：collector（释放 FD）→ reporter（关闭 WS）
+// 顺序：sing-box → collector（释放 FD）→ reporter（关闭 WS）
 func (rt *Runtime) shutdown() {
 	log.Printf("[Agent] 正在优雅退出...")
 
 	// 0. 输出日志去重器的累计信息
 	rt.logDedup.Flush()
 
-	// 1. 释放采集器常驻 FD
+	// 1. 🆕 停止 sing-box 子进程
+	if rt.singboxMgr != nil {
+		rt.singboxMgr.Shutdown()
+	}
+
+	// 2. 释放采集器常驻 FD
 	if err := rt.collector.Close(); err != nil {
 		log.Printf("[Agent] 关闭采集器失败: %v", err)
 	}
 
-	// 2. 持久化状态
-	// 2. 关闭 WebSocket 连接
+	// 3. 关闭 WebSocket 连接
 	rt.reporter.Close()
 
 	log.Printf("[Agent] 已退出")
@@ -247,6 +822,8 @@ func (rt *Runtime) handleCommand(cmd ServerCommand, reply func(CommandResult)) {
 		rt.executeReinstallSingbox(cmd, reply)
 	case "check-agent-update":
 		rt.executeCheckAgentUpdate(reply)
+	case "push-config":
+		rt.executePushConfig(cmd, reply)
 	case "tunnel-start":
 		rt.executeTunnelStart(cmd, reply)
 	case "tunnel-prepare":
@@ -333,20 +910,270 @@ func (rt *Runtime) executeCheckAgentUpdate(reply func(CommandResult)) {
 	}()
 }
 
-// deriveScriptURL 从 ws_url 推导安装脚本 URL
-func (rt *Runtime) deriveScriptURL() string {
-	// ws_url 形如 wss://domain:port/api/callback/traffic/ws
-	panelURL := rt.cfg.WSURL
-	panelURL = strings.Replace(panelURL, "wss://", "https://", 1)
-	panelURL = strings.Replace(panelURL, "ws://", "http://", 1)
-	if idx := strings.Index(panelURL, "/api/"); idx > 0 {
-		panelURL = panelURL[:idx]
+// applySNIConfig 将面板下发的自定义 SNI 配置应用到 ProtocolConfig
+// sniMap key 定义：
+//   - "hy2":        → pc.HY2.SNI
+//   - "tuic":       → pc.TUIC.SNI
+//   - "anytls":     → pc.AnyTLS.SNI
+//   - "vmess_tls":  → pc.VMess.TLSSNI
+//   - "vless_tls":  → pc.VlessTLS.TLSSNI & pc.Reality.SNI（reality 复用 vless_tls 的 SNI）
+//   - "trojan_tls": → pc.TrojanTLS.TLSSNI
+//
+// 仅覆盖 sniMap 中存在且非空的项，其余保留 ProtocolConfig 原有值（内置默认或缓存值）
+// 注意：reality 不再有独立的 SNI 配置，统一使用 vless_tls 的 SNI
+func applySNIConfig(pc *singbox.ProtocolConfig, sniMap map[string]string) {
+	if len(sniMap) == 0 {
+		return
 	}
-	return fmt.Sprintf("%s/api/public/install-script?id=%s", panelURL, rt.cfg.InstallID)
+	if v, ok := sniMap["hy2"]; ok && v != "" {
+		pc.HY2.SNI = v
+	}
+	if v, ok := sniMap["tuic"]; ok && v != "" {
+		pc.TUIC.SNI = v
+	}
+	if v, ok := sniMap["trojan"]; ok && v != "" {
+		pc.Trojan.SNI = v
+	}
+	if v, ok := sniMap["anytls"]; ok && v != "" {
+		pc.AnyTLS.SNI = v
+	}
+	if v, ok := sniMap["vmess_tls"]; ok && v != "" {
+		pc.VMess.TLSSNI = v
+	}
+	if v, ok := sniMap["vless_tls"]; ok && v != "" {
+		pc.VlessTLS.TLSSNI = v
+		// reality 复用 vless_tls 的 SNI，不再单独配置
+		pc.Reality.SNI = v
+	}
+	if v, ok := sniMap["trojan_tls"]; ok && v != "" {
+		pc.TrojanTLS.TLSSNI = v
+	}
+}
+
+// executePushConfig 处理后端下发的推送配置命令
+// payload: {"protocols": ["ss", "hy2", ...], "ports": {"ss": 8388, "hy2": 8443, ...}, "sni": {...}, "tunnel": {...}}
+// 功能：根据前端编辑的启用协议列表和端口配置，更新本地协议配置、重新生成 sing-box 配置并重启
+func (rt *Runtime) executePushConfig(cmd ServerCommand, reply func(CommandResult)) {
+	var payload struct {
+		Protocols []string          `json:"protocols"`
+		Ports     map[string]int    `json:"ports"`
+		SNI       map[string]string `json:"sni"` // 🆕 面板自定义 SNI 配置
+		Tunnel    *tunnelCmdPayload `json:"tunnel,omitempty"`
+	}
+	if len(cmd.Payload) > 0 {
+		json.Unmarshal(cmd.Payload, &payload)
+	}
+	if len(payload.Protocols) == 0 {
+		reply(CommandResult{Type: "result", Status: "error", Message: "未收到协议列表，无法应用配置"})
+		return
+	}
+
+	// 确保 sing-box 管理器已初始化（Agent 负责管理 sing-box 完整生命周期）
+	rt.ensureSingboxManager()
+
+	// 🔑 第一时间强制杀死 sing-box，释放所有端口
+	// 用户执行了协议变更操作，必须先停止 sing-box 再进行任何判断，
+	// 否则旧 sing-box 占用的端口会导致端口冲突误报
+	reply(CommandResult{Type: "progress", Stage: "强制停止 sing-box，释放端口..."})
+	rt.singboxMgr.ForceKill()
+
+	cfgMgr := rt.singboxMgr.GetConfigManager()
+	ctx := context.Background()
+
+	// 0. 记录旧协议列表（用于差异显示）
+	oldProtocols := cfgMgr.Protocols.EnabledProtocolList()
+
+	// 计算协议变更差异：新增、删除、保留
+	oldSet := make(map[string]bool)
+	for _, p := range oldProtocols {
+		oldSet[p] = true
+	}
+	newSet := make(map[string]bool)
+	for _, p := range payload.Protocols {
+		newSet[p] = true
+	}
+	var addedProtos, removedProtos, keptProtos []string
+	for _, p := range payload.Protocols {
+		if oldSet[p] {
+			keptProtos = append(keptProtos, p)
+		} else {
+			addedProtos = append(addedProtos, p)
+		}
+	}
+	for _, p := range oldProtocols {
+		if !newSet[p] {
+			removedProtos = append(removedProtos, p)
+		}
+	}
+
+	// 显示协议变更摘要
+	if len(addedProtos) > 0 && len(removedProtos) > 0 {
+		reply(CommandResult{Type: "progress", Stage: fmt.Sprintf("收到推送配置：新增协议 %v，删除协议 %v", addedProtos, removedProtos)})
+	} else if len(addedProtos) > 0 {
+		reply(CommandResult{Type: "progress", Stage: fmt.Sprintf("收到推送配置：新增协议 %v（保留 %v）", addedProtos, keptProtos)})
+	} else if len(removedProtos) > 0 {
+		reply(CommandResult{Type: "progress", Stage: fmt.Sprintf("收到推送配置：删除协议 %v（保留 %v）", removedProtos, keptProtos)})
+	} else {
+		reply(CommandResult{Type: "progress", Stage: fmt.Sprintf("收到推送配置：协议未变更 %v（可能更新了端口/SNI 配置）", payload.Protocols)})
+	}
+
+	// 1. 更新协议启用状态：先全部禁用，再启用前端传来的协议
+	reply(CommandResult{Type: "progress", Stage: "更新协议启用状态..."})
+	for _, proto := range singbox.AllProtocols {
+		cfgMgr.Protocols.SetEnabled(proto, false)
+	}
+	for _, proto := range payload.Protocols {
+		cfgMgr.Protocols.SetEnabled(proto, true)
+	}
+
+	// 2. 更新端口配置（仅更新有值的端口，保留已有密钥/密码等不变）
+	if len(payload.Ports) > 0 {
+		reply(CommandResult{Type: "progress", Stage: "更新端口配置..."})
+		for proto, port := range payload.Ports {
+			if port <= 0 || port > 65535 {
+				continue
+			}
+			switch proto {
+			case singbox.ProtoSS:
+				cfgMgr.Protocols.SS.Port = port
+			case singbox.ProtoHY2:
+				cfgMgr.Protocols.HY2.Port = port
+			case singbox.ProtoTUIC:
+				cfgMgr.Protocols.TUIC.Port = port
+			case singbox.ProtoReality:
+				cfgMgr.Protocols.Reality.Port = port
+			case singbox.ProtoSocks5:
+				cfgMgr.Protocols.Socks5.Port = port
+			case singbox.ProtoTrojan:
+				cfgMgr.Protocols.Trojan.Port = port
+			case singbox.ProtoAnyTLS:
+				cfgMgr.Protocols.AnyTLS.Port = port
+			// VMess 族端口
+			case singbox.ProtoVmessTCP:
+				cfgMgr.Protocols.VMess.TCPPort = port
+			case singbox.ProtoVmessWS:
+				cfgMgr.Protocols.VMess.WSPort = port
+			case singbox.ProtoVmessHTTP:
+				cfgMgr.Protocols.VMess.HTTPPort = port
+			case singbox.ProtoVmessQUIC:
+				cfgMgr.Protocols.VMess.QUICPort = port
+			case singbox.ProtoVmessWST:
+				cfgMgr.Protocols.VMess.WSTPort = port
+			case singbox.ProtoVmessHUT:
+				cfgMgr.Protocols.VMess.HUTPort = port
+			// VLESS-TLS 族端口
+			case singbox.ProtoVlessWST:
+				cfgMgr.Protocols.VlessTLS.WSTPort = port
+			case singbox.ProtoVlessHUT:
+				cfgMgr.Protocols.VlessTLS.HUTPort = port
+			// Trojan-TLS 族端口
+			case singbox.ProtoTrojanWST:
+				cfgMgr.Protocols.TrojanTLS.WSTPort = port
+			case singbox.ProtoTrojanHUT:
+				cfgMgr.Protocols.TrojanTLS.HUTPort = port
+			}
+		}
+	}
+
+	// 2.3 🆕 应用面板下发的自定义 SNI 配置（覆盖内置默认值）
+	if len(payload.SNI) > 0 {
+		reply(CommandResult{Type: "progress", Stage: "应用自定义 SNI 配置..."})
+		applySNIConfig(cfgMgr.Protocols, payload.SNI)
+		log.Printf("[Agent] push-config: 已应用自定义 SNI: %v", payload.SNI)
+	}
+
+	// 2.5 🆕 为新启用的协议生成缺失的凭据（UUID、密码、Reality 密钥对等）
+	// push-config 只下发「启用哪些协议 + 端口」，凭据由 Agent 本地生成
+	// 如果协议之前未启用过，其凭据字段为空，需要在此补全
+	reply(CommandResult{Type: "progress", Stage: "检查并生成缺失的协议凭据..."})
+	for _, proto := range payload.Protocols {
+		port := payload.Ports[proto]
+		if err := rt.generateProtocolCredentials(cfgMgr.Protocols, proto, port); err != nil {
+			log.Printf("[Agent] push-config: 生成协议 %s 凭据失败: %v", proto, err)
+		}
+	}
+
+	// 3. 保存协议缓存
+	reply(CommandResult{Type: "progress", Stage: "保存协议配置缓存..."})
+	if err := cfgMgr.SaveToCache(); err != nil {
+		log.Printf("[Agent] push-config: 保存协议缓存失败: %v", err)
+		reply(CommandResult{Type: "result", Status: "error", Message: fmt.Sprintf("保存协议缓存失败: %v", err)})
+		return
+	}
+
+	// 4. 确保自签证书存在（部分协议需要）
+	if cfgMgr.Protocols.NeedSelfSignedCert() {
+		reply(CommandResult{Type: "progress", Stage: "检查自签证书..."})
+		if err := cfgMgr.EnsureCerts("nodectl-agent"); err != nil {
+			log.Printf("[Agent] push-config: 证书生成失败: %v", err)
+		}
+	}
+
+	// 5. 确保 sing-box 已安装
+	installer := rt.singboxMgr.GetInstaller()
+	if !installer.IsInstalled() {
+		reply(CommandResult{Type: "progress", Stage: "sing-box 未安装，正在下载..."})
+		if err := installer.EnsureInstalled(ctx); err != nil {
+			reply(CommandResult{Type: "result", Status: "error", Message: fmt.Sprintf("sing-box 安装失败: %v", err)})
+			return
+		}
+	}
+
+	// 6. sing-box 已在入口处被 ForceKill，无需再次停止
+
+	// 6.5 端口冲突预检测：sing-box 已停止，直接检测端口占用（无需排除端口）
+	reply(CommandResult{Type: "progress", Stage: "检查端口冲突..."})
+	portConflicts := singbox.CheckPortConflicts(cfgMgr.Protocols, nil)
+	if len(portConflicts) > 0 {
+		conflictMsg := singbox.FormatPortConflictsMessage(portConflicts)
+		log.Printf("[Agent] push-config: 检测到端口冲突:\n%s", conflictMsg)
+		// 逐条回传端口冲突详情，让前端日志面板能逐行显示
+		for _, c := range portConflicts {
+			reply(CommandResult{Type: "progress", Stage: fmt.Sprintf("⚠️ 端口冲突: %s", c.Reason)})
+		}
+		// 端口冲突是致命错误，不继续启动 sing-box（否则 sing-box 必定启动失败）
+		// 注意：此时 sing-box 已停止，如果有旧配置缓存，下次 Agent 重启时会自动恢复
+		reply(CommandResult{Type: "progress", Stage: "提示: sing-box 已停止，请修改端口后重新推送配置以恢复服务"})
+		reply(CommandResult{Type: "result", Status: "error", Message: fmt.Sprintf("配置推送失败: 检测到 %d 个端口冲突，请修改端口后重试", len(portConflicts))})
+		return
+	}
+	reply(CommandResult{Type: "progress", Stage: "端口检查通过，无冲突"})
+
+	// 7. 重新生成 sing-box 配置
+	reply(CommandResult{Type: "progress", Stage: "生成 sing-box 配置..."})
+	if err := cfgMgr.GenerateAndSave(); err != nil {
+		reply(CommandResult{Type: "result", Status: "error", Message: fmt.Sprintf("生成配置失败: %v", err)})
+		return
+	}
+
+	// 8. 启动 sing-box 并验证健康状态（等待 3 秒确认进程存活）
+	reply(CommandResult{Type: "progress", Stage: "启动 sing-box..."})
+	if err := rt.singboxMgr.StartAndVerify(ctx, 3*time.Second); err != nil {
+		log.Printf("[Agent] push-config: sing-box 启动验证失败: %v", err)
+		reply(CommandResult{Type: "progress", Stage: fmt.Sprintf("❌ sing-box 启动失败: %v", err)})
+		reply(CommandResult{Type: "progress", Stage: "提示: 请检查端口是否被其他进程占用，或查看 Agent 日志获取详细错误"})
+		reply(CommandResult{Type: "result", Status: "error", Message: fmt.Sprintf("sing-box 启动失败: %v", err)})
+		return
+	}
+	reply(CommandResult{Type: "progress", Stage: "sing-box 启动成功，进程运行正常"})
+
+	// 9. 上报链接更新
+	reply(CommandResult{Type: "progress", Stage: "上报链接更新..."})
+	rt.reportLinksUpdate(ctx, "push-config", payload.Protocols)
+
+	// 10. 如果有 Tunnel 配置，刷新 Tunnel
+	if err := rt.refreshTunnelAfterCoreChange(payload.Tunnel, reply); err != nil {
+		reply(CommandResult{Type: "result", Status: "error", Message: err.Error()})
+		return
+	}
+
+	log.Printf("[Agent] push-config: 配置推送完成，启用协议: %v", payload.Protocols)
+	reply(CommandResult{Type: "result", Status: "ok", Message: fmt.Sprintf("配置推送完成，已启用 %d 个协议", len(payload.Protocols))})
 }
 
 // executeResetLinks 重置节点链接
-// 后端下发 payload 中包含 {"protocols": ["ss", "hy2", ...]}，作为安装脚本的 CLI 参数
+// 使用内置 Go 代码（api.ResetHandler）执行重置
+// 后端下发 payload 中包含 {"protocols": ["ss", "hy2", ...]}
 func (rt *Runtime) executeResetLinks(cmd ServerCommand, reply func(CommandResult)) {
 	var payload struct {
 		Protocols []string          `json:"protocols"`
@@ -360,14 +1187,30 @@ func (rt *Runtime) executeResetLinks(cmd ServerCommand, reply func(CommandResult
 		return
 	}
 
-	scriptURL := rt.deriveScriptURL()
-	protoArgs := strings.Join(payload.Protocols, " ")
-	shellCmd := fmt.Sprintf(`export SKIP_AGENT_INSTALL=1; curl -fsSL "%s" | bash -s -- %s`, scriptURL, protoArgs)
+	// 确保 sing-box 管理器已初始化（Agent 负责管理 sing-box 完整生命周期）
+	rt.ensureSingboxManager()
 
-	if err := rt.runStreamingScript(shellCmd, "重置链接", reply); err != nil {
+	// 第一时间强制杀死 sing-box，释放所有端口
+	reply(CommandResult{Type: "progress", Stage: "强制停止 sing-box，释放端口..."})
+	rt.singboxMgr.ForceKill()
+
+	reply(CommandResult{Type: "progress", Stage: "使用内置管理器重置链接..."})
+
+	cfgMgr := rt.singboxMgr.GetConfigManager()
+
+	// 创建重置处理器（链接上报已迁移至 WS 通道，由下方 reportLinksUpdate 负责）
+	publicIP := api.GetPublicIP()
+	resetHandler := api.NewResetHandler(cfgMgr, rt.singboxMgr, publicIP)
+
+	// 执行批量重置
+	if err := resetHandler.ResetMultiple(context.Background(), payload.Protocols); err != nil {
 		reply(CommandResult{Type: "result", Status: "error", Message: fmt.Sprintf("重置链接失败: %v", err)})
 		return
 	}
+
+	// 通过 WS 上报链接更新
+	rt.reportLinksUpdate(context.Background(), "reset", payload.Protocols)
+
 	if err := rt.refreshTunnelAfterCoreChange(payload.Tunnel, reply); err != nil {
 		reply(CommandResult{Type: "result", Status: "error", Message: err.Error()})
 		return
@@ -375,7 +1218,8 @@ func (rt *Runtime) executeResetLinks(cmd ServerCommand, reply func(CommandResult
 	reply(CommandResult{Type: "result", Status: "ok", Message: "重置链接完成"})
 }
 
-// executeReinstallSingbox 重新安装 sing-box（复用安装脚本，同样从 payload 读取协议）
+// executeReinstallSingbox 重新安装 sing-box
+// 使用内置安装器执行重装
 func (rt *Runtime) executeReinstallSingbox(cmd ServerCommand, reply func(CommandResult)) {
 	var payload struct {
 		Protocols []string          `json:"protocols"`
@@ -389,14 +1233,65 @@ func (rt *Runtime) executeReinstallSingbox(cmd ServerCommand, reply func(Command
 		return
 	}
 
-	scriptURL := rt.deriveScriptURL()
-	protoArgs := strings.Join(payload.Protocols, " ")
-	shellCmd := fmt.Sprintf(`export SKIP_AGENT_INSTALL=1; curl -fsSL "%s" | bash -s -- %s`, scriptURL, protoArgs)
+	// 确保 sing-box 管理器已初始化（Agent 负责管理 sing-box 完整生命周期）
+	rt.ensureSingboxManager()
 
-	if err := rt.runStreamingScript(shellCmd, "重新安装", reply); err != nil {
-		reply(CommandResult{Type: "result", Status: "error", Message: fmt.Sprintf("重新安装失败: %v", err)})
+	// 第一时间强制杀死 sing-box，释放所有端口
+	reply(CommandResult{Type: "progress", Stage: "强制停止 sing-box，释放端口..."})
+	rt.singboxMgr.ForceKill()
+
+	reply(CommandResult{Type: "progress", Stage: "使用内置管理器重新安装..."})
+
+	ctx := context.Background()
+
+	// 1. 重新下载 sing-box
+	reply(CommandResult{Type: "progress", Stage: "下载 sing-box..."})
+	installer := rt.singboxMgr.GetInstaller()
+	if err := installer.EnsureInstalled(ctx); err != nil {
+		reply(CommandResult{Type: "result", Status: "error", Message: fmt.Sprintf("下载 sing-box 失败: %v", err)})
 		return
 	}
+
+	// 2. 确保证书
+	reply(CommandResult{Type: "progress", Stage: "检查证书..."})
+	cfgMgr := rt.singboxMgr.GetConfigManager()
+	cfgMgr.EnsureCerts("nodectl-agent")
+
+	// 3. 更新协议配置
+	for _, proto := range payload.Protocols {
+		cfgMgr.Protocols.SetEnabled(proto, true)
+	}
+	cfgMgr.SaveToCache()
+
+	// 4. 端口冲突预检测
+	reply(CommandResult{Type: "progress", Stage: "检查端口冲突..."})
+	portConflicts := singbox.CheckPortConflicts(cfgMgr.Protocols, nil)
+	if len(portConflicts) > 0 {
+		for _, c := range portConflicts {
+			reply(CommandResult{Type: "progress", Stage: fmt.Sprintf("⚠️ 端口冲突: %s", c.Reason)})
+		}
+		reply(CommandResult{Type: "result", Status: "error", Message: fmt.Sprintf("重新安装失败: 检测到 %d 个端口冲突，请修改端口后重试", len(portConflicts))})
+		return
+	}
+
+	// 5. 生成配置并启动
+	reply(CommandResult{Type: "progress", Stage: "生成 sing-box 配置..."})
+	if err := cfgMgr.GenerateAndSave(); err != nil {
+		reply(CommandResult{Type: "result", Status: "error", Message: fmt.Sprintf("生成配置失败: %v", err)})
+		return
+	}
+	reply(CommandResult{Type: "progress", Stage: "启动 sing-box..."})
+	if err := rt.singboxMgr.StartAndVerify(ctx, 3*time.Second); err != nil {
+		log.Printf("[Agent] reinstall: sing-box 启动验证失败: %v", err)
+		reply(CommandResult{Type: "progress", Stage: fmt.Sprintf("❌ sing-box 启动失败: %v", err)})
+		reply(CommandResult{Type: "result", Status: "error", Message: fmt.Sprintf("sing-box 启动失败: %v", err)})
+		return
+	}
+	reply(CommandResult{Type: "progress", Stage: "sing-box 启动成功，进程运行正常"})
+
+	// 6. 上报链接更新
+	rt.reportLinksUpdate(ctx, "reinstall", payload.Protocols)
+
 	if err := rt.refreshTunnelAfterCoreChange(payload.Tunnel, reply); err != nil {
 		reply(CommandResult{Type: "result", Status: "error", Message: err.Error()})
 		return

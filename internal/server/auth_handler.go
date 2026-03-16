@@ -184,6 +184,8 @@ func indexHandler(w http.ResponseWriter, r *http.Request) {
 		if count > 0 {
 			displayName := strings.ToUpper(proto)
 			switch proto {
+			case "reality":
+				displayName = "Reality"
 			case "ss":
 				displayName = "Shadowsocks"
 			case "hy2":

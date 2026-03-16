@@ -11,7 +11,7 @@ import (
 
 // SupportedProtocols 定义系统支持的节点协议列表 (全局变量，供前端和逻辑使用)
 var SupportedProtocols = []string{
-	"vless", "hy2", "socks5", "tuic", "ss", "trojan",
+	"reality", "hy2", "socks5", "tuic", "ss", "trojan", "anytls",
 	"vmess_tcp", "vmess_ws", "vmess_http", "vmess_quic",
 	"vmess_wst", "vmess_hut",
 	"vless_wst", "vless_hut",
@@ -40,7 +40,7 @@ func initBasicSettings() {
 		{Key: "panel_url", Value: "", Description: "面板外部访问地址"},
 		{Key: "sub_token", Value: defaultToken, Description: "订阅访问 Token"},
 		// 初始化 Clash 分流规则的存储 Key
-		{Key: "clash_active_modules", Value: "", Description: "Clash 分流规则启用列表"},
+		{Key: "clash_active_modules", Value: "Telegram,Google,GoogleFCM,YouTube,Netflix,Twitter(X),GitHub,OpenAI,Spotify,Discord,Microsoft,TikTok", Description: "Clash 分流规则启用列表"},
 		{Key: "pref_use_emoji_flag", Value: "true", Description: "订阅节点是否添加国旗前缀"},
 		{Key: "pref_force_protocol_prefix", Value: "false", Description: "强制节点名称加上协议前缀"},
 		{Key: "sub_custom_name", Value: "NodeCTL", Description: "自定义订阅名称"},
@@ -54,6 +54,7 @@ func initBasicSettings() {
 		{Key: "clash_custom_modules", Value: "[]", Description: "用户自定义的 Clash 分流模块"},
 		{Key: "clash_custom_proxy_rules", Value: "[]", Description: "自定义分流策略组配置"},
 		{Key: "clash_custom_direct_raw", Value: "", Description: "自定义直连规则原始文本"},
+		{Key: "clash_custom_direct_icon", Value: "", Description: "自定义直连规则图标"},
 		{Key: "clash_proxies_update_interval", Value: "3600", Description: "Clash节点自动更新间隔(秒)"},
 		{Key: "clash_rules_update_interval", Value: "300", Description: "Clash私有规则自动更新间隔(秒)"},
 		{Key: "clash_public_rules_update_interval", Value: "86400", Description: "Clash公共规则自动更新间隔(秒)"},
@@ -69,7 +70,7 @@ func initBasicSettings() {
 		{Key: "pref_speed_test_file_size", Value: "50", Description: "节点测速文件大小(MB)"},
 		{Key: "pref_traffic_stats_retention_days", Value: "14", Description: "流量统计记录最长保留天数"},
 
-		{Key: "pref_traffic_point_persist_interval_sec", Value: "600", Description: "实时流量点数据落库间隔(秒)"},
+		{Key: "pref_traffic_point_persist_interval_sec", Value: "0", Description: "实时流量点数据落库间隔(秒)，0表示关闭"},
 		{Key: "auth_cookie_ttl_mode", Value: "3d", Description: "后台登录 Cookie 有效期选项(1d/3d/7d/never)"},
 		{Key: "login_ip_retry_window_sec", Value: "120", Description: "同IP登录失败计数窗口时长(秒)"},
 		{Key: "login_ip_max_retries", Value: "5", Description: "同IP登录失败最大重试次数"},
@@ -103,6 +104,10 @@ func initBasicSettings() {
 		{Key: "cf_ipopt_default_speed_url_id", Value: "", Description: "定时优选默认使用的测速地址ID"},
 		{Key: "cf_ipopt_manual_ips", Value: "[]", Description: "手动优选IP列表（JSON数组）"},
 		{Key: "cf_ipopt_manual_priority", Value: "disabled", Description: "手动优选IP优先级（disabled/preferred）"},
+		// Cloudflare Tunnel (cloudflared) 自动更新
+		{Key: "cf_tunnel_auto_update", Value: "false", Description: "是否启用 cloudflared 自动更新"},
+		// Cloudflare IP 优选 (CloudflareST) 自动更新
+		{Key: "cf_ipopt_auto_update", Value: "false", Description: "是否启用 CloudflareST 自动更新"},
 	}
 
 	for _, config := range defaultConfigs {
@@ -147,7 +152,7 @@ func initAuthSettings() {
 		// 存入密码哈希值
 		DB.Create(&SysConfig{Key: "admin_password", Value: string(hashedPassword), Description: "管理员密码(Bcrypt加密)"})
 
-		logger.Log.Warn("已创建默认管理员账号！", "用户名", "admin", "密码", "admin", "提示", "请登录后尽快修改！")
+		logger.ConsoleAndLog.Warn("已创建默认管理员账号！", "用户名", "admin", "密码", "admin", "提示", "请登录后尽快修改！")
 	}
 }
 
@@ -167,6 +172,8 @@ func initProxySettings() {
 		// 可配置 SNI（原先硬编码 www.bing.com）
 		{Key: "proxy_hy2_sni", Value: "www.bing.com", Description: "HY2 客户端 SNI 伪装域名"},
 		{Key: "proxy_tuic_sni", Value: "www.bing.com", Description: "TUIC 客户端 SNI 伪装域名"},
+		{Key: "proxy_trojan_sni", Value: "www.bing.com", Description: "Trojan 客户端 SNI 伪装域名"},
+		{Key: "proxy_reality_sni", Value: "addons.mozilla.org", Description: "Reality 伪装域名 (SNI)"},
 		// 系统优化选项
 		{Key: "proxy_enable_bbr", Value: "true", Description: "是否在安装时启用 BBR 内核加速"},
 		// VMess 协议族端口
@@ -188,6 +195,9 @@ func initProxySettings() {
 		{Key: "proxy_vmess_tls_sni", Value: "www.bing.com", Description: "VMess TLS 传输族默认客户端 SNI 伪装域名"},
 		{Key: "proxy_vless_tls_sni", Value: "learn.microsoft.com", Description: "VLESS TLS 传输族默认客户端 SNI 伪装域名"},
 		{Key: "proxy_trojan_tls_sni", Value: "www.bing.com", Description: "Trojan TLS 传输族默认客户端 SNI 伪装域名"},
+		// AnyTLS 协议配置
+		{Key: "proxy_port_anytls", Value: "20021", Description: "AnyTLS 默认监听端口"},
+		{Key: "proxy_anytls_sni", Value: "learn.microsoft.com", Description: "AnyTLS 客户端 SNI 伪装域名"},
 	}
 
 	for _, config := range defaultConfigs {
