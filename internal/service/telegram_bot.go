@@ -774,6 +774,12 @@ func OnNodeConnectionStatusChanged(installID string, online bool) {
 		return
 	}
 
+	// 防御性校验：若当前仍有活跃连接，则忽略过期连接触发的离线事件。
+	if !online && IsNodeOnline(installID) {
+		logger.Log.Debug("忽略离线状态变更：节点仍有活跃 Agent WS 连接", "install_id", installID)
+		return
+	}
+
 	StartOfflineNotifyLoop()
 	now := time.Now()
 

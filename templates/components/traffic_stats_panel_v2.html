@@ -941,9 +941,25 @@
                     if (msg.node_uuid) {
                         const nowMs = Date.now();
                         const prevLive = state.liveRates[msg.node_uuid] || {};
+                        const incomingOffline = (typeof msg.offline === 'boolean') ? msg.offline : null;
+                        let nextRXRate = Number(msg.rx_rate_bps || 0);
+                        let nextTXRate = Number(msg.tx_rate_bps || 0);
+
+                        // If backend briefly reports offline+0 while we just had live rates, keep
+                        // previous rates for a short window to avoid 0/non-0 oscillation.
+                        if (incomingOffline === true && nextRXRate <= 0 && nextTXRate <= 0) {
+                            const prevUpdatedAtMs = Number(prevLive.updated_at_ms || 0);
+                            const prevHasPositiveRate =
+                                Number(prevLive.rx_rate_bps || 0) > 0 || Number(prevLive.tx_rate_bps || 0) > 0;
+                            if (prevHasPositiveRate && prevUpdatedAtMs > 0 && (nowMs - prevUpdatedAtMs) <= OFFLINE_FLICKER_GUARD_MS) {
+                                nextRXRate = Number(prevLive.rx_rate_bps || 0);
+                                nextTXRate = Number(prevLive.tx_rate_bps || 0);
+                            }
+                        }
+
                         state.liveRates[msg.node_uuid] = {
-                            rx_rate_bps: msg.rx_rate_bps || 0,
-                            tx_rate_bps: msg.tx_rate_bps || 0,
+                            rx_rate_bps: nextRXRate,
+                            tx_rate_bps: nextTXRate,
                             last_live_at: msg.last_live_at || prevLive.last_live_at || 0,
                             updated_at_ms: nowMs
                         };

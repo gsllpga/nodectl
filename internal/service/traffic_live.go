@@ -435,8 +435,14 @@ func (h *TrafficHub) bindAgentConnection(conn *websocket.Conn, installID, client
 
 	*agentInstallID = installID
 	h.agentMu.Lock()
+	prevConn := h.agentConns[installID]
 	h.agentConns[installID] = conn
 	h.agentMu.Unlock()
+
+	// 如果同一节点已有旧连接，主动关闭旧连接，避免并发双连接导致状态抖动。
+	if prevConn != nil && prevConn != conn {
+		_ = prevConn.Close(websocket.StatusPolicyViolation, "superseded by newer connection")
+	}
 	OnNodeConnectionStatusChanged(installID, true)
 
 	nodeName := h.resolveNodeNameByInstallID(installID)
@@ -452,6 +458,24 @@ func (h *TrafficHub) bindAgentConnection(conn *websocket.Conn, installID, client
 		"install_id", installID,
 		"node_name", nodeName,
 	)
+	return true
+}
+
+func (h *TrafficHub) unbindAgentConnectionIfCurrent(conn *websocket.Conn, installID string) bool {
+	installID = strings.TrimSpace(installID)
+	if installID == "" || conn == nil {
+		return false
+	}
+
+	h.agentMu.Lock()
+	defer h.agentMu.Unlock()
+
+	curr, ok := h.agentConns[installID]
+	if !ok || curr != conn {
+		return false
+	}
+
+	delete(h.agentConns, installID)
 	return true
 }
 
@@ -504,12 +528,17 @@ func HandleAgentWS(w http.ResponseWriter, r *http.Request) {
 			} else {
 				logger.Log.Debug("Agent WS 读取异常，连接已断开", "error", err, "ip", clientIP, "install_id", agentInstallID, "node_name", nodeName)
 			}
-			// 注销 Agent 连接
+			// 注销 Agent 连接（仅当当前连接仍是 install_id 的活跃连接时才执行）。
 			if agentInstallID != "" {
-				hub.agentMu.Lock()
-				delete(hub.agentConns, agentInstallID)
-				hub.agentMu.Unlock()
-				OnNodeConnectionStatusChanged(agentInstallID, false)
+				if hub.unbindAgentConnectionIfCurrent(conn, agentInstallID) {
+					OnNodeConnectionStatusChanged(agentInstallID, false)
+				} else {
+					logger.Log.Debug("Agent WS 断开为过期连接，忽略离线事件",
+						"ip", clientIP,
+						"install_id", agentInstallID,
+						"node_name", nodeName,
+					)
+				}
 			}
 			return
 		}
