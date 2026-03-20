@@ -6,6 +6,8 @@ import (
 	"encoding/hex"
 	"fmt"
 	"math"
+	"net"
+	"net/http"
 	"net/url"
 	"strconv"
 	"strings"
@@ -16,6 +18,7 @@ import (
 	"nodectl/internal/logger"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
+	"golang.org/x/net/proxy"
 )
 
 var (
@@ -344,6 +347,120 @@ func parseTGNotifyUsers(raw string) []int64 {
 	return out
 }
 
+type tgBotSocks5Config struct {
+	Enabled bool
+	Addr    string
+	User    string
+	Pass    string
+}
+
+func loadTGBotSocks5Config() (tgBotSocks5Config, error) {
+	keys := []string{
+		"tg_bot_socks5_enabled",
+		"tg_bot_socks5_addr",
+		"tg_bot_socks5_user",
+		"tg_bot_socks5_pass",
+	}
+	var cfgList []database.SysConfig
+	if err := database.DB.Where("key IN ?", keys).Find(&cfgList).Error; err != nil {
+		return tgBotSocks5Config{}, err
+	}
+
+	cfg := tgBotSocks5Config{}
+	for _, item := range cfgList {
+		v := strings.TrimSpace(item.Value)
+		switch item.Key {
+		case "tg_bot_socks5_enabled":
+			cfg.Enabled = strings.EqualFold(v, "true")
+		case "tg_bot_socks5_addr":
+			cfg.Addr = v
+		case "tg_bot_socks5_user":
+			cfg.User = v
+		case "tg_bot_socks5_pass":
+			cfg.Pass = v
+		}
+	}
+	return cfg, nil
+}
+
+func newTelegramBotAPI(token string) (*tgbotapi.BotAPI, error) {
+	proxyCfg, err := loadTGBotSocks5Config()
+	if err != nil {
+		return nil, fmt.Errorf("读取 TG Bot Socks5 配置失败: %w", err)
+	}
+
+	if !proxyCfg.Enabled {
+		return tgbotapi.NewBotAPI(token)
+	}
+
+	addr := strings.TrimSpace(proxyCfg.Addr)
+	if addr == "" {
+		return nil, fmt.Errorf("tg_bot_socks5_addr 为空，无法使用代理")
+	}
+
+	// 支持填写 host:port 或 socks5://user:pass@host:port
+	if strings.Contains(addr, "://") {
+		u, parseErr := url.Parse(addr)
+		if parseErr != nil {
+			return nil, fmt.Errorf("解析 tg_bot_socks5_addr 失败: %w", parseErr)
+		}
+		if u.Scheme != "socks5" && u.Scheme != "socks5h" {
+			return nil, fmt.Errorf("tg_bot_socks5_addr 协议必须是 socks5 或 socks5h")
+		}
+		if strings.TrimSpace(u.Host) == "" {
+			return nil, fmt.Errorf("tg_bot_socks5_addr 缺少 host:port")
+		}
+		addr = strings.TrimSpace(u.Host)
+		if proxyCfg.User == "" && u.User != nil {
+			proxyCfg.User = u.User.Username()
+			if p, ok := u.User.Password(); ok {
+				proxyCfg.Pass = p
+			}
+		}
+	}
+
+	if !strings.Contains(addr, ":") {
+		return nil, fmt.Errorf("tg_bot_socks5_addr 必须包含 host:port")
+	}
+
+	var auth *proxy.Auth
+	if proxyCfg.User != "" || proxyCfg.Pass != "" {
+		auth = &proxy.Auth{
+			User:     proxyCfg.User,
+			Password: proxyCfg.Pass,
+		}
+	}
+
+	baseDialer := &net.Dialer{
+		Timeout:   15 * time.Second,
+		KeepAlive: 30 * time.Second,
+	}
+	socksDialer, err := proxy.SOCKS5("tcp", addr, auth, baseDialer)
+	if err != nil {
+		return nil, fmt.Errorf("创建 socks5 拨号器失败: %w", err)
+	}
+
+	transport := &http.Transport{
+		DialContext: func(ctx context.Context, network, address string) (net.Conn, error) {
+			if d, ok := socksDialer.(proxy.ContextDialer); ok {
+				return d.DialContext(ctx, network, address)
+			}
+			return socksDialer.Dial(network, address)
+		},
+		ForceAttemptHTTP2:     true,
+		MaxIdleConns:          100,
+		IdleConnTimeout:       90 * time.Second,
+		TLSHandshakeTimeout:   10 * time.Second,
+		ExpectContinueTimeout: 1 * time.Second,
+	}
+
+	client := &http.Client{
+		Transport: transport,
+		Timeout:   70 * time.Second,
+	}
+	return tgbotapi.NewBotAPIWithClient(token, tgbotapi.APIEndpoint, client)
+}
+
 func sendNodeStatusNotification(nodeName string, online bool, eventTime time.Time) bool {
 	keys := []string{"tg_bot_enabled", "tg_bot_token", "tg_bot_whitelist"}
 	var cfgList []database.SysConfig
@@ -375,7 +492,7 @@ func sendNodeStatusNotification(nodeName string, online bool, eventTime time.Tim
 		return false
 	}
 
-	bot, err := tgbotapi.NewBotAPI(token)
+	bot, err := newTelegramBotAPI(token)
 	if err != nil {
 		logger.Log.Warn("初始化 TG Bot 失败，无法发送节点状态通知", "error", err)
 		return false
@@ -479,7 +596,7 @@ func SendAdminLoginNotification(username, loginIP string, loginTime time.Time, s
 		return false
 	}
 
-	bot, err := tgbotapi.NewBotAPI(token)
+	bot, err := newTelegramBotAPI(token)
 	if err != nil {
 		logger.Log.Warn("初始化 TG Bot 失败，无法发送登录通知", "error", err)
 		return false
@@ -558,7 +675,7 @@ func SendBatchSpeedTestNotification(subName, taskKey, status string, totalCount,
 		return false
 	}
 
-	bot, err := tgbotapi.NewBotAPI(token)
+	bot, err := newTelegramBotAPI(token)
 	if err != nil {
 		logger.Log.Warn("初始化 TG Bot 失败，无法发送测速通知", "error", err)
 		return false
@@ -625,7 +742,7 @@ func SendThresholdStopNotification(nodeName string, thresholdPercent int, usedBy
 		return false
 	}
 
-	bot, err := tgbotapi.NewBotAPI(token)
+	bot, err := newTelegramBotAPI(token)
 	if err != nil {
 		logger.Log.Warn("初始化 TG Bot 失败，无法发送阈值停机通知", "error", err)
 		return false
@@ -654,6 +771,12 @@ func SendThresholdStopNotification(nodeName string, thresholdPercent int, usedBy
 func OnNodeConnectionStatusChanged(installID string, online bool) {
 	installID = strings.TrimSpace(installID)
 	if installID == "" {
+		return
+	}
+
+	// 防御性校验：若当前仍有活跃连接，则忽略过期连接触发的离线事件。
+	if !online && IsNodeOnline(installID) {
+		logger.Log.Debug("忽略离线状态变更：节点仍有活跃 Agent WS 连接", "install_id", installID)
 		return
 	}
 
@@ -779,7 +902,7 @@ func runTelegramBot(ctx context.Context) {
 		return
 	}
 
-	bot, err := tgbotapi.NewBotAPI(token)
+	bot, err := newTelegramBotAPI(token)
 	if err != nil {
 		logger.Log.Error("Telegram Bot 初始化失败", "error", err)
 		return

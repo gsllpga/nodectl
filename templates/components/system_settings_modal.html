@@ -856,6 +856,28 @@
         margin-bottom: 0;
     }
 
+    .sys-collapse-toggle {
+        width: 100%;
+        border: 1px dashed #c8d8ef;
+        border-radius: 8px;
+        background: #f4f8ff;
+        color: #334155;
+        font-size: 12px;
+        font-weight: 600;
+        padding: 8px 10px;
+        text-align: left;
+        cursor: pointer;
+    }
+
+    .sys-collapse-panel {
+        display: none;
+        margin-top: 8px;
+        border: 1px dashed #d8e4f7;
+        border-radius: 8px;
+        background: #fcfeff;
+        padding: 10px;
+    }
+
     .sys-pref-info {
         display: flex;
         flex-direction: column;
@@ -2254,6 +2276,59 @@
                                     onchange="triggerSysAutoSave()" />
                                 <span class="sys-toggle-slider"></span>
                             </label>
+                        </div>
+
+                        <div class="sys-field" style="margin-top: 8px; margin-bottom: 0">
+                            <button type="button" id="sysTgProxyCollapseBtn" class="sys-collapse-toggle"
+                                onclick="toggleTgProxyPanel()">
+                                TG Bot 代理（点击展开）
+                            </button>
+                            <div id="sysTgProxyCollapsePanel" class="sys-collapse-panel">
+                                <div class="sys-pref-row" style="align-items: center">
+                                    <div class="sys-pref-info">
+                                        <span class="sys-pref-title" style="display: flex; align-items: center; gap: 4px">
+                                            启用 Socks5 代理
+                                            <div class="sys-info-tooltip-wrap" tabindex="0">
+                                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none"
+                                                    stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                                                    stroke-linejoin="round">
+                                                    <circle cx="12" cy="12" r="10"></circle>
+                                                    <line x1="12" y1="8" x2="12" y2="12"></line>
+                                                    <line x1="12" y1="16" x2="12.01" y2="16"></line>
+                                                </svg>
+                                                <div class="sys-tooltip-content">
+                                                    开启后，TG Bot 的消息收发会走独立 Socks5 代理，不依赖系统全局代理环境。
+                                                </div>
+                                            </div>
+                                        </span>
+                                    </div>
+                                    <label class="sys-toggle-switch">
+                                        <input type="checkbox" id="sys_tg_bot_socks5_enabled"
+                                            onchange="triggerSysAutoSave()" />
+                                        <span class="sys-toggle-slider"></span>
+                                    </label>
+                                </div>
+
+                                <div class="sys-field">
+                                    <label class="sys-label">Socks5 地址</label>
+                                    <input type="text" id="sys_tg_bot_socks5_addr" class="sys-input"
+                                        placeholder="例如: 127.0.0.1:1080 或 socks5://user:pass@127.0.0.1:1080"
+                                        oninput="triggerSysAutoSave()" />
+                                </div>
+
+                                <div style="display: flex; gap: 10px; flex-wrap: wrap">
+                                    <div style="flex: 1; min-width: 220px">
+                                        <label class="sys-label">代理用户名 (可选)</label>
+                                        <input type="text" id="sys_tg_bot_socks5_user" class="sys-input"
+                                            placeholder="例如: myuser" oninput="triggerSysAutoSave()" />
+                                    </div>
+                                    <div style="flex: 1; min-width: 220px">
+                                        <label class="sys-label">代理密码 (可选)</label>
+                                        <input type="password" id="sys_tg_bot_socks5_pass" class="sys-input"
+                                            placeholder="如无需认证可留空" oninput="triggerSysAutoSave()" />
+                                    </div>
+                                </div>
+                            </div>
                         </div>
                     </div>
 
@@ -3875,6 +3950,20 @@
         commandRow.style.display = enabledEl.checked ? "flex" : "none";
     }
 
+    function toggleTgProxyPanel(forceExpand = null) {
+        const panel = document.getElementById("sysTgProxyCollapsePanel");
+        const btn = document.getElementById("sysTgProxyCollapseBtn");
+        if (!panel || !btn) return;
+
+        const shouldExpand =
+            forceExpand === null ? panel.style.display === "none" : !!forceExpand;
+
+        panel.style.display = shouldExpand ? "block" : "none";
+        btn.textContent = shouldExpand
+            ? "TG Bot 代理（点击收起）"
+            : "TG Bot 代理（点击展开）";
+    }
+
     // 功能：拉取所有后端设置，并渲染到表单和证书状态 UI 中
     async function loadAllSystemSettings() {
         try {
@@ -3955,6 +4044,15 @@
                     "sys_tg_bot_register_commands",
                 ).checked = data.tg_bot_register_commands === "true";
                 document.getElementById(
+                    "sys_tg_bot_socks5_enabled",
+                ).checked = parseSysBool(data.tg_bot_socks5_enabled, false);
+                document.getElementById("sys_tg_bot_socks5_addr").value =
+                    data.tg_bot_socks5_addr || "";
+                document.getElementById("sys_tg_bot_socks5_user").value =
+                    data.tg_bot_socks5_user || "";
+                document.getElementById("sys_tg_bot_socks5_pass").value =
+                    data.tg_bot_socks5_pass || "";
+                document.getElementById(
                     "sys_tg_speedtest_notify_enabled",
                 ).checked = parseSysBool(
                     data.tg_speedtest_notify_enabled,
@@ -3980,6 +4078,7 @@
                     ? loginNotifyMode
                     : "off";
                 updateTgBotSettingsVisibility();
+                toggleTgProxyPanel(false);
 
                 // 解析白名单并渲染
                 const wListStr = data.tg_bot_whitelist || "";
@@ -4901,6 +5000,20 @@
                 ).checked
                     ? "true"
                     : "false",
+                tg_bot_socks5_enabled: document.getElementById(
+                    "sys_tg_bot_socks5_enabled",
+                ).checked
+                    ? "true"
+                    : "false",
+                tg_bot_socks5_addr: document
+                    .getElementById("sys_tg_bot_socks5_addr")
+                    .value.trim(),
+                tg_bot_socks5_user: document
+                    .getElementById("sys_tg_bot_socks5_user")
+                    .value.trim(),
+                tg_bot_socks5_pass: document
+                    .getElementById("sys_tg_bot_socks5_pass")
+                    .value,
                 tg_login_notify_mode: document.getElementById(
                     "sys_tg_login_notify_mode",
                 ).value,

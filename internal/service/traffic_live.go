@@ -406,6 +406,79 @@ func (h *TrafficHub) resolveNodeNameByIP(ip string) string {
 	return strings.TrimSpace(node.Name)
 }
 
+func (h *TrafficHub) bindAgentConnection(conn *websocket.Conn, installID, clientIP string, agentInstallID *string) bool {
+	installID = strings.TrimSpace(installID)
+	if installID == "" {
+		return false
+	}
+
+	// One WS connection can only map to one install_id.
+	if *agentInstallID != "" && *agentInstallID != installID {
+		logger.Log.Warn("Agent WS install_id mismatch，连接已拒绝",
+			"ip", clientIP,
+			"current_install_id", *agentInstallID,
+			"incoming_install_id", installID,
+		)
+		_ = conn.Close(websocket.StatusPolicyViolation, "install_id mismatch")
+		return false
+	}
+
+	if *agentInstallID != "" {
+		return true
+	}
+
+	if !IsValidInstallID(installID) {
+		logger.Log.Debug("Agent WS install_id 无效，连接已拒绝", "ip", clientIP, "install_id", installID)
+		_ = conn.Close(websocket.StatusPolicyViolation, "unknown node")
+		return false
+	}
+
+	*agentInstallID = installID
+	h.agentMu.Lock()
+	prevConn := h.agentConns[installID]
+	h.agentConns[installID] = conn
+	h.agentMu.Unlock()
+
+	// 如果同一节点已有旧连接，主动关闭旧连接，避免并发双连接导致状态抖动。
+	if prevConn != nil && prevConn != conn {
+		_ = prevConn.Close(websocket.StatusPolicyViolation, "superseded by newer connection")
+	}
+	OnNodeConnectionStatusChanged(installID, true)
+
+	nodeName := h.resolveNodeNameByInstallID(installID)
+	if nodeName == "" {
+		nodeName = h.resolveNodeNameByIP(clientIP)
+	}
+	if nodeName == "" {
+		nodeName = installID
+	}
+
+	logger.Log.Info(fmt.Sprintf("Agent WS 握手成功，节点 %s Agent WS 已连接", nodeName),
+		"ip", clientIP,
+		"install_id", installID,
+		"node_name", nodeName,
+	)
+	return true
+}
+
+func (h *TrafficHub) unbindAgentConnectionIfCurrent(conn *websocket.Conn, installID string) bool {
+	installID = strings.TrimSpace(installID)
+	if installID == "" || conn == nil {
+		return false
+	}
+
+	h.agentMu.Lock()
+	defer h.agentMu.Unlock()
+
+	curr, ok := h.agentConns[installID]
+	if !ok || curr != conn {
+		return false
+	}
+
+	delete(h.agentConns, installID)
+	return true
+}
+
 // ============================================================
 //  Agent 上报处理 (WS Server Handler)
 // ============================================================
@@ -426,8 +499,6 @@ func HandleAgentWS(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer conn.Close(websocket.StatusNormalClosure, "connection closed")
-
-	logger.Log.Info("Agent WS 握手成功，等待身份识别", "ip", clientIP)
 
 	ctx := r.Context()
 
@@ -455,14 +526,19 @@ func HandleAgentWS(w http.ResponseWriter, r *http.Request) {
 			} else if errors.Is(err, context.DeadlineExceeded) || strings.Contains(strings.ToLower(err.Error()), "context deadline exceeded") {
 				logger.Log.Info("Agent WS 读超时，判定离线", "error", err, "ip", clientIP, "install_id", agentInstallID, "node_name", nodeName, "read_timeout", agentReadTimeout.String())
 			} else {
-				logger.Log.Warn("Agent WS 读取异常（可能静默离线）", "error", err, "ip", clientIP, "install_id", agentInstallID, "node_name", nodeName)
+				logger.Log.Debug("Agent WS 读取异常，连接已断开", "error", err, "ip", clientIP, "install_id", agentInstallID, "node_name", nodeName)
 			}
-			// 注销 Agent 连接
+			// 注销 Agent 连接（仅当当前连接仍是 install_id 的活跃连接时才执行）。
 			if agentInstallID != "" {
-				hub.agentMu.Lock()
-				delete(hub.agentConns, agentInstallID)
-				hub.agentMu.Unlock()
-				OnNodeConnectionStatusChanged(agentInstallID, false)
+				if hub.unbindAgentConnectionIfCurrent(conn, agentInstallID) {
+					OnNodeConnectionStatusChanged(agentInstallID, false)
+				} else {
+					logger.Log.Debug("Agent WS 断开为过期连接，忽略离线事件",
+						"ip", clientIP,
+						"install_id", agentInstallID,
+						"node_name", nodeName,
+					)
+				}
 			}
 			return
 		}
@@ -518,29 +594,11 @@ func HandleAgentWS(w http.ResponseWriter, r *http.Request) {
 		}
 
 		// 硬核校验：如果内存名单里根本没有这个节点（被删的孤儿），直接挂断不接客，并且不刷屏
-		if !IsValidInstallID(installID) {
-			conn.Close(websocket.StatusPolicyViolation, "unknown node")
+		if !hub.bindAgentConnection(conn, installID, clientIP, &agentInstallID) {
 			return
 		}
 
-		// 首次识别到 install_id 时注册连接
-		if agentInstallID == "" {
-			agentInstallID = installID
-			hub.agentMu.Lock()
-			hub.agentConns[installID] = conn
-			hub.agentMu.Unlock()
-			OnNodeConnectionStatusChanged(agentInstallID, true)
-
-			nodeName := hub.resolveNodeNameByInstallID(installID)
-			if nodeName == "" {
-				nodeName = hub.resolveNodeNameByIP(clientIP)
-			}
-			logger.Log.Info("Agent WS 已连接",
-				"ip", clientIP,
-				"install_id", installID,
-				"node_name", nodeName,
-			)
-		}
+		// install_id 绑定与连接注册由 bindAgentConnection 统一处理
 
 		// 解析 node_uuid，因为前边硬核校验过了，此时必定有缓存或能查到数据库
 		nodeUUID := hub.resolveNodeUUID(installID)
@@ -1181,29 +1239,8 @@ func (h *TrafficHub) handleNewMessageType(data []byte, msgType string, clientIP 
 		return
 	}
 
-	// 安全检查：验证 install_id 是否有效
-	if !IsValidInstallID(installID) {
-		logger.Log.Warn("WS 新消息 install_id 无效", "type", msgType, "install_id", installID, "ip", clientIP)
+	if !h.bindAgentConnection(conn, installID, clientIP, agentInstallID) {
 		return
-	}
-
-	// 首次识别到 install_id 时注册连接
-	if *agentInstallID == "" {
-		*agentInstallID = installID
-		h.agentMu.Lock()
-		h.agentConns[installID] = conn
-		h.agentMu.Unlock()
-		OnNodeConnectionStatusChanged(installID, true)
-
-		nodeName := h.resolveNodeNameByInstallID(installID)
-		if nodeName == "" {
-			nodeName = h.resolveNodeNameByIP(clientIP)
-		}
-		logger.Log.Info("Agent WS 已连接",
-			"ip", clientIP,
-			"install_id", installID,
-			"node_name", nodeName,
-		)
 	}
 
 	// 根据消息类型分发处理

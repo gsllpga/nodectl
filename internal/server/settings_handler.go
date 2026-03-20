@@ -35,7 +35,7 @@ func apiGetSettings(w http.ResponseWriter, r *http.Request) {
 		"proxy_port_socks5", "proxy_socks5_user", "proxy_socks5_pass", "proxy_socks5_random_auth", "pref_use_emoji_flag", "pref_force_protocol_prefix", "sub_custom_name", "pref_ip_strategy", "pref_default_install_protocols",
 		"sys_log_level", "airport_filter_invalid", "pref_speed_test_file_size", "pref_traffic_stats_retention_days", "pref_traffic_point_persist_interval_sec",
 		"auth_cookie_ttl_mode",
-		"tg_bot_enabled", "tg_bot_token", "tg_bot_whitelist", "tg_bot_register_commands", "tg_login_notify_mode", "tg_speedtest_notify_enabled", "tg_threshold_stop_notify_enabled", "clash_proxies_update_interval", "clash_rules_update_interval", "clash_public_rules_update_interval",
+		"tg_bot_enabled", "tg_bot_token", "tg_bot_whitelist", "tg_bot_register_commands", "tg_bot_socks5_enabled", "tg_bot_socks5_addr", "tg_bot_socks5_user", "tg_bot_socks5_pass", "tg_login_notify_mode", "tg_speedtest_notify_enabled", "tg_threshold_stop_notify_enabled", "clash_proxies_update_interval", "clash_rules_update_interval", "clash_public_rules_update_interval",
 		"geo_auto_update", "mihomo_auto_update", "agent_startup_silent_update_enabled", "agent_ws_push_interval_sec",
 		"cf_tunnel_auto_update", "cf_ipopt_auto_update",
 		// 新增协议与内核优化配置
@@ -56,7 +56,7 @@ func apiGetSettings(w http.ResponseWriter, r *http.Request) {
 
 	data := make(map[string]string)
 	for _, c := range configs {
-		if (c.Key == "cf_api_key" || c.Key == "tg_bot_token") && c.Value != "" {
+		if (c.Key == "cf_api_key" || c.Key == "tg_bot_token" || c.Key == "tg_bot_socks5_pass") && c.Value != "" {
 			data[c.Key] = "********"
 		} else {
 			data[c.Key] = c.Value
@@ -95,7 +95,9 @@ func apiUpdateSettings(w http.ResponseWriter, r *http.Request) {
 		"sys_log_level":          true,
 		"airport_filter_invalid": true, "pref_speed_test_file_size": true, "pref_traffic_stats_retention_days": true, "pref_traffic_point_persist_interval_sec": true,
 		"auth_cookie_ttl_mode": true,
-		"tg_bot_enabled":       true, "tg_bot_token": true, "tg_bot_whitelist": true, "tg_bot_register_commands": true, "tg_login_notify_mode": true, "tg_speedtest_notify_enabled": true, "tg_threshold_stop_notify_enabled": true,
+		"tg_bot_enabled":       true, "tg_bot_token": true, "tg_bot_whitelist": true, "tg_bot_register_commands": true,
+		"tg_bot_socks5_enabled": true, "tg_bot_socks5_addr": true, "tg_bot_socks5_user": true, "tg_bot_socks5_pass": true,
+		"tg_login_notify_mode": true, "tg_speedtest_notify_enabled": true, "tg_threshold_stop_notify_enabled": true,
 		"clash_proxies_update_interval": true, "clash_rules_update_interval": true, "clash_public_rules_update_interval": true,
 		"geo_auto_update": true, "mihomo_auto_update": true, "agent_startup_silent_update_enabled": true, "agent_ws_push_interval_sec": true,
 		"cf_tunnel_auto_update": true, "cf_ipopt_auto_update": true,
@@ -124,7 +126,7 @@ func apiUpdateSettings(w http.ResponseWriter, r *http.Request) {
 	changedDetails := make([]string, 0)
 
 	maskValue := func(key, val string) string {
-		if key == "cf_api_key" || key == "tg_bot_token" {
+		if key == "cf_api_key" || key == "tg_bot_token" || key == "tg_bot_socks5_pass" {
 			if val == "" {
 				return "<empty>"
 			}
@@ -138,7 +140,7 @@ func apiUpdateSettings(w http.ResponseWriter, r *http.Request) {
 
 	for k, v := range req {
 		if validKeys[k] {
-			if (k == "cf_api_key" || k == "tg_bot_token") && v == "********" {
+			if (k == "cf_api_key" || k == "tg_bot_token" || k == "tg_bot_socks5_pass") && v == "********" {
 				continue
 			}
 
@@ -244,7 +246,8 @@ func apiUpdateSettings(w http.ResponseWriter, r *http.Request) {
 				continue
 			}
 
-			if k == "tg_bot_enabled" || k == "tg_bot_token" || k == "tg_bot_whitelist" || k == "tg_bot_register_commands" {
+			if k == "tg_bot_enabled" || k == "tg_bot_token" || k == "tg_bot_whitelist" || k == "tg_bot_register_commands" ||
+				k == "tg_bot_socks5_enabled" || k == "tg_bot_socks5_addr" || k == "tg_bot_socks5_user" || k == "tg_bot_socks5_pass" {
 				if oldConfig.Value != v {
 					needRestartTgBot = true
 				}

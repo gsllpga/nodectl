@@ -16,7 +16,7 @@ import (
 )
 
 const (
-	agentStartupCheckDelay  = 15 * time.Second
+	agentStartupCheckDelay  = 60 * time.Second
 	agentStartupCheckWindow = 60 * time.Second
 )
 

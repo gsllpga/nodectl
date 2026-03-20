@@ -666,6 +666,7 @@
         const RANK_VISIBLE_COUNT_DESKTOP = 10;
         const RANK_VISIBLE_COUNT_MOBILE = 6;
         const RANK_REQUEST_LIMIT = 200;
+        const OFFLINE_FLICKER_GUARD_MS = 12000;
 
         const state = {
             nodes: [],
@@ -885,7 +886,44 @@
             if (nodeUUID === state.selectedNodeUUID) updateSelectedBadge();
         }
 
-        // 连接实时流量 WebSocket
+        // Guard against transient offline flips while live traffic is still arriving.
+        function hasRecentLiveSignal(nodeUUID, nowMs) {
+            const live = state.liveRates[nodeUUID];
+            if (live) {
+                const updatedAtMs = Number(live.updated_at_ms || 0);
+                if (updatedAtMs > 0 && (nowMs - updatedAtMs) <= OFFLINE_FLICKER_GUARD_MS) {
+                    return true;
+                }
+
+                const liveLastAtMs = Number(live.last_live_at || 0) * 1000;
+                if (liveLastAtMs > 0 && (nowMs - liveLastAtMs) <= OFFLINE_FLICKER_GUARD_MS) {
+                    return true;
+                }
+
+                if (Number(live.rx_rate_bps || 0) > 0 || Number(live.tx_rate_bps || 0) > 0) {
+                    return true;
+                }
+            }
+
+            const status = state.nodeStatus[nodeUUID];
+            if (status) {
+                const statusLastAtMs = Number(status.last_live_at || 0) * 1000;
+                if (statusLastAtMs > 0 && (nowMs - statusLastAtMs) <= OFFLINE_FLICKER_GUARD_MS) {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        function isNodeOffline(nodeUUID, fallbackOffline) {
+            const status = state.nodeStatus[nodeUUID];
+            const rawOffline = status ? !!status.offline : !!fallbackOffline;
+            if (!rawOffline) return false;
+            return !hasRecentLiveSignal(nodeUUID, Date.now());
+        }
+
+        // Connect live traffic websocket.
         function connectLiveWS() {
             if (state.liveWs) {
                 try { state.liveWs.close(); } catch (e) { }
@@ -901,10 +939,29 @@
                 try {
                     const msg = JSON.parse(evt.data);
                     if (msg.node_uuid) {
+                        const nowMs = Date.now();
+                        const prevLive = state.liveRates[msg.node_uuid] || {};
+                        const incomingOffline = (typeof msg.offline === 'boolean') ? msg.offline : null;
+                        let nextRXRate = Number(msg.rx_rate_bps || 0);
+                        let nextTXRate = Number(msg.tx_rate_bps || 0);
+
+                        // If backend briefly reports offline+0 while we just had live rates, keep
+                        // previous rates for a short window to avoid 0/non-0 oscillation.
+                        if (incomingOffline === true && nextRXRate <= 0 && nextTXRate <= 0) {
+                            const prevUpdatedAtMs = Number(prevLive.updated_at_ms || 0);
+                            const prevHasPositiveRate =
+                                Number(prevLive.rx_rate_bps || 0) > 0 || Number(prevLive.tx_rate_bps || 0) > 0;
+                            if (prevHasPositiveRate && prevUpdatedAtMs > 0 && (nowMs - prevUpdatedAtMs) <= OFFLINE_FLICKER_GUARD_MS) {
+                                nextRXRate = Number(prevLive.rx_rate_bps || 0);
+                                nextTXRate = Number(prevLive.tx_rate_bps || 0);
+                            }
+                        }
+
                         state.liveRates[msg.node_uuid] = {
-                            rx_rate_bps: msg.rx_rate_bps || 0,
-                            tx_rate_bps: msg.tx_rate_bps || 0,
-                            last_live_at: msg.last_live_at || 0
+                            rx_rate_bps: nextRXRate,
+                            tx_rate_bps: nextTXRate,
+                            last_live_at: msg.last_live_at || prevLive.last_live_at || 0,
+                            updated_at_ms: nowMs
                         };
                         if (typeof msg.total_rx_bytes === 'number' && typeof msg.total_tx_bytes === 'number') {
                             state.liveTotals[msg.node_uuid] = {
@@ -916,9 +973,11 @@
                             scheduleRankRerender();
                         }
                         if (typeof msg.offline === 'boolean') {
+                            const prevStatus = state.nodeStatus[msg.node_uuid] || {};
                             state.nodeStatus[msg.node_uuid] = {
                                 offline: msg.offline,
-                                last_live_at: msg.last_live_at || 0
+                                last_live_at: msg.last_live_at || prevStatus.last_live_at || 0,
+                                updated_at_ms: nowMs
                             };
                         }
                         // 仅更新该节点的速率文字和离线状态，不整体重渲染
@@ -942,8 +1001,7 @@
             const el = document.querySelector('.ts-rank-item[data-uuid="' + nodeUUID + '"]');
             if (!el) return;
 
-            const nodeStatus = state.nodeStatus[nodeUUID];
-            const offline = nodeStatus ? !!nodeStatus.offline : false;
+            const offline = isNodeOffline(nodeUUID, false);
             el.classList.toggle('offline', offline);
 
             const rateEl = el.querySelector('.ts-live-rate');
@@ -1054,9 +1112,11 @@
 
             const items = (state.rank && Array.isArray(state.rank.items)) ? state.rank.items : [];
             items.forEach(it => {
+                const prevStatus = state.nodeStatus[it.uuid] || {};
                 state.nodeStatus[it.uuid] = {
                     offline: !!it.offline,
-                    last_live_at: 0
+                    last_live_at: Number(prevStatus.last_live_at || 0),
+                    updated_at_ms: Number(prevStatus.updated_at_ms || 0)
                 };
                 if (it.today_total_bytes === undefined || it.today_total_bytes === null) {
                     it.today_total_bytes = Number(it.total_bytes || 0);
@@ -1143,9 +1203,7 @@
                     const isActive = item.uuid === state.selectedNodeUUID;
                     const widthPct = Math.max(1, total / maxTotal * 100);
                     const upPct = total > 0 ? up / total * 100 : 0;
-                    const offline = state.nodeStatus[item.uuid]
-                        ? !!state.nodeStatus[item.uuid].offline
-                        : !!item.offline;
+                    const offline = isNodeOffline(item.uuid, !!item.offline);
 
                     el.classList.toggle('active', isActive);
                     el.classList.toggle('offline', offline);
@@ -1205,9 +1263,7 @@
                 const active = item.uuid === state.selectedNodeUUID ? 'active' : '';
                 const widthPct = Math.max(1, total / maxTotal * 100);
                 const upPct = total > 0 ? up / total * 100 : 0;
-                const offline = state.nodeStatus[item.uuid]
-                    ? !!state.nodeStatus[item.uuid].offline
-                    : !!item.offline;
+                const offline = isNodeOffline(item.uuid, !!item.offline);
                 const offlineCls = offline ? 'offline' : '';
 
                 // 实时速率
