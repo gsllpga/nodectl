@@ -36,7 +36,7 @@ func apiGetSettings(w http.ResponseWriter, r *http.Request) {
 		"sys_log_level", "airport_filter_invalid", "pref_speed_test_file_size", "pref_traffic_stats_retention_days", "pref_traffic_point_persist_interval_sec",
 		"auth_cookie_ttl_mode",
 		"tg_bot_enabled", "tg_bot_token", "tg_bot_whitelist", "tg_bot_register_commands", "tg_bot_socks5_enabled", "tg_bot_socks5_addr", "tg_bot_socks5_user", "tg_bot_socks5_pass", "tg_login_notify_mode", "tg_speedtest_notify_enabled", "tg_threshold_stop_notify_enabled", "clash_proxies_update_interval", "clash_rules_update_interval", "clash_public_rules_update_interval",
-		"geo_auto_update", "mihomo_auto_update", "agent_startup_silent_update_enabled", "agent_ws_push_interval_sec",
+		"geo_auto_update", "mihomo_auto_update", "agent_startup_silent_update_enabled",
 		"cf_tunnel_auto_update", "cf_ipopt_auto_update",
 		// 新增协议与内核优化配置
 		"proxy_port_trojan", "proxy_hy2_sni", "proxy_tuic_sni", "proxy_enable_bbr",
@@ -99,7 +99,7 @@ func apiUpdateSettings(w http.ResponseWriter, r *http.Request) {
 		"tg_bot_socks5_enabled": true, "tg_bot_socks5_addr": true, "tg_bot_socks5_user": true, "tg_bot_socks5_pass": true,
 		"tg_login_notify_mode": true, "tg_speedtest_notify_enabled": true, "tg_threshold_stop_notify_enabled": true,
 		"clash_proxies_update_interval": true, "clash_rules_update_interval": true, "clash_public_rules_update_interval": true,
-		"geo_auto_update": true, "mihomo_auto_update": true, "agent_startup_silent_update_enabled": true, "agent_ws_push_interval_sec": true,
+		"geo_auto_update": true, "mihomo_auto_update": true, "agent_startup_silent_update_enabled": true,
 		"cf_tunnel_auto_update": true, "cf_ipopt_auto_update": true,
 		// 新增协议与内核优化配置
 		"proxy_port_trojan": true,
@@ -182,16 +182,6 @@ func apiUpdateSettings(w http.ResponseWriter, r *http.Request) {
 				seconds, err := strconv.Atoi(v)
 				if err != nil || seconds < 0 || (seconds > 0 && seconds < 10) || seconds > 3600 {
 					sendJSON(w, "error", "实时流量点数据落库间隔无效，仅支持 0 (关闭) 或 10-3600 秒")
-					return
-				}
-				v = strconv.Itoa(seconds)
-			}
-
-			if k == "agent_ws_push_interval_sec" {
-				v = strings.TrimSpace(v)
-				seconds, err := strconv.Atoi(v)
-				if err != nil || seconds < 1 || seconds > 5 {
-					sendJSON(w, "error", "Agent 推送速率无效，仅支持 1-5 秒")
 					return
 				}
 				v = strconv.Itoa(seconds)

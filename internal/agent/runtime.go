@@ -27,6 +27,8 @@ import (
 	"nodectl/internal/agent/singbox"
 )
 
+const fixedWSPushIntervalSec = 2
+
 // Runtime Agent 运行时：调度采集与上报，管理信号与生命周期
 type Runtime struct {
 	cfg            *Config
@@ -36,7 +38,6 @@ type Runtime struct {
 	logDedup       *LogDedup
 	cancel         context.CancelFunc
 	bootID         string
-	intervalChange chan int // 动态推送间隔变更通知通道
 
 	// 🆕 sing-box 管理模块
 	singboxMgr *singbox.Manager
@@ -46,12 +47,11 @@ type Runtime struct {
 // NewRuntime 创建运行时实例
 func NewRuntime(cfg *Config, updater *Updater) *Runtime {
 	return &Runtime{
-		cfg:            cfg,
-		collector:      NewCollector(cfg.Interface),
-		reporter:       NewReporter(cfg),
-		updater:        updater,
-		logDedup:       NewLogDedup(),
-		intervalChange: make(chan int, 1),
+		cfg:       cfg,
+		collector: NewCollector(cfg.Interface),
+		reporter:  NewReporter(cfg),
+		updater:   updater,
+		logDedup:  NewLogDedup(),
 	}
 }
 
@@ -135,7 +135,7 @@ func (rt *Runtime) Run() error {
 	}
 
 	// 启动主循环
-	pushTicker := time.NewTicker(time.Duration(rt.cfg.WSPushIntervalSec) * time.Second)
+	pushTicker := time.NewTicker(time.Duration(fixedWSPushIntervalSec) * time.Second)
 	memoryTrimTicker := time.NewTicker(2 * time.Minute) // 定期归还未使用内存给 OS
 	defer pushTicker.Stop()
 	defer memoryTrimTicker.Stop()
@@ -143,7 +143,7 @@ func (rt *Runtime) Run() error {
 	// 启动日志（仅输出一条）
 	log.Printf("[Agent] nodectl-agent %s 已启动 (install_id=%s, iface=%s, push=%ds)",
 		AgentVersion, rt.cfg.InstallID, rt.collector.GetInterface(),
-		rt.cfg.WSPushIntervalSec)
+		fixedWSPushIntervalSec)
 
 	for {
 		select {
@@ -174,11 +174,6 @@ func (rt *Runtime) Run() error {
 				rt.logDedup.LogOrSuppress("reporter:live", "[Agent] 实时上报失败: %v", err)
 				rt.handleDisconnect(ctx)
 			}
-
-		case newInterval := <-rt.intervalChange:
-			// 动态变更推送间隔
-			pushTicker.Reset(time.Duration(newInterval) * time.Second)
-			log.Printf("[Agent] 推送间隔已动态变更为 %d 秒", newInterval)
 
 		case <-memoryTrimTicker.C:
 			// 在低内存模式下主动归还空闲页，降低 RSS 常驻峰值。
@@ -771,7 +766,6 @@ func (rt *Runtime) reloadConfig() {
 	}
 
 	// 仅应用可安全动态变更的字段
-	rt.cfg.WSPushIntervalSec = newCfg.WSPushIntervalSec
 	rt.cfg.LogLevel = newCfg.LogLevel
 
 	// 网卡变更需要重启，在此仅记录警告
@@ -830,8 +824,6 @@ func (rt *Runtime) handleCommand(cmd ServerCommand, reply func(CommandResult)) {
 		rt.executeTunnelPrepare(cmd, reply)
 	case "tunnel-stop":
 		rt.executeTunnelStop(reply)
-	case "update-push-interval":
-		rt.executeUpdatePushInterval(cmd, reply)
 	default:
 		reply(CommandResult{
 			Type:    "result",
@@ -839,48 +831,6 @@ func (rt *Runtime) handleCommand(cmd ServerCommand, reply func(CommandResult)) {
 			Message: fmt.Sprintf("未知命令: %s", cmd.Action),
 		})
 	}
-}
-
-// executeUpdatePushInterval 处理后端下发的推送间隔变更命令
-func (rt *Runtime) executeUpdatePushInterval(cmd ServerCommand, reply func(CommandResult)) {
-	var payload struct {
-		IntervalSec int `json:"interval_sec"`
-	}
-	if len(cmd.Payload) > 0 {
-		json.Unmarshal(cmd.Payload, &payload)
-	}
-
-	// 范围限制 1-5 秒
-	if payload.IntervalSec < 1 {
-		payload.IntervalSec = 1
-	}
-	if payload.IntervalSec > 5 {
-		payload.IntervalSec = 5
-	}
-
-	oldInterval := rt.cfg.WSPushIntervalSec
-	rt.cfg.WSPushIntervalSec = payload.IntervalSec
-
-	// 持久化到配置文件
-	if err := SaveConfig("", rt.cfg); err != nil {
-		log.Printf("[Agent] 保存推送间隔到配置文件失败: %v", err)
-		reply(CommandResult{Type: "result", Status: "error", Message: fmt.Sprintf("保存配置失败: %v", err)})
-		return
-	}
-
-	// 通知主循环重置 ticker
-	select {
-	case rt.intervalChange <- payload.IntervalSec:
-	default:
-		// channel 已满，跳过（说明已有变更在排队）
-	}
-
-	log.Printf("[Agent] 推送间隔已更新: %d -> %d 秒", oldInterval, payload.IntervalSec)
-	reply(CommandResult{
-		Type:    "result",
-		Status:  "ok",
-		Message: fmt.Sprintf("推送间隔已更新为 %d 秒", payload.IntervalSec),
-	})
 }
 
 func readBootID() string {

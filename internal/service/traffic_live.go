@@ -19,31 +19,21 @@ import (
 	"nhooyr.io/websocket"
 )
 
-// getAgentReadTimeout 根据 Agent 上报间隔动态计算 WS 读超时。
-// 规则：timeout = max(15s, interval*4+5s)，并限制最大 10 分钟。
-// loadAgentWSPushIntervalSec 从数据库读取 Agent 推送间隔，限制在 1-5 秒范围内
-func loadAgentWSPushIntervalSec() int {
-	var cfg database.SysConfig
-	if err := database.DB.Select("value").Where("key = ?", "agent_ws_push_interval_sec").First(&cfg).Error; err != nil {
-		return 2
-	}
-	sec, err := strconv.Atoi(strings.TrimSpace(cfg.Value))
-	if err != nil || sec < 1 {
-		return 2
-	}
-	if sec > 5 {
-		return 5
-	}
-	return sec
-}
+const (
+	agentWSPushIntervalSec   = 2
+	recentTrafficOnlineGrace = 2 * time.Second
+	liveSnapshotInterval     = 1 * time.Second
+)
 
+// getAgentReadTimeout 根据固定 2 秒上报间隔计算 WS 读超时。
+// 规则：timeout = max(15s, interval*4+5s)，并限制最大 10 分钟。
 func getAgentReadTimeout() time.Duration {
 	const (
 		minTimeout = 15 * time.Second
 		maxTimeout = 10 * time.Minute
 	)
 
-	sec := loadAgentWSPushIntervalSec()
+	sec := agentWSPushIntervalSec
 
 	timeout := time.Duration(sec*4+5) * time.Second
 	if timeout < minTimeout {
@@ -53,6 +43,16 @@ func getAgentReadTimeout() time.Duration {
 		return maxTimeout
 	}
 	return timeout
+}
+
+func hasRecentTrafficSignal(lastLiveAt, now time.Time) bool {
+	if lastLiveAt.IsZero() {
+		return false
+	}
+	if now.IsZero() {
+		now = time.Now()
+	}
+	return now.Sub(lastLiveAt) <= recentTrafficOnlineGrace
 }
 
 // ============================================================
@@ -406,6 +406,36 @@ func (h *TrafficHub) resolveNodeNameByIP(ip string) string {
 	return strings.TrimSpace(node.Name)
 }
 
+func (h *TrafficHub) ensureNodeLiveState(installID string) {
+	installID = strings.TrimSpace(installID)
+	if installID == "" {
+		return
+	}
+
+	nodeUUID := h.resolveNodeUUID(installID)
+
+	h.mu.Lock()
+	defer h.mu.Unlock()
+
+	if st, ok := h.nodes[installID]; ok && st != nil {
+		if st.InstallID == "" {
+			st.InstallID = installID
+		}
+		if st.NodeUUID == "" {
+			st.NodeUUID = nodeUUID
+		}
+		return
+	}
+
+	baseRX, baseTX := loadNodeTrafficBase(installID)
+	h.nodes[installID] = &NodeLiveState{
+		InstallID:    installID,
+		NodeUUID:     nodeUUID,
+		TotalRXBytes: baseRX,
+		TotalTXBytes: baseTX,
+	}
+}
+
 func (h *TrafficHub) bindAgentConnection(conn *websocket.Conn, installID, clientIP string, agentInstallID *string) bool {
 	installID = strings.TrimSpace(installID)
 	if installID == "" {
@@ -443,6 +473,7 @@ func (h *TrafficHub) bindAgentConnection(conn *websocket.Conn, installID, client
 	if prevConn != nil && prevConn != conn {
 		_ = prevConn.Close(websocket.StatusPolicyViolation, "superseded by newer connection")
 	}
+	h.ensureNodeLiveState(installID)
 	OnNodeConnectionStatusChanged(installID, true)
 
 	nodeName := h.resolveNodeNameByInstallID(installID)
@@ -798,17 +829,24 @@ func HandleTrafficLive(w http.ResponseWriter, r *http.Request) {
 		hub.mu.RLock()
 		defer hub.mu.RUnlock()
 
+		now := time.Now()
 		for _, state := range hub.nodes {
+			if state == nil {
+				continue
+			}
 			if nodeUUID != "" && state.NodeUUID != nodeUUID {
 				continue
 			}
+			wsOnline := IsNodeOnline(state.InstallID)
+			hasRecentLive := hasRecentTrafficSignal(state.LastLiveAt, now)
+			// 状态判定以“最近是否收到实时流量消息”为准，WS 仅用于辅助速率呈现。
+			online := hasRecentLive
 
-			isOffline := !IsNodeOnline(state.InstallID)
-			outRX := state.RXRateBps
-			outTX := state.TXRateBps
-			if isOffline {
-				outRX = 0
-				outTX = 0
+			outRX := int64(0)
+			outTX := int64(0)
+			if online && wsOnline && hasRecentLive {
+				outRX = state.RXRateBps
+				outTX = state.TXRateBps
 			}
 
 			initMsg := FrontendPushMsg{
@@ -819,7 +857,7 @@ func HandleTrafficLive(w http.ResponseWriter, r *http.Request) {
 				TotalRXBytes: state.TotalRXBytes,
 				TotalTXBytes: state.TotalTXBytes,
 				LastLiveAt:   state.LastLiveAt.Unix(),
-				Offline:      isOffline,
+				Offline:      !online,
 			}
 
 			data, _ := json.Marshal(initMsg)
@@ -836,9 +874,8 @@ func HandleTrafficLive(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 周期推送快照：由后端统一判定离线，间隔与 Agent 推送间隔保持同步
-	pushIntervalSec := loadAgentWSPushIntervalSec()
-	ticker := time.NewTicker(time.Duration(pushIntervalSec) * time.Second)
+	// 周期推送快照：1 秒一拍，保证前端离线状态及时更新。
+	ticker := time.NewTicker(liveSnapshotInterval)
 	defer ticker.Stop()
 
 	// 持续推送
@@ -957,6 +994,64 @@ func GetAllNodeLiveStates() map[string]*NodeLiveState {
 
 // DispatchCommandToNode 向指定节点下发命令，等待结果（带超时）
 // 返回执行结果；若节点不在线或超时返回 error
+// ResetNodeTrafficLiveState resets in-memory traffic totals for a node.
+// This avoids old in-memory totals writing back to DB after a periodic reset.
+func ResetNodeTrafficLiveState(installID string, nodeUUID string, resetAt time.Time) {
+	installID = strings.TrimSpace(installID)
+	nodeUUID = strings.TrimSpace(nodeUUID)
+	if installID == "" {
+		return
+	}
+	if resetAt.IsZero() {
+		resetAt = time.Now()
+	}
+
+	hub := GetTrafficHub()
+
+	hub.mu.Lock()
+	if st, ok := hub.nodes[installID]; ok && st != nil {
+		st.TotalRXBytes = 0
+		st.TotalTXBytes = 0
+		st.RXRateBps = 0
+		st.TXRateBps = 0
+		st.Dirty = true
+
+		// Reset counter baseline and rebuild on next agent report.
+		st.CounterSeen = false
+		st.CounterBootID = ""
+		st.LastCounterRX = 0
+		st.LastCounterTX = 0
+
+		if nodeUUID == "" && strings.TrimSpace(st.NodeUUID) != "" {
+			nodeUUID = strings.TrimSpace(st.NodeUUID)
+		} else if nodeUUID != "" && strings.TrimSpace(st.NodeUUID) == "" {
+			st.NodeUUID = nodeUUID
+		}
+	}
+	if nodeUUID != "" {
+		hub.idCache[installID] = nodeUUID
+	}
+	hub.mu.Unlock()
+
+	if nodeUUID == "" {
+		nodeUUID = strings.TrimSpace(hub.resolveNodeUUID(installID))
+	}
+	if nodeUUID == "" {
+		return
+	}
+
+	hub.broadcast(nodeUUID, FrontendPushMsg{
+		InstallID:    installID,
+		NodeUUID:     nodeUUID,
+		RXRateBps:    0,
+		TXRateBps:    0,
+		TotalRXBytes: 0,
+		TotalTXBytes: 0,
+		LastLiveAt:   resetAt.Unix(),
+		Offline:      !IsNodeOnlineForStatus(installID),
+	})
+}
+
 func DispatchCommandToNode(installID string, action string, payload interface{}, timeout time.Duration) (*AgentCommandResult, error) {
 	hub := GetTrafficHub()
 
@@ -1030,6 +1125,28 @@ func IsNodeOnline(installID string) bool {
 	defer hub.agentMu.RUnlock()
 	_, ok := hub.agentConns[installID]
 	return ok
+}
+
+func HasRecentNodeTrafficSignal(installID string) bool {
+	installID = strings.TrimSpace(installID)
+	if installID == "" {
+		return false
+	}
+
+	hub := GetTrafficHub()
+	hub.mu.RLock()
+	st, ok := hub.nodes[installID]
+	hub.mu.RUnlock()
+	if !ok || st == nil {
+		return false
+	}
+
+	return hasRecentTrafficSignal(st.LastLiveAt, time.Now())
+}
+
+// IsNodeOnlineForStatus 使用“最近是否收到实时流量消息”判定节点在线状态。
+func IsNodeOnlineForStatus(installID string) bool {
+	return HasRecentNodeTrafficSignal(installID)
 }
 
 // CleanupNodeState 删除节点时清理内存中的所有关联状态

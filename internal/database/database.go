@@ -101,42 +101,46 @@ func GetCurrentDBConfig() DBConfig {
 
 // NodePool 节点池表
 type NodePool struct {
-	UUID                    string            `gorm:"primaryKey;column:uuid;type:varchar(36)" json:"uuid"`
-	InstallID               string            `gorm:"column:install_id;type:varchar(12);uniqueIndex" json:"install_id"`
-	Name                    string            `gorm:"column:name" json:"name"`
-	OfflineNotifyEnabled    bool              `gorm:"column:offline_notify_enabled;default:false" json:"offline_notify_enabled"`
-	OfflineNotifyGraceSec   int               `gorm:"column:offline_notify_grace_sec;default:180" json:"offline_notify_grace_sec"`
-	OfflineLastNotifyAt     *time.Time        `gorm:"column:offline_last_notify_at" json:"offline_last_notify_at"`
-	RoutingType             int               `gorm:"column:routing_type;default:1" json:"routing_type"` //路由类型
-	IsBlocked               bool              `gorm:"column:is_blocked;default:false" json:"is_blocked"` // 是否屏蔽
-	Links                   map[string]string `gorm:"column:links;serializer:json" json:"links"`
-	LinkIPModes             map[string]int    `gorm:"column:link_ip_modes;serializer:json" json:"link_ip_modes"` //协议级别的IP生成模式
-	LinkPorts               map[string]int    `gorm:"column:link_ports;serializer:json" json:"link_ports"`       // 协议级别的个性化端口设置（创建时从SysConfig导入默认值）
-	DisabledLinks           []string          `gorm:"column:disabled_links;serializer:json" json:"disabled_links"`
-	IPV4                    string            `gorm:"column:ipv4;type:varchar(15)" json:"ipv4"`
-	IPV6                    string            `gorm:"column:ipv6;type:varchar(45)" json:"ipv6"`
-	Region                  string            `gorm:"column:region" json:"region"`                                                          //存储国家信息
-	IPMode                  int               `gorm:"column:ip_mode;default:0" json:"ip_mode"`                                              // 0: 跟随系统, 1: 仅IPv4, 2: 仅IPv6, 3: 双栈
-	SortIndex               int               `gorm:"column:sort_index;default:0" json:"sort_index"`                                        //排序
-	Remark                  string            `gorm:"column:remark" json:"remark"`                                                          //备注
-	TrafficUp               int64             `gorm:"column:traffic_up;default:0" json:"traffic_up"`                                        // 本周期上传流量 (Bytes)
-	TrafficDown             int64             `gorm:"column:traffic_down;default:0" json:"traffic_down"`                                    // 本周期下载流量 (Bytes)
-	TrafficLimit            int64             `gorm:"column:traffic_limit;default:0" json:"traffic_limit"`                                  // 总流量限额 (Bytes, 0表示不限制)
-	TrafficLimitType        string            `gorm:"column:traffic_limit_type;type:varchar(16);default:'total'" json:"traffic_limit_type"` // 限额计算方式: total|max|min|up|down
-	TrafficThresholdEnabled bool              `gorm:"column:traffic_threshold_enabled;default:false" json:"traffic_threshold_enabled"`      // 是否启用阈值停机
-	TrafficThresholdPercent int               `gorm:"column:traffic_threshold_percent;default:0" json:"traffic_threshold_percent"`          // 阈值百分比(0-100, 0表示不限制)
-	TrafficThresholdReached bool              `gorm:"column:traffic_threshold_reached;default:false" json:"traffic_threshold_reached"`      // 是否已触发阈值停机(首次触发后置为 true)
-	ResetDay                int               `gorm:"column:reset_day;default:0" json:"reset_day"`                                          // 每月重置日 (1-31, 0表示不重置)
-	TrafficUpdateAt         *time.Time        `gorm:"column:traffic_update_at" json:"traffic_update_at"`                                    // 流量更新时间
-	AgentVersion            string            `gorm:"column:agent_version;type:varchar(32);default:''" json:"agent_version"`                // Agent 版本号
-	TrafficHistoryCount     *int64            `gorm:"column:traffic_history_count" json:"traffic_history_count"`                            // 历史流量记录条数（写入计数，NULL表示未初始化需查库）
-	TunnelEnabled           bool              `gorm:"column:tunnel_enabled;default:false" json:"tunnel_enabled"`                            // 是否启用 tunnel 加速
-	TunnelID                string            `gorm:"column:tunnel_id;type:varchar(64);default:''" json:"tunnel_id"`                        // 节点绑定的 Tunnel ID
-	TunnelToken             string            `gorm:"column:tunnel_token;type:text;default:''" json:"tunnel_token"`                         // 节点专属 Tunnel Token（每节点独立）
-	TunnelName              string            `gorm:"column:tunnel_name;type:varchar(128);default:''" json:"tunnel_name"`                   // 节点 Tunnel 名称
-	TunnelDomain            string            `gorm:"column:tunnel_domain;type:varchar(255);default:''" json:"tunnel_domain"`               // tunnel 加速域名
-	CreatedAt               time.Time         `gorm:"column:created_at" json:"created_at"`
-	UpdatedAt               time.Time         `gorm:"column:updated_at" json:"updated_at"`
+	UUID                     string            `gorm:"primaryKey;column:uuid;type:varchar(36)" json:"uuid"`
+	InstallID                string            `gorm:"column:install_id;type:varchar(12);uniqueIndex" json:"install_id"`
+	Name                     string            `gorm:"column:name" json:"name"`
+	OfflineNotifyEnabled     bool              `gorm:"column:offline_notify_enabled;default:false" json:"offline_notify_enabled"`
+	OfflineNotifyGraceSec    int               `gorm:"column:offline_notify_grace_sec;default:180" json:"offline_notify_grace_sec"`
+	OfflineLastNotifyAt      *time.Time        `gorm:"column:offline_last_notify_at" json:"offline_last_notify_at"`
+	RoutingType              int               `gorm:"column:routing_type;default:1" json:"routing_type"` //路由类型
+	IsBlocked                bool              `gorm:"column:is_blocked;default:false" json:"is_blocked"` // 是否屏蔽
+	Links                    map[string]string `gorm:"column:links;serializer:json" json:"links"`
+	LinkIPModes              map[string]int    `gorm:"column:link_ip_modes;serializer:json" json:"link_ip_modes"` //协议级别的IP生成模式
+	LinkPorts                map[string]int    `gorm:"column:link_ports;serializer:json" json:"link_ports"`       // 协议级别的个性化端口设置（创建时从SysConfig导入默认值）
+	DisabledLinks            []string          `gorm:"column:disabled_links;serializer:json" json:"disabled_links"`
+	IPV4                     string            `gorm:"column:ipv4;type:varchar(15)" json:"ipv4"`
+	IPV6                     string            `gorm:"column:ipv6;type:varchar(45)" json:"ipv6"`
+	Region                   string            `gorm:"column:region" json:"region"`                                                          //存储国家信息
+	IPMode                   int               `gorm:"column:ip_mode;default:0" json:"ip_mode"`                                              // 0: 跟随系统, 1: 仅IPv4, 2: 仅IPv6, 3: 双栈
+	SortIndex                int               `gorm:"column:sort_index;default:0" json:"sort_index"`                                        //排序
+	Remark                   string            `gorm:"column:remark" json:"remark"`                                                          //备注
+	TrafficUp                int64             `gorm:"column:traffic_up;default:0" json:"traffic_up"`                                        // 本周期上传流量 (Bytes)
+	TrafficDown              int64             `gorm:"column:traffic_down;default:0" json:"traffic_down"`                                    // 本周期下载流量 (Bytes)
+	TrafficLimit             int64             `gorm:"column:traffic_limit;default:0" json:"traffic_limit"`                                  // 总流量限额 (Bytes, 0表示不限制)
+	TrafficLimitType         string            `gorm:"column:traffic_limit_type;type:varchar(16);default:'total'" json:"traffic_limit_type"` // 限额计算方式: total|max|min|up|down
+	TrafficThresholdEnabled  bool              `gorm:"column:traffic_threshold_enabled;default:false" json:"traffic_threshold_enabled"`      // 是否启用阈值停机
+	TrafficThresholdPercent  int               `gorm:"column:traffic_threshold_percent;default:0" json:"traffic_threshold_percent"`          // 阈值百分比(0-100, 0表示不限制)
+	TrafficThresholdReached  bool              `gorm:"column:traffic_threshold_reached;default:false" json:"traffic_threshold_reached"`      // 是否已触发阈值停机(首次触发后置为 true)
+	ResetDay                 int               `gorm:"column:reset_day;default:0" json:"reset_day"`                                          // 每月重置日 (1-31, 0表示不重置)
+	TrafficResetMode         string            `gorm:"column:traffic_reset_mode;type:varchar(24);default:'off'" json:"traffic_reset_mode"`   // 重置方式: off|fixed_day|calendar_month|interval_days
+	TrafficResetIntervalDays int               `gorm:"column:traffic_reset_interval_days;default:30" json:"traffic_reset_interval_days"`     // 按天数重置周期(天)
+	TrafficResetAnchorAt     *time.Time        `gorm:"column:traffic_reset_anchor_at" json:"traffic_reset_anchor_at"`                        // 按天数重置起算时间
+	TrafficResetAt           *time.Time        `gorm:"column:traffic_reset_at" json:"traffic_reset_at"`                                      // 上次周期重置时间
+	TrafficUpdateAt          *time.Time        `gorm:"column:traffic_update_at" json:"traffic_update_at"`                                    // 流量更新时间
+	AgentVersion             string            `gorm:"column:agent_version;type:varchar(32);default:''" json:"agent_version"`                // Agent 版本号
+	TrafficHistoryCount      *int64            `gorm:"column:traffic_history_count" json:"traffic_history_count"`                            // 历史流量记录条数（写入计数，NULL表示未初始化需查库）
+	TunnelEnabled            bool              `gorm:"column:tunnel_enabled;default:false" json:"tunnel_enabled"`                            // 是否启用 tunnel 加速
+	TunnelID                 string            `gorm:"column:tunnel_id;type:varchar(64);default:''" json:"tunnel_id"`                        // 节点绑定的 Tunnel ID
+	TunnelToken              string            `gorm:"column:tunnel_token;type:text;default:''" json:"tunnel_token"`                         // 节点专属 Tunnel Token（每节点独立）
+	TunnelName               string            `gorm:"column:tunnel_name;type:varchar(128);default:''" json:"tunnel_name"`                   // 节点 Tunnel 名称
+	TunnelDomain             string            `gorm:"column:tunnel_domain;type:varchar(255);default:''" json:"tunnel_domain"`               // tunnel 加速域名
+	CreatedAt                time.Time         `gorm:"column:created_at" json:"created_at"`
+	UpdatedAt                time.Time         `gorm:"column:updated_at" json:"updated_at"`
 }
 
 func (NodePool) TableName() string {

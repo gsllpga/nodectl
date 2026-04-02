@@ -6,6 +6,7 @@ package singbox
 import (
 	"bufio"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -812,7 +813,7 @@ func (m *Manager) StartAndVerify(ctx context.Context, healthCheckDuration time.D
 		if lastErr != "" {
 			errMsg = fmt.Sprintf("sing-box 启动后立即退出: %s", lastErr)
 		}
-		return fmt.Errorf(errMsg)
+		return errors.New(errMsg)
 	}
 
 	return nil

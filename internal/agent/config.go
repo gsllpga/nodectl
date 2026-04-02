@@ -17,12 +17,11 @@ const DefaultConfigPath = "/etc/nodectl-agent/config.json"
 // Config Agent 主配置结构体，从 /etc/nodectl-agent/config.json 读取
 type Config struct {
 	// 基础配置
-	InstallID         string `json:"install_id"`           // 节点唯一标识 (12位)
-	PanelURL          string `json:"panel_url,omitempty"`  // 🆕 面板地址（新版安装脚本使用，自动推导 ws_url）
-	WSURL             string `json:"ws_url,omitempty"`     // WebSocket 上报地址（旧版兼容 / 运行时计算）
-	WSPushIntervalSec int    `json:"ws_push_interval_sec"` // 实时速率推送间隔 (默认 2 秒)
-	Interface         string `json:"interface"`            // 网卡名称 ("auto" 自动检测)
-	LogLevel          string `json:"log_level"`            // 日志等级
+	InstallID string `json:"install_id"`          // 节点唯一标识 (12位)
+	PanelURL  string `json:"panel_url,omitempty"` // 🆕 面板地址（新版安装脚本使用，自动推导 ws_url）
+	WSURL     string `json:"ws_url,omitempty"`    // WebSocket 上报地址（旧版兼容 / 运行时计算）
+	Interface string `json:"interface"`           // 网卡名称 ("auto" 自动检测)
+	LogLevel  string `json:"log_level"`           // 日志等级
 
 	// 🆕 协议配置（首次启动时从后端拉取，或从缓存加载）
 	Protocols *singbox.ProtocolConfig `json:"protocols,omitempty"`
@@ -43,9 +42,8 @@ type SingboxProcessConfig struct {
 func DefaultConfig() *Config {
 	autoRestart := true
 	return &Config{
-		Interface:         "auto",
-		LogLevel:          "info",
-		WSPushIntervalSec: 2,
+		Interface: "auto",
+		LogLevel:  "info",
 		Singbox: &SingboxProcessConfig{
 			BinaryPath:   singbox.DefaultBinaryPath,
 			ConfigPath:   singbox.DefaultConfigPath,
@@ -92,9 +90,6 @@ func LoadConfig(path string) (*Config, error) {
 	}
 
 	// 应用默认值
-	if cfg.WSPushIntervalSec <= 0 {
-		cfg.WSPushIntervalSec = 2
-	}
 	if strings.TrimSpace(cfg.Interface) == "" {
 		cfg.Interface = "auto"
 	}
@@ -146,11 +141,6 @@ func (c *Config) Validate() error {
 		if _, err := url.Parse(c.WSURL); err != nil {
 			return fmt.Errorf("invalid ws_url: %w", err)
 		}
-	}
-
-	// 验证推送间隔范围
-	if c.WSPushIntervalSec < 1 || c.WSPushIntervalSec > 60 {
-		return fmt.Errorf("ws_push_interval_sec 应在 1-60 之间，当前值: %d", c.WSPushIntervalSec)
 	}
 
 	// 验证协议配置（如果存在）

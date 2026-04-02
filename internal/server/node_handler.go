@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"nodectl/internal/database"
 	"nodectl/internal/logger"
@@ -31,7 +32,8 @@ func apiUpdateNode(w http.ResponseWriter, r *http.Request) {
 
 	var req struct {
 		database.NodePool
-		TrafficLimitRaw string `json:"traffic_limit_raw"`
+		TrafficLimitRaw        string `json:"traffic_limit_raw"`
+		TrafficResetAnchorDate string `json:"traffic_reset_anchor_date"`
 		// Add backwards compatibility explicitly if needed, but since we embedded NodePool, it has IPMode and LinkIPModes
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -106,11 +108,66 @@ func apiUpdateNode(w http.ResponseWriter, r *http.Request) {
 	targetNode.IPV4 = req.IPV4
 	targetNode.IPV6 = req.IPV6
 	targetNode.IPMode = req.IPMode
-	targetNode.ResetDay = req.ResetDay
+	rawResetDay := service.NormalizeNodeTrafficResetDay(req.ResetDay)
+	targetNode.TrafficResetMode = service.NormalizeTrafficResetMode(req.TrafficResetMode, rawResetDay)
+	targetNode.ResetDay = rawResetDay
+	if targetNode.TrafficResetMode != service.TrafficResetModeFixedDay {
+		targetNode.ResetDay = 0
+	}
+	targetNode.TrafficResetIntervalDays = service.NormalizeTrafficResetIntervalDays(req.TrafficResetIntervalDays)
+	if anchor, err := service.ParseTrafficResetAnchorDate(req.TrafficResetAnchorDate); err != nil {
+		sendJSON(w, "error", err.Error())
+		return
+	} else if anchor != nil {
+		targetNode.TrafficResetAnchorAt = anchor
+	} else if targetNode.TrafficResetMode == service.TrafficResetModeIntervalDays &&
+		(targetNode.TrafficResetAnchorAt == nil || targetNode.TrafficResetAnchorAt.IsZero()) {
+		a := service.ResolveTrafficResetAnchor(nil, targetNode.CreatedAt, time.Now())
+		targetNode.TrafficResetAnchorAt = &a
+	}
 	targetNode.TrafficLimitType = service.NormalizeTrafficLimitType(req.TrafficLimitType)
 	targetNode.TrafficLimit = req.TrafficLimit
 	if raw := strings.TrimSpace(req.TrafficLimitRaw); raw != "" {
 		targetNode.TrafficLimit = service.ParseTrafficLimitInputToBytes(raw)
+	}
+	oldResetMode := service.NormalizeTrafficResetMode(oldNode.TrafficResetMode, oldNode.ResetDay)
+	oldEffectiveResetDay := 0
+	if oldResetMode == service.TrafficResetModeFixedDay {
+		oldEffectiveResetDay = service.NormalizeNodeTrafficResetDay(oldNode.ResetDay)
+	}
+	newEffectiveResetDay := 0
+	if targetNode.TrafficResetMode == service.TrafficResetModeFixedDay {
+		newEffectiveResetDay = service.NormalizeNodeTrafficResetDay(targetNode.ResetDay)
+	}
+	oldResetIntervalDays := 0
+	if oldResetMode == service.TrafficResetModeIntervalDays {
+		oldResetIntervalDays = service.NormalizeTrafficResetIntervalDays(oldNode.TrafficResetIntervalDays)
+	}
+	newResetIntervalDays := 0
+	if targetNode.TrafficResetMode == service.TrafficResetModeIntervalDays {
+		newResetIntervalDays = service.NormalizeTrafficResetIntervalDays(targetNode.TrafficResetIntervalDays)
+	}
+	oldAnchorDate := ""
+	newAnchorDate := ""
+	if oldNode.TrafficResetAnchorAt != nil && !oldNode.TrafficResetAnchorAt.IsZero() {
+		oldAnchorDate = oldNode.TrafficResetAnchorAt.In(time.Local).Format("2006-01-02")
+	}
+	if targetNode.TrafficResetAnchorAt != nil && !targetNode.TrafficResetAnchorAt.IsZero() {
+		newAnchorDate = targetNode.TrafficResetAnchorAt.In(time.Local).Format("2006-01-02")
+	}
+	resetRuleChanged := oldResetMode != targetNode.TrafficResetMode ||
+		oldEffectiveResetDay != newEffectiveResetDay ||
+		oldResetIntervalDays != newResetIntervalDays
+	if (oldResetMode == service.TrafficResetModeIntervalDays || targetNode.TrafficResetMode == service.TrafficResetModeIntervalDays) &&
+		oldAnchorDate != newAnchorDate {
+		resetRuleChanged = true
+	}
+	if resetRuleChanged {
+		targetNode.TrafficResetAt = service.ResolveTrafficResetAtOnRuleChange(
+			targetNode.TrafficResetMode,
+			targetNode.ResetDay,
+			time.Now(),
+		)
 	}
 
 	// 4. 安全检查：判断是否处于安全环境
@@ -249,8 +306,17 @@ func apiUpdateNode(w http.ResponseWriter, r *http.Request) {
 	if oldNode.IPMode != targetNode.IPMode {
 		changedDetails = append(changedDetails, fmt.Sprintf("ip_mode: %d -> %d", oldNode.IPMode, targetNode.IPMode))
 	}
-	if oldNode.ResetDay != targetNode.ResetDay {
-		changedDetails = append(changedDetails, fmt.Sprintf("reset_day: %d -> %d", oldNode.ResetDay, targetNode.ResetDay))
+	if oldEffectiveResetDay != newEffectiveResetDay {
+		changedDetails = append(changedDetails, fmt.Sprintf("reset_day: %d -> %d", oldEffectiveResetDay, newEffectiveResetDay))
+	}
+	if oldResetMode != targetNode.TrafficResetMode {
+		changedDetails = append(changedDetails, fmt.Sprintf("traffic_reset_mode: %s -> %s", oldResetMode, targetNode.TrafficResetMode))
+	}
+	if oldResetIntervalDays != newResetIntervalDays {
+		changedDetails = append(changedDetails, fmt.Sprintf("traffic_reset_interval_days: %d -> %d", oldResetIntervalDays, newResetIntervalDays))
+	}
+	if (oldResetMode == service.TrafficResetModeIntervalDays || targetNode.TrafficResetMode == service.TrafficResetModeIntervalDays) && oldAnchorDate != newAnchorDate {
+		changedDetails = append(changedDetails, fmt.Sprintf("traffic_reset_anchor_date: %s -> %s", oldAnchorDate, newAnchorDate))
 	}
 	if oldNode.TrafficLimit != targetNode.TrafficLimit {
 		changedDetails = append(changedDetails, fmt.Sprintf("traffic_limit: %d -> %d", oldNode.TrafficLimit, targetNode.TrafficLimit))
@@ -390,16 +456,25 @@ func apiAddNode(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req struct {
-		Name             string `json:"name"`
-		RoutingType      int    `json:"routing_type"`
-		ResetDay         int    `json:"reset_day"`
-		TrafficLimit     int64  `json:"traffic_limit"`
-		TrafficLimitRaw  string `json:"traffic_limit_raw"`
-		TrafficLimitType string `json:"traffic_limit_type"`
+		Name                     string `json:"name"`
+		RoutingType              int    `json:"routing_type"`
+		ResetDay                 int    `json:"reset_day"`
+		TrafficResetMode         string `json:"traffic_reset_mode"`
+		TrafficResetIntervalDays int    `json:"traffic_reset_interval_days"`
+		TrafficResetAnchorDate   string `json:"traffic_reset_anchor_date"`
+		TrafficLimit             int64  `json:"traffic_limit"`
+		TrafficLimitRaw          string `json:"traffic_limit_raw"`
+		TrafficLimitType         string `json:"traffic_limit_type"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		logger.Log.Warn("解析 JSON 失败", "error", err, "ip", clientIP, "path", reqPath)
 		sendJSON(w, "error", "请求格式错误")
+		return
+	}
+
+	parsedAnchor, err := service.ParseTrafficResetAnchorDate(req.TrafficResetAnchorDate)
+	if err != nil {
+		sendJSON(w, "error", err.Error())
 		return
 	}
 
@@ -412,9 +487,27 @@ func apiAddNode(w http.ResponseWriter, r *http.Request) {
 
 	// 补充更新 reset_day 和 traffic_limit
 	updates := map[string]interface{}{}
-	if req.ResetDay > 0 {
-		updates["reset_day"] = req.ResetDay
+	rawResetDay := service.NormalizeNodeTrafficResetDay(req.ResetDay)
+	resetMode := service.NormalizeTrafficResetMode(req.TrafficResetMode, rawResetDay)
+	resetDay := rawResetDay
+	if resetMode != service.TrafficResetModeFixedDay {
+		resetDay = 0
 	}
+	resetIntervalDays := service.NormalizeTrafficResetIntervalDays(req.TrafficResetIntervalDays)
+	updates["reset_day"] = resetDay
+	updates["traffic_reset_mode"] = resetMode
+	updates["traffic_reset_interval_days"] = resetIntervalDays
+	if resetMode == service.TrafficResetModeIntervalDays {
+		if parsedAnchor != nil {
+			updates["traffic_reset_anchor_at"] = *parsedAnchor
+		} else {
+			a := service.ResolveTrafficResetAnchor(nil, node.CreatedAt, time.Now())
+			updates["traffic_reset_anchor_at"] = a
+		}
+	} else {
+		updates["traffic_reset_anchor_at"] = nil
+	}
+	updates["traffic_reset_at"] = service.ResolveTrafficResetAtOnRuleChange(resetMode, resetDay, time.Now())
 	trafficLimit := req.TrafficLimit
 	if raw := strings.TrimSpace(req.TrafficLimitRaw); raw != "" {
 		trafficLimit = service.ParseTrafficLimitInputToBytes(raw)
@@ -559,7 +652,7 @@ func apiGetOfflineNotifySettings(w http.ResponseWriter, r *http.Request) {
 			"offline_notify_grace_sec":  grace,
 			"traffic_threshold_percent": service.NormalizeTrafficThresholdPercent(n.TrafficThresholdPercent),
 			"traffic_threshold_reached": n.TrafficThresholdReached,
-			"online":                    service.IsNodeOnline(n.InstallID),
+			"online":                    service.IsNodeOnlineForStatus(n.InstallID),
 		}
 		// 历史流量记录条数：如果为 NULL 则返回 -1 表示需要前端懒加载
 		if n.TrafficHistoryCount != nil {
@@ -687,7 +780,7 @@ func apiGetTunnelNodeSettings(w http.ResponseWriter, r *http.Request) {
 			"tunnel_name":                tunnelName,
 			"tunnel_domain":              tunnelDomain,
 			"tunnel_hosts":               hosts,
-			"online":                     service.IsNodeOnline(n.InstallID),
+			"online":                     service.IsNodeOnlineForStatus(n.InstallID),
 			"supported_tunnel_protocols": supported,
 		}
 		items = append(items, item)
@@ -1605,65 +1698,13 @@ func apiNodeControlCheckAgentUpdate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// 仅在面板手动下发 Agent 更新请求后，抑制该节点 30 秒上下线通知，避免更新重连造成刷屏。
+	service.SuppressNodeStatusNotifyForDuration(node.InstallID, 30*time.Second)
+
 	logger.Log.Info("Agent 检查更新命令已下发", "uuid", req.UUID, "command_id", commandID)
 	sendJSON(w, "success", map[string]interface{}{
 		"command_id": commandID,
 		"message":    "命令已下发，Agent 正在检查更新",
-	})
-}
-
-// apiPushAgentInterval 将最新的推送速率间隔推送给所有在线 Agent
-// 路由: POST /api/push-agent-interval
-// 请求体: { "interval_sec": 2 }
-func apiPushAgentInterval(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		sendJSON(w, "error", "仅支持 POST 请求")
-		return
-	}
-
-	// 从数据库读取最新值
-	var cfg database.SysConfig
-	if err := database.DB.Select("value").Where("key = ?", "agent_ws_push_interval_sec").First(&cfg).Error; err != nil {
-		sendJSON(w, "error", "读取推送间隔配置失败")
-		return
-	}
-
-	intervalSec, err := strconv.Atoi(strings.TrimSpace(cfg.Value))
-	if err != nil || intervalSec < 1 {
-		intervalSec = 2
-	}
-	if intervalSec > 5 {
-		intervalSec = 5
-	}
-
-	// 遍历所有节点，向在线节点推送命令
-	var nodes []database.NodePool
-	database.DB.Select("install_id", "name").Find(&nodes)
-
-	successCount := 0
-	failCount := 0
-	payload := map[string]interface{}{
-		"interval_sec": intervalSec,
-	}
-
-	for _, node := range nodes {
-		if !service.IsNodeOnline(node.InstallID) {
-			continue
-		}
-		if _, err := service.FireCommandToNode(node.InstallID, "update-push-interval", payload); err != nil {
-			failCount++
-			logger.Log.Warn("推送间隔命令下发失败", "node", node.Name, "install_id", node.InstallID, "error", err)
-		} else {
-			successCount++
-		}
-	}
-
-	logger.Log.Info("Agent 推送间隔已批量下发", "interval_sec", intervalSec, "success", successCount, "fail", failCount)
-	sendJSON(w, "success", map[string]interface{}{
-		"message":       fmt.Sprintf("已推送到 %d 个在线节点", successCount),
-		"interval_sec":  intervalSec,
-		"success_count": successCount,
-		"fail_count":    failCount,
 	})
 }
 
@@ -1679,7 +1720,7 @@ func apiNodeOnlineStatus(w http.ResponseWriter, r *http.Request) {
 
 		statusList := make([]map[string]interface{}, 0, len(nodes))
 		for _, node := range nodes {
-			online := service.IsNodeOnline(node.InstallID)
+			online := service.IsNodeOnlineForStatus(node.InstallID)
 			item := map[string]interface{}{
 				"uuid":   node.UUID,
 				"name":   node.Name,
@@ -1708,7 +1749,7 @@ func apiNodeOnlineStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	online := service.IsNodeOnline(node.InstallID)
+	online := service.IsNodeOnlineForStatus(node.InstallID)
 	result := map[string]interface{}{
 		"uuid":   node.UUID,
 		"name":   node.Name,

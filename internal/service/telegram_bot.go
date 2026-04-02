@@ -30,6 +30,9 @@ var (
 
 	nodeNotifyCacheMu sync.RWMutex
 	nodeNotifyCache   = make(map[string]*NodeNotifyConfig)
+
+	nodeStatusNotifyMuteMu    sync.RWMutex
+	nodeStatusNotifyMuteUntil = make(map[string]time.Time)
 )
 
 type NodeNotifyConfig struct {
@@ -59,6 +62,59 @@ func NormalizeNodeOfflineGraceSec(v int) int {
 	return v
 }
 
+// SuppressNodeStatusNotifyForDuration 在指定时间窗口内抑制节点上下线 TG 通知。
+func SuppressNodeStatusNotifyForDuration(installID string, duration time.Duration) {
+	installID = strings.TrimSpace(installID)
+	if installID == "" || duration <= 0 {
+		return
+	}
+
+	until := time.Now().Add(duration)
+	nodeStatusNotifyMuteMu.Lock()
+	prev := nodeStatusNotifyMuteUntil[installID]
+	if prev.IsZero() || until.After(prev) {
+		nodeStatusNotifyMuteUntil[installID] = until
+	}
+	nodeStatusNotifyMuteMu.Unlock()
+}
+
+func getNodeStatusNotifyMuteUntil(installID string, now time.Time) (time.Time, bool) {
+	installID = strings.TrimSpace(installID)
+	if installID == "" {
+		return time.Time{}, false
+	}
+
+	nodeStatusNotifyMuteMu.RLock()
+	until, ok := nodeStatusNotifyMuteUntil[installID]
+	nodeStatusNotifyMuteMu.RUnlock()
+	if !ok {
+		return time.Time{}, false
+	}
+	if now.Before(until) {
+		return until, true
+	}
+
+	// 已过期，懒清理。
+	nodeStatusNotifyMuteMu.Lock()
+	if curr, exists := nodeStatusNotifyMuteUntil[installID]; exists && !now.Before(curr) {
+		delete(nodeStatusNotifyMuteUntil, installID)
+	}
+	nodeStatusNotifyMuteMu.Unlock()
+	return time.Time{}, false
+}
+
+func clearNodeOfflineRecoveryMarkers(installID string, nodeUUID string) {
+	if strings.TrimSpace(nodeUUID) != "" {
+		database.DB.Model(&database.NodePool{}).Where("uuid = ?", nodeUUID).Update("offline_last_notify_at", nil)
+	}
+	nodeNotifyCacheMu.Lock()
+	if c, exists := nodeNotifyCache[installID]; exists {
+		c.OfflineLastNotifyAt = time.Time{}
+		c.PreBootOffline = false
+	}
+	nodeNotifyCacheMu.Unlock()
+}
+
 func StartOfflineNotifyLoop() {
 	offlineNotifyLoopOnce.Do(func() {
 		go runOfflineNotifyLoop()
@@ -66,7 +122,7 @@ func StartOfflineNotifyLoop() {
 }
 
 func runOfflineNotifyLoop() {
-	ticker := time.NewTicker(2 * time.Second)
+	ticker := time.NewTicker(1 * time.Second)
 	defer ticker.Stop()
 
 	for now := range ticker.C {
@@ -76,8 +132,42 @@ func runOfflineNotifyLoop() {
 
 func handleOfflineNotifyTick(now time.Time) {
 	candidates := make([]string, 0)
+	type statusTransition struct {
+		installID string
+		online    bool
+	}
+	transitions := make([]statusTransition, 0)
+
+	nodeNotifyCacheMu.RLock()
+	installIDs := make([]string, 0, len(nodeNotifyCache))
+	for installID := range nodeNotifyCache {
+		installIDs = append(installIDs, installID)
+	}
+	nodeNotifyCacheMu.RUnlock()
 
 	offlineNotifyMu.Lock()
+	for _, installID := range installIDs {
+		desiredOnline := IsNodeOnlineForStatus(installID)
+		st := offlineNotifyState[installID]
+		if st == nil || !st.initialized {
+			// 仅在判定离线时补齐状态机初始化；稳定在线无需进入离线状态机。
+			if desiredOnline {
+				continue
+			}
+			transitions = append(transitions, statusTransition{
+				installID: installID,
+				online:    false,
+			})
+			continue
+		}
+		if st.online != desiredOnline {
+			transitions = append(transitions, statusTransition{
+				installID: installID,
+				online:    desiredOnline,
+			})
+		}
+	}
+
 	for installID, st := range offlineNotifyState {
 		if st == nil || !st.initialized || st.online {
 			continue
@@ -93,17 +183,33 @@ func handleOfflineNotifyTick(now time.Time) {
 	}
 	offlineNotifyMu.Unlock()
 
+	for _, tr := range transitions {
+		OnNodeConnectionStatusChanged(tr.installID, tr.online)
+	}
+
 	for _, installID := range candidates {
 		notifyOfflineIfDue(installID, now)
 	}
 }
 
 func notifyOfflineIfDue(installID string, now time.Time) {
-	if IsNodeOnline(installID) {
+	if IsNodeOnlineForStatus(installID) {
 		offlineNotifyMu.Lock()
 		// 节点实际上是在线的，清除离线倒计时和脏数据
 		delete(offlineNotifyState, installID)
 		offlineNotifyMu.Unlock()
+		return
+	}
+
+	if muteUntil, muted := getNodeStatusNotifyMuteUntil(installID, now); muted {
+		offlineNotifyMu.Lock()
+		if st := offlineNotifyState[installID]; st != nil {
+			if st.pendingOfflineAt.IsZero() || st.pendingOfflineAt.Before(muteUntil) {
+				st.pendingOfflineAt = muteUntil
+			}
+		}
+		offlineNotifyMu.Unlock()
+		logger.Log.Debug("节点状态通知处于抑制窗口，跳过离线通知", "install_id", installID, "mute_until", muteUntil.Format(time.RFC3339))
 		return
 	}
 
@@ -246,7 +352,7 @@ func InitNodeNotifyConfigCache() {
 
 		offlineCount := 0
 		for installID, config := range nodeNotifyCache {
-			if config.OfflineNotifyEnabled && !IsNodeOnline(installID) {
+			if config.OfflineNotifyEnabled && !IsNodeOnlineForStatus(installID) {
 				config.PreBootOffline = true
 				offlineCount++
 			}
@@ -774,9 +880,9 @@ func OnNodeConnectionStatusChanged(installID string, online bool) {
 		return
 	}
 
-	// 防御性校验：若当前仍有活跃连接，则忽略过期连接触发的离线事件。
-	if !online && IsNodeOnline(installID) {
-		logger.Log.Debug("忽略离线状态变更：节点仍有活跃 Agent WS 连接", "install_id", installID)
+	// 防御性校验：若当前状态仍在线，则忽略过期连接触发的离线事件。
+	if !online && IsNodeOnlineForStatus(installID) {
+		logger.Log.Debug("忽略离线状态变更：节点当前仍被判定为在线", "install_id", installID)
 		return
 	}
 
@@ -829,17 +935,13 @@ func OnNodeConnectionStatusChanged(installID string, online bool) {
 			// 这些情况全都在系统恢复生命周期管理后给您补发通知，以免暗箱掉线的节点漏报
 			isBootRecovery := !node.OfflineLastNotifyAt.IsZero() || node.PreBootOffline
 
-			if (wasInitialized && !prevOnline && prevLastNotified == "offline") || isBootRecovery {
-				if sendNodeStatusNotification(node.Name, true, now) {
-					// 抹去数据库的 offline_last_notify_at 痕迹并置为 NULL
-					database.DB.Model(&database.NodePool{}).Where("uuid = ?", node.UUID).Update("offline_last_notify_at", nil)
-					// 清理节点的暗箱启动和离线标记
-					nodeNotifyCacheMu.Lock()
-					if c, exists := nodeNotifyCache[installID]; exists {
-						c.OfflineLastNotifyAt = time.Time{}
-						c.PreBootOffline = false
-					}
-					nodeNotifyCacheMu.Unlock()
+			needOnlineNotify := (wasInitialized && !prevOnline && prevLastNotified == "offline") || isBootRecovery
+			if needOnlineNotify {
+				if muteUntil, muted := getNodeStatusNotifyMuteUntil(installID, now); muted {
+					logger.Log.Debug("节点状态通知处于抑制窗口，跳过上线通知", "install_id", installID, "mute_until", muteUntil.Format(time.RFC3339))
+					clearNodeOfflineRecoveryMarkers(installID, node.UUID)
+				} else if sendNodeStatusNotification(node.Name, true, now) {
+					clearNodeOfflineRecoveryMarkers(installID, node.UUID)
 				}
 			}
 		}

@@ -84,7 +84,6 @@ var (
 		"proxy_vless_tls_sni":                     "VLESS TLS SNI",
 		"proxy_trojan_tls_sni":                    "Trojan TLS SNI",
 		"proxy_anytls_sni":                        "AnyTLS SNI",
-		"agent_ws_push_interval_sec":              "Agent 推送速率",
 		"auth_cookie_ttl_mode":                    "登录会话有效期",
 		"login_ip_retry_window_sec":               "登录失败计数窗口",
 		"login_ip_max_retries":                    "登录最大重试次数",

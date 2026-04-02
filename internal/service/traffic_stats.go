@@ -458,7 +458,7 @@ func GetTrafficConsumptionRank(limit int, rankDate string) (*TrafficConsumptionR
 		limitType := NormalizeTrafficLimitType(n.TrafficLimitType)
 		usedByLimit := ComputeTrafficUsedByLimitType(up, down, limitType)
 
-		offline := !IsNodeOnline(n.InstallID)
+		offline := !IsNodeOnlineForStatus(n.InstallID)
 
 		ratio := "0.00"
 		if up > 0 {

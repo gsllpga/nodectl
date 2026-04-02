@@ -330,9 +330,27 @@
                         <input type="text" id="nodeNameInput" class="add-input" placeholder="节点名称 (可选)">
                     </div>
                     <div class="add-row">
-                        <label class="add-label">流量重置日 (每月)</label>
+                        <label class="add-label">流量重置方式</label>
+                        <select id="nodeResetModeInput" class="add-input" onchange="updateAddResetInputs()">
+                            <option value="fixed_day">固定日期 (每月)</option>
+                            <option value="calendar_month">自然月 (每月1号)</option>
+                            <option value="interval_days">按天数周期</option>
+                            <option value="off">不自动重置</option>
+                        </select>
+                    </div>
+                    <div class="add-row" id="nodeResetDayRow">
+                        <label class="add-label">每月重置日</label>
                         <input type="number" id="nodeResetDayInput" class="add-input add-input-number"
-                            placeholder="1-31 (0为不重置)" value="1" min="0" max="31">
+                            placeholder="1-31 (短月自动落在月底)" value="1" min="1" max="31">
+                    </div>
+                    <div class="add-row" id="nodeResetIntervalRow" style="display:none;">
+                        <label class="add-label">重置周期 (天)</label>
+                        <input type="number" id="nodeResetIntervalDaysInput" class="add-input add-input-number"
+                            placeholder="1-365" value="30" min="1" max="365">
+                    </div>
+                    <div class="add-row" id="nodeResetAnchorRow" style="display:none;">
+                        <label class="add-label">周期起算日</label>
+                        <input type="date" id="nodeResetAnchorDateInput" class="add-input">
                     </div>
                     <div class="add-row">
                         <label class="add-label">流量限额</label>
@@ -378,11 +396,24 @@
         if (e.key === 'Escape' && addNodeModalEl.classList.contains('active')) closeAddNodeModal();
     });
 
+    function formatDateForInputLocal(dateObj) {
+        const d = dateObj instanceof Date ? dateObj : new Date();
+        const y = d.getFullYear();
+        const m = String(d.getMonth() + 1).padStart(2, '0');
+        const day = String(d.getDate()).padStart(2, '0');
+        return `${y}-${m}-${day}`;
+    }
+
     function openAddNodeModal() {
         addNodeModalEl.classList.add('active');
         document.getElementById('addNodeForm').reset();
+        document.getElementById('nodeResetModeInput').value = 'fixed_day';
+        document.getElementById('nodeResetDayInput').value = '1';
+        document.getElementById('nodeResetIntervalDaysInput').value = '30';
+        document.getElementById('nodeResetAnchorDateInput').value = formatDateForInputLocal(new Date());
         document.getElementById('nodeTrafficLimitInput').value = '0 B';
         document.getElementById('nodeTrafficLimitTypeInput').value = 'total';
+        updateAddResetInputs();
 
         // 重置提示器状态
         document.getElementById('addNodeIndicator').style.opacity = '0';
@@ -408,6 +439,17 @@
         document.querySelectorAll('#addNodeModal .add-segment-option').forEach(b => b.classList.remove('active'));
         el.classList.add('active');
         document.getElementById('nodeGroupVal').value = val;
+    }
+
+    function updateAddResetInputs() {
+        const modeEl = document.getElementById('nodeResetModeInput');
+        const mode = modeEl ? modeEl.value : 'fixed_day';
+        const dayRow = document.getElementById('nodeResetDayRow');
+        const intervalRow = document.getElementById('nodeResetIntervalRow');
+        const anchorRow = document.getElementById('nodeResetAnchorRow');
+        if (dayRow) dayRow.style.display = mode === 'fixed_day' ? 'flex' : 'none';
+        if (intervalRow) intervalRow.style.display = mode === 'interval_days' ? 'flex' : 'none';
+        if (anchorRow) anchorRow.style.display = mode === 'interval_days' ? 'flex' : 'none';
     }
 
     function parseTrafficLimitInputToBytes(raw) {
@@ -451,7 +493,13 @@
         const indicator = document.getElementById('addNodeIndicator');
         const nodeName = document.getElementById('nodeNameInput').value.trim();
         const routingType = parseInt(document.getElementById('nodeGroupVal').value);
-        const resetDay = parseInt(document.getElementById('nodeResetDayInput').value) || 0;
+        const resetMode = document.getElementById('nodeResetModeInput').value || 'fixed_day';
+        const resetDayRaw = parseInt(document.getElementById('nodeResetDayInput').value) || 0;
+        const resetIntervalDaysRaw = parseInt(document.getElementById('nodeResetIntervalDaysInput').value) || 30;
+        const resetAnchorDateRaw = document.getElementById('nodeResetAnchorDateInput').value || '';
+        const resetDay = resetMode === 'fixed_day' ? resetDayRaw : 0;
+        const resetIntervalDays = resetMode === 'interval_days' ? resetIntervalDaysRaw : 30;
+        const resetAnchorDate = resetMode === 'interval_days' ? resetAnchorDateRaw : '';
         const trafficLimitRaw = document.getElementById('nodeTrafficLimitInput').value;
         const trafficLimit = parseTrafficLimitInputToBytes(trafficLimitRaw);
         const trafficLimitType = document.getElementById('nodeTrafficLimitTypeInput').value || 'total';
@@ -467,7 +515,10 @@
                 body: JSON.stringify({
                     name: nodeName,
                     routing_type: routingType,
+                    traffic_reset_mode: resetMode,
                     reset_day: resetDay,
+                    traffic_reset_interval_days: resetIntervalDays,
+                    traffic_reset_anchor_date: resetAnchorDate,
                     traffic_limit: trafficLimit,
                     traffic_limit_raw: trafficLimitRaw,
                     traffic_limit_type: trafficLimitType

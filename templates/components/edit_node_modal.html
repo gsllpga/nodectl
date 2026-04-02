@@ -891,15 +891,24 @@
                     </div>
 
                     <div class="edit-section">
-                        <div style="display: flex; gap: 15px; margin-bottom: 8px;">
-                            <label class="section-label" style="flex: 1; margin: 0;">重置日 (每月)</label>
-                            <label class="section-label" style="flex: 2; margin: 0;">流量限额</label>
+                        <div style="margin-bottom: 8px;">
+                            <label class="section-label" style="margin: 0;">流量重置规则</label>
                         </div>
-                        <div style="display: flex; gap: 15px;">
-                            <input type="number" id="editNodeResetDay" class="title-input" placeholder="1-31" min="0"
-                                max="31" oninput="triggerNodeAutoSave()" style="flex: 1;">
+                        <div style="display: flex; flex-direction: column; gap: 12px;">
+                            <div style="display: flex; flex-direction: column; gap: 6px;">
+                                <select id="editNodeResetMode" class="title-input" onchange="updateEditResetInputs(); triggerNodeAutoSave(true)">
+                                    <option value="fixed_day">固定日期 (每月)</option>
+                                    <option value="calendar_month">自然月 (每月1号)</option>
+                                    <option value="interval_days">按天数周期</option>
+                                    <option value="off">不自动重置</option>
+                                </select>
+                                <input type="number" id="editNodeResetDay" class="title-input" placeholder="1-31 (短月自动落在月底)" min="1" max="31" oninput="triggerNodeAutoSave()">
+                                <input type="number" id="editNodeResetIntervalDays" class="title-input" placeholder="1-365 天" min="1" max="365" oninput="triggerNodeAutoSave()" style="display:none;">
+                                <input type="date" id="editNodeResetAnchorDate" class="title-input" oninput="triggerNodeAutoSave()" style="display:none;">
+                            </div>
 
-                            <div class="traffic-input-group" style="flex: 2;">
+                            <label class="section-label" style="margin: 0;">流量限额</label>
+                            <div class="traffic-input-group" style="width: 100%;">
                                 <input type="text" id="editNodeTrafficLimit" placeholder="0 B"
                                     oninput="triggerNodeAutoSave()" onblur="normalizeEditTrafficLimitInput()">
                                 <div class="select-wrapper">
@@ -957,6 +966,21 @@
                                 <div id="editNodeTrafficDownText"
                                     style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 700; color: #1d1d1f; text-shadow: 0 0 4px rgba(255,255,255,0.9); z-index: 1;">
                                     0 B</div>
+                            </div>
+                        </div>
+                        <div
+                            style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin-top: 12px;">
+                            <div
+                                style="background: #fff; border: 1px solid #e5e5ea; border-radius: 8px; padding: 8px 10px;">
+                                <div style="font-size: 11px; color: #8e8e93; margin-bottom: 4px;">上次重置时间</div>
+                                <div id="editNodeTrafficResetAt"
+                                    style="font-size: 12px; color: #1d1d1f; font-weight: 600; word-break: break-word;">未重置</div>
+                            </div>
+                            <div
+                                style="background: #fff; border: 1px solid #e5e5ea; border-radius: 8px; padding: 8px 10px;">
+                                <div style="font-size: 11px; color: #8e8e93; margin-bottom: 4px;">流量更新时间</div>
+                                <div id="editNodeTrafficUpdateAt"
+                                    style="font-size: 12px; color: #1d1d1f; font-weight: 600; word-break: break-word;">--</div>
                             </div>
                         </div>
                     </div>
@@ -1085,6 +1109,67 @@
         el.value = formatTrafficLimitBytes(bytes);
     }
 
+    function formatDateForInputLocal(dateObj) {
+        const d = dateObj instanceof Date ? dateObj : new Date();
+        const y = d.getFullYear();
+        const m = String(d.getMonth() + 1).padStart(2, '0');
+        const day = String(d.getDate()).padStart(2, '0');
+        return `${y}-${m}-${day}`;
+    }
+
+    function normalizeDateInputValue(raw) {
+        const text = String(raw || '').trim();
+        if (!text) return '';
+        if (/^\d{4}-\d{2}-\d{2}$/.test(text)) return text;
+        const parsed = new Date(text);
+        if (!Number.isNaN(parsed.getTime())) {
+            return formatDateForInputLocal(parsed);
+        }
+        return text.length >= 10 ? text.slice(0, 10) : '';
+    }
+
+    function formatDateTimeLabel(raw, fallback = '--') {
+        const text = String(raw || '').trim();
+        if (!text) return fallback;
+        const parsed = new Date(text);
+        if (Number.isNaN(parsed.getTime())) return text;
+        return new Intl.DateTimeFormat('zh-CN', {
+            year: 'numeric',
+            month: '2-digit',
+            day: '2-digit',
+            hour: '2-digit',
+            minute: '2-digit',
+            second: '2-digit',
+            hour12: false
+        }).format(parsed).replace(/\//g, '-');
+    }
+
+    function normalizeClientResetMode(mode, resetDay) {
+        const raw = String(mode || '').trim().toLowerCase();
+        if (!raw) return Number(resetDay || 0) > 0 ? 'fixed_day' : 'off';
+        if (raw === 'fixed_day') {
+            return Number(resetDay || 0) > 0 ? 'fixed_day' : 'off';
+        }
+        if (raw === 'calendar_month' || raw === 'interval_days' || raw === 'off') {
+            return raw;
+        }
+        if (raw === 'fixed' || raw === 'monthly' || raw === 'day') return Number(resetDay || 0) > 0 ? 'fixed_day' : 'off';
+        if (raw === 'calendar' || raw === 'natural_month' || raw === 'month_start') return 'calendar_month';
+        if (raw === 'interval' || raw === 'days' || raw === 'day_interval') return 'interval_days';
+        return Number(resetDay || 0) > 0 ? 'fixed_day' : 'off';
+    }
+
+    function updateEditResetInputs() {
+        const modeEl = document.getElementById('editNodeResetMode');
+        const mode = modeEl ? modeEl.value : 'fixed_day';
+        const dayInput = document.getElementById('editNodeResetDay');
+        const intervalInput = document.getElementById('editNodeResetIntervalDays');
+        const anchorInput = document.getElementById('editNodeResetAnchorDate');
+        if (dayInput) dayInput.style.display = mode === 'fixed_day' ? 'block' : 'none';
+        if (intervalInput) intervalInput.style.display = mode === 'interval_days' ? 'block' : 'none';
+        if (anchorInput) anchorInput.style.display = mode === 'interval_days' ? 'block' : 'none';
+    }
+
     async function openEditModal(uuid) {
         isInitializingEdit = true;
 
@@ -1110,7 +1195,15 @@
         // 1. 基础信息填充
         document.getElementById('editNodeUUID').value = node.uuid;
         document.getElementById('editNodeName').value = node.name;
-        document.getElementById('editNodeResetDay').value = node.reset_day || 0;
+        const resetDay = Number(node.reset_day || 0);
+        const resetMode = normalizeClientResetMode(node.traffic_reset_mode, resetDay);
+        document.getElementById('editNodeResetMode').value = resetMode;
+        document.getElementById('editNodeResetDay').value = resetDay > 0 ? resetDay : 1;
+        document.getElementById('editNodeResetIntervalDays').value = Number(node.traffic_reset_interval_days || 30);
+        const anchorRaw = node.traffic_reset_anchor_at || node.created_at || '';
+        const normalizedAnchor = normalizeDateInputValue(anchorRaw);
+        document.getElementById('editNodeResetAnchorDate').value = normalizedAnchor || formatDateForInputLocal(new Date());
+        updateEditResetInputs();
 
         // [新增] 处理流量限额回显
         const limitBytes = node.traffic_limit || 0;
@@ -1147,6 +1240,8 @@
         document.getElementById('editNodeTrafficDownBar').style.width = downPct + '%';
         document.getElementById('editNodeTrafficUpText').innerText = formatBytes(upBytes);
         document.getElementById('editNodeTrafficDownText').innerText = formatBytes(downBytes);
+        document.getElementById('editNodeTrafficResetAt').innerText = formatDateTimeLabel(node.traffic_reset_at, '未重置');
+        document.getElementById('editNodeTrafficUpdateAt').innerText = formatDateTimeLabel(node.traffic_update_at, '--');
 
         // 显示 Agent 版本
         if (node.agent_version) {
@@ -1667,7 +1762,13 @@
         editNodeAutoSaveTimer = setTimeout(async () => {
             const name = document.getElementById('editNodeName').value;
             const uiState = parseInt(document.getElementById('editNodeUIState').value);
-            const resetDay = parseInt(document.getElementById('editNodeResetDay').value) || 0;
+            const resetMode = document.getElementById('editNodeResetMode').value || 'fixed_day';
+            const resetDayRaw = parseInt(document.getElementById('editNodeResetDay').value) || 0;
+            const resetIntervalDaysRaw = parseInt(document.getElementById('editNodeResetIntervalDays').value) || 30;
+            const resetAnchorDateRaw = document.getElementById('editNodeResetAnchorDate').value || '';
+            const resetDay = resetMode === 'fixed_day' ? resetDayRaw : 0;
+            const resetIntervalDays = resetMode === 'interval_days' ? resetIntervalDaysRaw : 30;
+            const resetAnchorDate = resetMode === 'interval_days' ? resetAnchorDateRaw : '';
             const ipMode = parseInt(document.getElementById('editNodeIPMode').value) || 0;
 
             const trafficLimitRaw = document.getElementById('editNodeTrafficLimit').value;
@@ -1774,7 +1875,10 @@
                         ip_mode: ipMode,
                         link_ip_modes: linkIPModes,
                         link_ports: linkPorts,
+                        traffic_reset_mode: resetMode,
                         reset_day: resetDay,
+                        traffic_reset_interval_days: resetIntervalDays,
+                        traffic_reset_anchor_date: resetAnchorDate,
                         traffic_limit: trafficLimit,
                         traffic_limit_raw: trafficLimitRaw,
                         traffic_limit_type: trafficLimitType

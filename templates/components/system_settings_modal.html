@@ -2833,62 +2833,6 @@
                                 placeholder="默认: 0 (关闭)" min="0" max="3600" oninput="triggerSysAutoSave()" />
                         </div>
 
-                        <div class="sys-field">
-                            <label class="sys-label" style="
-                                    display: flex;
-                                    align-items: center;
-                                    gap: 4px;
-                                ">
-                                Agent 推送速率 (秒)
-                                <div class="sys-info-tooltip-wrap" tabindex="0">
-                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                                        stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                                        <circle cx="12" cy="12" r="10"></circle>
-                                        <line x1="12" y1="8" x2="12" y2="12"></line>
-                                        <line x1="12" y1="16" x2="12.01" y2="16"></line>
-                                    </svg>
-                                    <div class="sys-tooltip-content">
-                                        <p style="
-                                                margin: 0;
-                                                padding-bottom: 4px;
-                                                font-weight: 600;
-                                                color: #fff;
-                                            ">
-                                            参数说明
-                                        </p>
-                                        <p style="
-                                                margin: 0;
-                                                padding-bottom: 4px;
-                                            ">
-                                            • <b>推送间隔:</b> Agent
-                                            向面板上报实时速率的频率，同时也是前端流量面板的刷新间隔。
-                                        </p>
-                                        <p style="margin: 0">
-                                            • <b>范围:</b> 1-5 秒，默认 2
-                                            秒。修改后需点击「推送
-                                            Agent」同步到所有在线节点。
-                                        </p>
-                                    </div>
-                                </div>
-                            </label>
-                            <div style="
-                                    display: flex;
-                                    gap: 8px;
-                                    align-items: center;
-                                ">
-                                <input type="number" id="sys_agent_ws_push_interval_sec" class="sys-input"
-                                    placeholder="默认: 2" min="1" max="5" oninput="validateAgentPushInterval()"
-                                    style="flex: 1" />
-                                <button type="button" class="btn-sys-regen" onclick="pushAgentInterval()"
-                                    id="btn_push_agent_interval" style="
-                                        white-space: nowrap;
-                                        padding: 8px 14px;
-                                        font-size: 12px;
-                                    ">
-                                    推送 Agent
-                                </button>
-                            </div>
-                        </div>
                     </div>
 
                     <div class="sys-field">
@@ -3998,9 +3942,6 @@
                 document.getElementById(
                     "sys_pref_traffic_point_persist_interval_sec",
                 ).value = data.pref_traffic_point_persist_interval_sec || "0";
-                document.getElementById(
-                    "sys_agent_ws_push_interval_sec",
-                ).value = data.agent_ws_push_interval_sec || "2";
                 document.getElementById("sys_auth_cookie_ttl_mode").value =
                     data.auth_cookie_ttl_mode || "1d";
                 document.getElementById("sys_force_http").checked =
@@ -4805,78 +4746,6 @@
         }
     }
 
-    function validateAgentPushInterval() {
-        const input = document.getElementById("sys_agent_ws_push_interval_sec");
-        const indicator = document.getElementById("sysSaveIndicator");
-        const val = parseInt(input.value);
-
-        if (isNaN(val) || val < 1 || val > 5) {
-            indicator.innerHTML =
-                '<span style="color:#ff3b30;">❗ 请输入 1-5 的整数</span>';
-            indicator.style.opacity = "1";
-            return;
-        }
-
-        triggerSysAutoSave({ preserveStatus: true, silentSaving: true });
-        indicator.innerHTML =
-            '<span style="color:#34c759;">✅ 保存成功，点击推送 Agent 同步</span>';
-        indicator.style.opacity = "1";
-    }
-
-    async function pushAgentInterval() {
-        const btn = document.getElementById("btn_push_agent_interval");
-        const indicator = document.getElementById("sysSaveIndicator");
-        const originalText = btn.textContent;
-        const val = parseInt(
-            document.getElementById("sys_agent_ws_push_interval_sec").value,
-        );
-
-        if (isNaN(val) || val < 1 || val > 5) {
-            indicator.innerHTML =
-                '<span style="color:#ff3b30;">❗ 请输入 1-5 的整数</span>';
-            indicator.style.opacity = "1";
-            return;
-        }
-
-        btn.disabled = true;
-        btn.textContent = "推送中...";
-
-        triggerSysAutoSave({ preserveStatus: true, silentSaving: true });
-        await new Promise((r) => setTimeout(r, 500));
-
-        try {
-            const res = await fetch("/api/push-agent-interval", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ interval_sec: val }),
-            });
-            const result = await res.json();
-            if (result.status === "success") {
-                btn.textContent = "✅ 已推送";
-                indicator.innerHTML =
-                    '<span style="color:#34c759;">✅ 已推送到所有在线节点</span>';
-                indicator.style.opacity = "1";
-            } else {
-                btn.textContent = "❌ 失败";
-                indicator.innerHTML =
-                    '<span style="color:#ff3b30;">❌ 推送失败: ' +
-                    (result.message || "未知错误") +
-                    "</span>";
-                indicator.style.opacity = "1";
-            }
-        } catch (e) {
-            btn.textContent = "❌ 失败";
-            indicator.innerHTML =
-                '<span style="color:#ff3b30;">❌ 推送异常</span>';
-            indicator.style.opacity = "1";
-        }
-
-        setTimeout(() => {
-            btn.textContent = originalText;
-            btn.disabled = false;
-        }, 2000);
-    }
-
     function triggerSysAutoSave(options = {}) {
         if (
             !document
@@ -5036,9 +4905,6 @@
                 ).checked
                     ? "true"
                     : "false",
-                agent_ws_push_interval_sec: document.getElementById(
-                    "sys_agent_ws_push_interval_sec",
-                ).value,
             };
 
             if (!payload.sub_token) {
