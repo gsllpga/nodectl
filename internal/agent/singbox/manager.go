@@ -368,10 +368,20 @@ func (m *Manager) watchProcess(ctx context.Context, cmd *exec.Cmd, logWriter io.
 	m.mu.Unlock()
 }
 
-// openLogWriter 返回一个丢弃所有写入的 writer。
-// sing-box 子进程的 stdout/stderr 不再写入文件，避免在高流量时占用磁盘空间。
+// openLogWriter 打开日志文件
 func (m *Manager) openLogWriter() (io.Writer, error) {
-	return io.Discard, nil
+	if dir := filepath.Dir(m.logPath); dir != "" {
+		if err := os.MkdirAll(dir, 0755); err != nil {
+			return nil, err
+		}
+	}
+
+	f, err := os.OpenFile(m.logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+	if err != nil {
+		return nil, err
+	}
+
+	return f, nil
 }
 
 // savePID 保存子进程 PID 到文件
