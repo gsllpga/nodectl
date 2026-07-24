@@ -421,6 +421,7 @@ name="nodectl-agent"
 description="NodeCTL Agent - 一体化代理管理器"
 command="/usr/local/bin/nodectl-agent"
 supervisor=supervise-daemon
+rc_cgroup_cleanup="NO"
 pidfile="/run/nodectl-agent.pid"
 respawn_max=0
 respawn_period=1800
